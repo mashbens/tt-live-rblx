@@ -1,0 +1,517 @@
+--[[
+    Kamera Client  --  pasangan dari my_sscript_lua (v13)
+
+    Taruh di: StarterPlayer > StarterPlayerScripts
+              (Insert Object > LocalScript, beri nama KameraClient)
+
+    KENAPA HARUS DIPISAH
+
+    `workspace.CurrentCamera` itu objek milik client. Tiap pemain punya
+    Camera sendiri di DataModel-nya masing-masing, dan tidak satu pun
+    direplikasi ke server.
+
+    Waktu ditekan Play di Studio, server dan client jalan di satu proses
+    sehingga kode kamera di script server KEBETULAN kena sasaran -- itu
+    sebabnya versi lama kelihatan jalan waktu dites. Begitu game-nya
+    di-publish, server tidak punya Camera sama sekali: pemanggilannya
+    diam-diam `return`, tidak ada error di Output, dan penonton yang join
+    tetap memandang avatarnya sendiri.
+
+    Sebaliknya, poll ke server FastAPI tidak bisa pindah kemari:
+    HttpService diblokir di client. Jadi pembagiannya memang terpaksa --
+    server yang tahu SIAPA yang datang, client yang punya kameranya.
+
+    TIDAK ADA ANGKA UNTUK DISETEL DI FILE INI.
+
+    Semua angka kamera (CAMERA_UP, CAMERA_BACK, SPOT_CAM_*, SPOT2_CAM_*,
+    SHAKE_*, CAM_CINEMATIC) plus RESYNC_EVERY dan DRIFT_LIMIT tetap
+    tinggal di script server dan dikirim ke sini lewat KameraConfig. Mau
+    menyetel? Ubah di my_sscript_lua seperti biasa, file ini tidak perlu
+    disentuh.
+
+    ISINYA DUA BAGIAN
+
+    1. KAMERA -- alasannya di atas.
+    2. PENYAMAAN TARIAN -- alasannya sama persis, cuma propertinya beda:
+       AnimationTrack.TimePosition yang ditulis di server tidak
+       direplikasi ke client, jadi avatar yang mendarat di waktu berbeda
+       menari dengan fase berbeda selamanya. Lihat catatan panjang di
+       bagian itu.
+
+    Dua-duanya kelas bug yang sama: kelihatan benar di Studio karena
+    server dan client jalan di satu proses, lalu patah setelah publish.
+--]]
+
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Dibuat oleh script server saat dia mulai. WaitForChild, bukan
+-- FindFirstChild: LocalScript sering jalan lebih dulu.
+local KameraEvent  = ReplicatedStorage:WaitForChild("KameraEvent")
+local KameraConfig = ReplicatedStorage:WaitForChild("KameraConfig")
+
+-- Angka-angkanya DITARIK dari server, bukan menunggu didorong.
+--
+-- PlayerAdded di server sering menyala sebelum LocalScript ini sempat
+-- jalan, dan paket yang dikirim ke client yang belum mendengarkan itu
+-- hilang begitu saja. Ditarik dari sini, tidak ada balapan yang bisa
+-- kalah.
+local CFG = KameraConfig:InvokeServer()
+
+-- ============ STATE ============
+
+-- Gerakan kamera keberapa yang sedang jalan.
+--
+-- Dua avatar bisa datang berbarengan (spawnAvatar jalan di task sendiri
+-- dan makan lebih dari satu detik). Tanpa nomor ini, dua gelung sama-sama
+-- menulis Camera.CFrame tiap frame dan kameranya bergetar di antara dua
+-- tujuan. Yang lama berhenti begitu nomornya bukan yang terbaru lagi.
+local camGen = 0
+
+-- Kembaran dari penjaga yang sama di server. Yang di sana menahan paket
+-- supaya tidak dikirim; yang di sini menahan gelung yang SUDAH jalan --
+-- sorotan bisa mulai setelah sebuah gerakan berangkat, dan gelung itu
+-- harus mengalah di tengah jalan, bukan hanya tidak dimulai.
+local spotlightBusy = false
+
+local camera = workspace.CurrentCamera
+
+-- ============ MEMPERTAHANKAN KENDALI KAMERA ============
+--
+-- Menyetel CameraType = Scriptable SEKALI saja TIDAK CUKUP, dan ini
+-- persis bug yang bikin kamera balik nempel ke avatar sendiri.
+--
+-- Roblox punya kamera bawaan (PlayerModule di PlayerScripts) yang
+-- menyetel CameraType kembali ke Custom setiap kali karakter di-load.
+-- LocalScript ini jalan lebih dulu daripada karakternya, jadi urutan
+-- yang sebenarnya terjadi begini:
+--
+--   1. script ini jalan, CameraType := Scriptable        <- benar
+--   2. karakter selesai di-load
+--   3. kamera bawaan menimpanya, CameraType := Custom    <- kalah
+--   4. kamera menempel di HumanoidRootPart penonton
+--
+-- Jadi yang dipasang di sini penjaga, bukan satu perintah: begitu ada
+-- yang mengubah CameraType, langsung dikembalikan. Tidak ada rekursi --
+-- menulis nilai yang sudah sama tidak menyalakan sinyalnya lagi.
+local dijaga = {}   -- camera -> true, supaya sinyalnya tidak dobel
+
+local function jagaKamera(cam)
+	if not cam then return end
+
+	cam.CameraType = Enum.CameraType.Scriptable
+
+	-- CharacterAdded menyala tiap respawn, dan sering dengan objek Camera
+	-- yang SAMA. Tanpa penanda ini, tiap respawn menambah satu sambungan
+	-- lagi ke kamera yang itu-itu juga.
+	if dijaga[cam] then return end
+	dijaga[cam] = true
+
+	cam:GetPropertyChangedSignal("CameraType"):Connect(function()
+		if cam.CameraType ~= Enum.CameraType.Scriptable then
+			cam.CameraType = Enum.CameraType.Scriptable
+		end
+	end)
+end
+
+jagaKamera(camera)
+
+-- CurrentCamera diganti Roblox saat karakter di-respawn, dan yang lama
+-- jadi yatim: gelung kita tetap menulis ke sana dan layarnya membeku.
+-- Kamera yang baru butuh penjaganya sendiri.
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+	if workspace.CurrentCamera then
+		camera = workspace.CurrentCamera
+		jagaKamera(camera)
+	end
+end)
+
+-- Respawn tidak selalu mengganti objek Camera-nya -- kadang objeknya
+-- sama dan cuma propertinya yang direset. Sinyal di atas tidak menyala
+-- untuk kasus itu, jadi karakternya ikut diawasi terpisah.
+local pemain = Players.LocalPlayer
+pemain.CharacterAdded:Connect(function()
+	-- Satu frame jeda: kamera bawaan menyetel Custom SESUDAH
+	-- CharacterAdded menyala, jadi menulis di sini tanpa menunggu
+	-- berarti kita yang duluan lalu ditimpa.
+	task.defer(function()
+		jagaKamera(workspace.CurrentCamera)
+	end)
+end)
+
+-- ============ GERAKAN MASUK ============
+
+-- Dari mana kamera datang, untuk tiap gaya. Yang dikembalikan cuma titik
+-- AWAL -- titik akhirnya selalu sama, dan arah pandangnya selalu ke
+-- orangnya.
+--
+-- Angka jarak ikut dikali skala avatar (s) di tempat yang perlu saja:
+-- ketinggian crane dan kerendahan hero itu ukuran MUTLAK terhadap
+-- panggung, bukan terhadap badan orangnya.
+--
+-- `arah` (untuk gaya 5) diundi di SERVER dan dikirim kemari. Kalau
+-- diundi di sini, dua penonton yang menonton kedatangan yang sama
+-- melihat kamera mengayun ke arah yang berlawanan.
+local function awalKamera(gaya, targetPos, s, posSekarang, arah)
+	local naik   = CFG.up * s
+	local mundur = CFG.back * s
+
+	if gaya == 2 then
+		-- DOLLY MASUK: mulai jauh di belakang lalu merangsek mendekat.
+		-- Gerakan paling klasik untuk "ada yang datang".
+		return targetPos + Vector3.new(0, naik * 1.6, mundur * 2.3)
+
+	elseif gaya == 3 then
+		-- CRANE TURUN: mulai tinggi menunduk, lalu turun ke ketinggian
+		-- mata. Bagus untuk memperlihatkan panggung DULU, orangnya
+		-- belakangan.
+		return targetPos + Vector3.new(0, naik + 22, mundur * 0.8)
+
+	elseif gaya == 4 then
+		-- HERO: mulai rendah dan dekat, MEMANDANG KE ATAS, lalu mundur
+		-- naik ke posisi normal. Sudut rendah itu bahasa film untuk
+		-- "orang ini besar" -- dan di sini gratis, cuma soal dari mana
+		-- kameranya mulai.
+		--
+		-- Tingginya DIJEPIT di atas lantai. Titik yang dibidik itu
+		-- HumanoidRootPart, dan untuk avatar biasa itu cuma ~3 studs dari
+		-- tanah -- turun 4 studs dari situ menaruh kamera di BAWAH lantai,
+		-- dan yang terlihat penonton bukan sudut rendah yang gagah tapi
+		-- layar hitam.
+		local rendah = math.max(targetPos.Y - 4, CFG.floorY + 1.5)
+		return Vector3.new(targetPos.X, rendah, targetPos.Z + mundur * 0.5)
+
+	elseif gaya == 5 then
+		-- ORBIT: mulai dari samping lalu mengayun ke depan.
+		local sudut = math.rad(45) * (arah or 1)
+		return targetPos + Vector3.new(
+			math.sin(sudut) * -mundur,
+			naik,
+			math.cos(sudut) * mundur)
+	end
+
+	-- 1 = GESER HALUS (perilaku lama): berangkat dari posisi kamera
+	-- sekarang, yaitu bingkai orang sebelumnya. Ini yang paling tenang,
+	-- dan sengaja tetap ada -- panggung yang tiap kedatangan bergerak
+	-- besar bikin capek, bukan sinematik.
+	return posSekarang
+end
+
+-- Gerakkan kamera ke pendatang baru.
+--
+-- Digerakkan per-frame, bukan Tween, karena arah pandangnya dihitung
+-- ulang tiap frame (CFrame.new(posisi, target)). Tween pada CFrame
+-- meng-slerp rotasinya, dan di tengah jalan orangnya jadi tidak tepat di
+-- tengah bingkai -- justru pada gerakan melengkung seperti orbit.
+--
+-- Dipacu RenderStepped, bukan Heartbeat. Di client kamera digambar
+-- SESUDAH RenderStepped dan SEBELUM Heartbeat, jadi menulis di Heartbeat
+-- berarti tiap frame yang tampil memakai posisi kamera satu frame yang
+-- lalu. Di gerakan pelan tidak kelihatan; di orbit dan guncangan,
+-- kelihatan.
+local function focusCamera(d)
+	if not camera then return end
+	if spotlightBusy and not d.paksa then return end
+
+	local s    = math.max(d.scale or 1, 1)
+	local lama = math.max(d.lama or 0.8, 0.05)
+
+	camGen += 1
+	local gen = camGen
+
+	camera.CameraType = Enum.CameraType.Scriptable
+
+	local target = d.pos
+	local akhir  = target + Vector3.new(0, CFG.up * s, CFG.back * s)
+	local awal   = awalKamera(d.gaya or 1, target, s, camera.CFrame.Position, d.arah)
+
+	task.spawn(function()
+		local mulai = os.clock()
+
+		while true do
+			-- Ada gerakan yang lebih baru, atau sorotan mengambil alih.
+			if camGen ~= gen then return end
+			if spotlightBusy and not d.paksa then return end
+
+			local t = (os.clock() - mulai) / lama
+			if t >= 1 then break end
+
+			-- Smoothstep: pelan di awal DAN di akhir, jadi berhentinya
+			-- tidak mendadak tepat saat hentakan mendarat terjadi.
+			local e = t * t * (3 - 2 * t)
+			camera.CFrame = CFrame.new(awal:Lerp(akhir, e), target)
+
+			RunService.RenderStepped:Wait()
+		end
+
+		if camGen == gen and not (spotlightBusy and not d.paksa) then
+			camera.CFrame = CFrame.new(akhir, target)
+		end
+	end)
+end
+
+-- ============ GUNCANGAN ============
+
+-- Sentakan kamera saat ada yang mendarat.
+--
+-- Kameranya digeser acak sedikit tiap frame, kekuatannya meluruh ke nol
+-- sepanjang `lama`. Yang bikin terasa "berat" itu peluruhannya: guncangan
+-- rata dari awal sampai akhir terbaca seperti kamera rusak, bukan seperti
+-- benturan.
+--
+-- Tidak ada pemulihan posisi di akhir, dan itu disengaja: kekuatannya
+-- sudah nol di frame terakhir, jadi kameranya sudah kembali sendiri.
+-- Menulis ulang CFrame di akhir justru berbahaya -- kalau saat itu
+-- focusCamera sedang menarik kamera ke pendatang berikutnya, tulisan itu
+-- menyentak balik ke titik lama di tengah gerakan.
+--
+-- Getarannya sengaja TIDAK disamakan antar penonton (tidak seperti gaya
+-- kamera): yang dilihat cuma goyangan beberapa piksel selama 0,18 detik,
+-- dan mengirim satu paket per frame untuk itu jelas tidak sepadan.
+local function guncangKamera(d)
+	if not camera then return end
+	if not CFG.shakeEnabled then return end
+	if spotlightBusy then return end
+
+	local kekuatan = d.kekuatan
+	local lama     = d.lama
+
+	-- Guncangan menumpang di atas posisi kamera saat ini, jadi dia harus
+	-- berhenti begitu ada GERAKAN kamera baru yang mengambil alih --
+	-- kalau tidak, dua-duanya menulis CFrame tiap frame dan yang terlihat
+	-- kamera tersendat, bukan tersentak.
+	--
+	-- Dalam alur normal ini tidak pernah kejadian: gerakan kamera memang
+	-- disetel berakhir tepat saat mendarat, dan guncangan mulai persis di
+	-- situ. Penjaga ini untuk yang tidak normal -- dua avatar mendarat
+	-- hampir bersamaan.
+	local gen = camGen
+
+	task.spawn(function()
+		local dasar = camera.CFrame
+		local mulai = os.clock()
+
+		while true do
+			local t = (os.clock() - mulai) / lama
+			if t >= 1 then break end
+			if spotlightBusy or camGen ~= gen then return end
+
+			local sisa = (1 - t) * kekuatan
+			camera.CFrame = dasar
+				* CFrame.new(
+					(math.random() - 0.5) * 2 * sisa,
+					(math.random() - 0.5) * 2 * sisa,
+					0)
+				-- Miring sedikit ikut bergetar. Guncangan yang cuma
+				-- menggeser terbaca seperti gambar digeser; yang ikut
+				-- miring terbaca seperti kameranya yang kena hentakan.
+				* CFrame.Angles(0, 0, math.rad((math.random() - 0.5) * sisa))
+
+			RunService.RenderStepped:Wait()
+		end
+	end)
+end
+
+-- ============ SOROTAN ============
+
+-- Kamera sorotan: mengitari si raksasa sambil masuk mendekat, selama
+-- `durasi` detik.
+--
+-- Digerakkan per-frame, bukan Tween: tween cuma bisa lurus dari A ke B,
+-- dan jalur lurus antara dua titik di lingkaran itu memotong lewat
+-- tengah -- kameranya akan menembus si raksasa.
+--
+-- `sisi` (-1 ujung kiri .. +1 ujung kanan) dihitung di server, karena
+-- yang tahu lebar barisan cuma server.
+local function sorotKamera(d)
+	if not camera then return end
+	if spotlightBusy then return end
+
+	spotlightBusy = true
+
+	task.spawn(function()
+		camera.CameraType = Enum.CameraType.Scriptable
+
+		local target = d.pos
+		local durasi = math.max(d.durasi or 7, 0.5)
+
+		-- Dua set angka, satu untuk yang di atas podium dan satu untuk
+		-- yang berdiri di lantai. Dipilih sekali di sini, bukan di dalam
+		-- gelung.
+		local jauh, dekat, tinggiJauh, tinggiDekat, busur
+		if d.diPodium then
+			jauh, dekat = CFG.spotFar, CFG.spotNear
+			tinggiJauh, tinggiDekat = CFG.spotUpFar, CFG.spotUpNear
+			busur = CFG.spotSweep
+		else
+			jauh, dekat = CFG.spot2Far, CFG.spot2Near
+			tinggiJauh, tinggiDekat = CFG.spot2UpFar, CFG.spot2UpNear
+			busur = CFG.spot2Sweep
+		end
+
+		-- Tanda minus itu isi seluruh aturannya: yang berdiri di KANAN
+		-- (sisi positif) dilihat dari KIRI, dan sebaliknya.
+		local miring = math.rad(CFG.bias) * -(d.sisi or 0)
+
+		local mulai = os.clock()
+		while true do
+			local t = (os.clock() - mulai) / durasi
+			if t >= 1 then break end
+
+			-- Smoothstep: pelan di awal DAN di akhir. Gerakan linear
+			-- terbaca seperti kamera diseret, bukan diarahkan.
+			local e = t * t * (3 - 2 * t)
+
+			-- Busur dilewati dari -setengah ke +setengah, jadi tengah
+			-- gerakannya tepat menghadap depan -- atau, kalau yang
+			-- disorot berdiri di pinggir, tepat menghadap serong ke arah
+			-- tengah.
+			local sudut  = miring + math.rad(busur) * (e - 0.5)
+			local jarak  = jauh + (dekat - jauh) * e
+			local tinggi = tinggiJauh + (tinggiDekat - tinggiJauh) * e
+
+			camera.CFrame = CFrame.new(
+				target + Vector3.new(
+					math.sin(sudut) * jarak,
+					tinggi,
+					-math.cos(sudut) * jarak
+				),
+				target
+			)
+
+			RunService.RenderStepped:Wait()
+		end
+
+		-- Dilepas TEPAT saat gelungnya habis, bukan lebih lambat.
+		-- Server mengirim "focus" (dengan paksa) segera setelah jeda yang
+		-- panjangnya sama, dan paket itu harus menemukan penjaga yang
+		-- sudah terbuka -- kalau tidak, kameranya tertinggal menghadap
+		-- podium sampai ada pendatang baru.
+		spotlightBusy = false
+	end)
+end
+
+-- ============ PENYAMAAN TARIAN ============
+--
+-- Kenapa ini ada di sini dan bukan di server, padahal server sudah punya
+-- gelung resync sendiri:
+--
+-- Animasi direplikasi lewat Animator. Waktu server memanggil
+-- `track:Play()`, yang sampai ke tiap client cuma perintah "mainkan
+-- animasi ini SEKARANG" -- lalu client memutarnya sendiri dari detik
+-- nol. `AnimationTrack.TimePosition` yang ditulis di server TIDAK ikut
+-- direplikasi; tidak ada satu pun paket yang membawanya.
+--
+-- Jadi dua avatar yang mendarat berselang 4 detik memulai tariannya
+-- berselang 4 detik juga di layar penonton, dan karena Looped, selisih
+-- itu bertahan selamanya. Gelung resync di server rajin membetulkannya
+-- -- di simulasinya sendiri, yang tidak dilihat siapa-siapa.
+--
+-- Di Studio (Play) server dan client jalan di satu proses, jadi
+-- kelihatan serempak dan bug ini tidak pernah muncul waktu dites.
+--
+-- Yang di sini menyamakannya di tempat yang benar: TimePosition yang
+-- ditulis client langsung mengubah apa yang digambar di layar client
+-- itu. Tidak ada paket per-detik yang dikirim -- tiap penonton memilih
+-- master-nya sendiri dan menyamakan sisanya ke situ. Master yang
+-- berbeda antar penonton tidak jadi soal: yang penting serempak di
+-- dalam satu layar, bukan sama antar layar.
+local function kumpulkanTarian()
+	local daftar = {}
+
+	for _, m in ipairs(workspace:GetChildren()) do
+		-- Karakter penonton punya Humanoid juga, dan dia tidak sedang
+		-- menari bersama antrian.
+		if m:IsA("Model") and not Players:GetPlayerFromCharacter(m) then
+			local hum = m:FindFirstChildOfClass("Humanoid")
+			local animator = hum and hum:FindFirstChildOfClass("Animator")
+
+			if animator then
+				-- Satu avatar = satu tarian. Yang pertama sudah cukup.
+				local main = animator:GetPlayingAnimationTracks()[1]
+				if main then
+					table.insert(daftar, main)
+				end
+			end
+		end
+	end
+
+	return daftar
+end
+
+task.spawn(function()
+	if (CFG.resyncEvery or 0) <= 0 then return end
+
+	-- Master dipegang lintas putaran, tidak dipilih ulang tiap kali.
+	--
+	-- Kalau tiap putaran diambil "yang pertama ketemu", urutan
+	-- GetChildren yang berubah (avatar dihapus, panggung direset) bikin
+	-- master berpindah -- dan tiap perpindahan menyeret SEMUA yang lain
+	-- ke fase baru. Yang terlihat bukan tarian serempak tapi seluruh
+	-- panggung tersentak bersamaan tiap beberapa detik.
+	local master = nil
+
+	while true do
+		task.wait(CFG.resyncEvery)
+
+		local daftar = kumpulkanTarian()
+
+		-- Master yang lama sudah berhenti (avatarnya dihapus)?
+		local masihAda = false
+		if master then
+			for _, t in ipairs(daftar) do
+				if t == master then
+					masihAda = true
+					break
+				end
+			end
+		end
+		if not masihAda then
+			master = daftar[1]
+		end
+
+		if master then
+			local ref = master.TimePosition
+
+			for _, t in ipairs(daftar) do
+				if t ~= master
+					and math.abs(t.TimePosition - ref) > CFG.driftLimit then
+					-- Menulis TimePosition bikin gerakannya meloncat
+					-- sedikit, jadi yang selisihnya masih di bawah
+					-- ambang sengaja dibiarkan. Loncatan kecil tiap
+					-- beberapa detik lebih kelihatan daripada beda fase
+					-- 0,04 detik yang tidak ada yang sadar.
+					t.TimePosition = ref
+				end
+			end
+		end
+	end
+end)
+
+-- ============ SAMBUNGAN ============
+
+KameraEvent.OnClientEvent:Connect(function(jenis, d)
+	if jenis == "focus" then
+		focusCamera(d)
+	elseif jenis == "shake" then
+		guncangKamera(d)
+	elseif jenis == "spotlight" then
+		sorotKamera(d)
+	end
+end)
+
+-- Bingkai pertama, sebelum ada satu pun kedatangan.
+--
+-- Ini yang dulu hilang sama sekali: penonton yang join di tengah siaran
+-- tidak menerima event apa pun sampai orang berikutnya datang, jadi
+-- kameranya diam di mode Custom -- menempel di avatarnya sendiri. Kalau
+-- polling-nya sedang sepi, itu bisa berpuluh detik.
+if camera then
+	camera.CameraType = Enum.CameraType.Scriptable
+
+	local titik = CFG.crowd or Vector3.new(0, 5, 0)
+	camera.CFrame = CFrame.new(
+		titik + Vector3.new(0, CFG.up, CFG.back),
+		titik)
+end

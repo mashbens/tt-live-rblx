@@ -1,0 +1,1411 @@
+--[[
+    Kamera + Aura Client  --  pasangan dari my_scrip_lua_v2
+
+    Taruh di: StarterPlayer > StarterPlayerScripts
+              (Insert Object > LocalScript, beri nama KameraClientV2)
+
+    MATIKAN KameraClient yang lama. Dua LocalScript yang sama-sama
+    menulis workspace.CurrentCamera tiap frame bikin kameranya bergetar
+    di antara dua tujuan.
+
+    KENAPA HARUS DIPISAH DARI SCRIPT SERVER
+
+    `workspace.CurrentCamera` milik client: tiap pemain punya Camera
+    sendiri, dan tidak satu pun direplikasi ke server. Di Studio (Play)
+    server dan client jalan di satu proses jadi kode kamera dari server
+    kebetulan kena; di game yang sudah di-publish, server tidak punya
+    Camera sama sekali -- tidak ada error, penonton cuma memandang
+    avatarnya sendiri.
+
+    Hal yang sama berlaku untuk ScreenGui (aura harus di layar TIAP
+    penonton) dan untuk AnimationTrack.TimePosition (penyamaan tarian).
+
+    TIDAK ADA ANGKA UNTUK DISETEL DI FILE INI.
+    Semuanya (CAMERA_*, AURA_*, RESYNC_*) tinggal di my_scrip_lua_v2 dan
+    ditarik lewat V2Config.
+--]]
+
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local TweenService      = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SoundService      = game:GetService("SoundService")
+local Lighting          = game:GetService("Lighting")
+local ContentProvider   = game:GetService("ContentProvider")
+
+-- Salah taruh? Berhenti di sini dengan pesan yang jelas.
+--
+-- Kalau file ini di-paste ke ServerScriptService sebagai Script, yang
+-- muncul di Output cuma "InvokeServer can only be called from the
+-- client" sepuluh baris di bawah -- pesan yang tidak menyebut sama
+-- sekali bahwa masalahnya letak file, bukan kodenya.
+if not RunService:IsClient() then
+	warn("kamera_client_lua_v2 jalan di SERVER. File ini harus " ..
+		"LocalScript di StarterPlayer > StarterPlayerScripts " ..
+		"(nama: KameraClientV2), bukan Script di ServerScriptService.")
+	return
+end
+
+-- WaitForChild, bukan FindFirstChild: LocalScript sering jalan lebih
+-- dulu daripada script server yang membuat remote-nya.
+local V2Event  = ReplicatedStorage:WaitForChild("V2Event")
+local V2Config = ReplicatedStorage:WaitForChild("V2Config")
+
+-- Ditarik, bukan menunggu didorong: PlayerAdded di server sering menyala
+-- sebelum LocalScript ini jalan.
+--
+-- Dibungkus pcall dengan nilai cadangan lengkap. Kalau panggilan ini
+-- error (server belum sempat memasang OnServerInvoke, script server
+-- di-disable, remote-nya sisa dari run sebelumnya), baris ini dulu
+-- mematikan SELURUH LocalScript -- termasuk gelung kameranya. Yang
+-- terlihat cuma "kamera tidak bergerak", tanpa satu pun petunjuk bahwa
+-- yang gagal sebenarnya pengambilan angka.
+local CADANGAN = {
+	up = 2.5, upJauh = 7, back = -11, sweepDeg = 5, sweepS = 9, moveS = 0.8,
+	auraTime = 3.5, auraRoll = 0.6, auraY = 0.12, auraH = 0.32,
+	auraKepala = true, auraLayar = false,
+	auraKepalaY = 3.2, auraKepalaW = 190, auraKepalaH = 96,
+	auraKepalaJauh = 220, auraDepanSaja = true, auraFadeOut = 0.3,
+	auraSfx = "", auraSfxVol = 0.7, auraSfxRoll = true,
+	auraSfxSpeed = 1, auraSfxLoop = false,
+	auraSfxHit = "", auraSfxHitVol = 0.8,
+	sinema = true, sinemaOrbitS = 14, sinemaBack = -12, sinemaUp = 5.5,
+	zoom = true, zoomMasuk = 0.45, zoomTahan = 1.0, zoomKeluar = 1.8,
+	spawnLurus = true,
+	resyncEvery = 3, driftLimit = 0.04,
+	syncKp = 0.6, syncSpeedMaks = 0.15, syncSnap = 0.35,
+	visualAuto = true, visualFpsMin = 32, visualBloom = 0.45,
+}
+
+local ok, hasil = pcall(function()
+	return V2Config:InvokeServer()
+end)
+
+local CFG = ok and hasil or CADANGAN
+if not ok then
+	warn("V2Config gagal ditarik, pakai angka cadangan:", hasil)
+end
+for k, v in pairs(CADANGAN) do
+	if CFG[k] == nil then CFG[k] = v end
+end
+
+local pemain = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- Penanda "aku hidup".
+--
+-- Kamera yang diam punya dua sebab yang kelihatan sama persis di layar:
+-- (a) LocalScript-nya tidak jalan sama sekali, (b) dia jalan tapi
+-- gelungnya salah. Tanpa baris ini tidak ada cara membedakannya -- dan
+-- keduanya butuh perbaikan yang sama sekali berbeda.
+--
+-- Kalau baris ini TIDAK muncul di Output (tab Client), berarti (a):
+-- filenya bukan LocalScript, atau bukan di StarterPlayerScripts, atau
+-- kamu menekan Run, bukan Play (Run tidak membuat pemain, jadi tidak
+-- ada satu pun LocalScript yang dijalankan).
+print(("KameraClientV2 aktif -- ayunan %s derajat / %s detik, fokus awal %s")
+	:format(tostring(CFG.sweepDeg), tostring(CFG.sweepS), tostring(CFG.fokus)))
+
+-- ============ MEMPERTAHANKAN KENDALI KAMERA ============
+--
+-- Kamera bawaan Roblox (PlayerModule) menyetel CameraType kembali ke
+-- Custom setiap kali karakter di-load -- dan itu terjadi SESUDAH script
+-- ini jalan. Jadi yang dipasang penjaga, bukan satu perintah.
+local dijaga = {}
+
+local function jagaKamera(cam)
+	if not cam then return end
+	cam.CameraType = Enum.CameraType.Scriptable
+	if dijaga[cam] then return end
+	dijaga[cam] = true
+
+	cam:GetPropertyChangedSignal("CameraType"):Connect(function()
+		if cam.CameraType ~= Enum.CameraType.Scriptable then
+			cam.CameraType = Enum.CameraType.Scriptable
+		end
+	end)
+end
+
+jagaKamera(camera)
+
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+	if workspace.CurrentCamera then
+		camera = workspace.CurrentCamera
+		jagaKamera(camera)
+	end
+end)
+
+pemain.CharacterAdded:Connect(function()
+	-- Satu frame jeda: kamera bawaan menyetel Custom sesudah
+	-- CharacterAdded menyala.
+	task.defer(function() jagaKamera(workspace.CurrentCamera) end)
+end)
+
+-- ============ KAMERA: AYUNAN KIRI-KANAN ============
+--
+-- Satu gelung, terus-menerus, tanpa potongan:
+--   posisi = fokus + (offset diputar sin(t) derajat mengelilingi fokus)
+--   arah   = selalu memandang fokus
+--
+-- Yang berubah saat ada kedatangan cuma TITIK FOKUSNYA, dan itu pun
+-- digeser halus (bukan diloncatkan) supaya panggungnya tidak tersentak.
+local fokusTarget = CFG.fokus or Vector3.new(0, 5, 0)
+local fokusKini   = fokusTarget
+
+local offsetDasar = Vector3.new(0, CFG.up, CFG.back)
+
+-- ============ MODE SINEMATIK ============
+--
+-- Selama sorotan (tier 2/3), kamera berhenti mengayun dan MENGORBIT
+-- penuh sambil merapat sedikit. Server cuma mengirim satu pesan berisi
+-- lama detiknya; client yang menghitung sisanya, dan dia kembali ke
+-- ayunan biasa sendiri begitu waktunya habis.
+local offsetSinema = Vector3.new(0, CFG.sinemaUp, CFG.sinemaBack)
+
+-- Kapan mode ini berakhir (os.clock). 0 = sedang tidak menyala.
+local sinemaSampai = 0
+
+-- Apakah adegan yang sedang jalan MENGORBIT. Tier 2 tidak: dia cuma
+-- menahan dekat. Bedanya harus di jenis gerakan, bukan cuma di lamanya
+-- -- dua gerakan yang sama dengan durasi berbeda tidak terbaca sebagai
+-- dua tingkat.
+local sinemaOrbit = false
+
+-- Pengali jarak kamera untuk adegan ini. Dipakai raksasa tier 3, yang
+-- pada jarak biasa tidak muat di frame -- kameranya berakhir di dalam
+-- tulang keringnya.
+local sinemaJauh = 1
+
+-- 0 = ayunan biasa, 1 = orbit penuh. Dipindah halus, tidak dijentikkan:
+-- kamera yang mendadak merapat sembilan studs di satu frame terbaca
+-- sebagai potongan, dan seluruh v2 dibangun tanpa satu pun potongan.
+local sinemaMix = 0
+
+-- Selisih sudut yang MENUMPUK selama orbit.
+--
+-- Ini bagian yang gampang salah. Ayunan biasa itu fungsi waktu:
+-- sin(t) -- kalau orbit sekadar menimpanya, begitu orbitnya selesai
+-- sudutnya harus meloncat kembali ke nilai sin(t) saat itu, dan
+-- loncatan itu bisa sampai setengah lingkaran.
+--
+-- Jadi yang disimpan bukan sudutnya, tapi SELISIHNYA terhadap ayunan.
+-- Selama orbit selisih ini tumbuh (orbit berputar lebih cepat daripada
+-- ayunan), dan sesudahnya dia diluruhkan pelan ke nol. Tidak ada satu
+-- pun frame yang meloncat, dan kameranya selalu pulang ke ayunan yang
+-- sama seperti sebelum adegan.
+local sudutBias = 0
+
+-- Lama selisih itu diluruhkan, detik.
+--
+-- Dipakai dua hal sekaligus sekarang: pulang dari orbit, DAN pulang
+-- dari pandangan lurus saat spawn (lihat SPAWN_LURUS di server). Dua-
+-- duanya persoalan yang sama -- sudut yang digeser paksa harus kembali
+-- ke ayunan alaminya tanpa satu pun frame yang meloncat.
+local SINEMA_PULIH = 2.0
+
+-- Sudut ayunan dan kecepatannya pada waktu t.
+--
+-- Dijadikan fungsi karena dua tempat membutuhkannya: gelung render
+-- (tiap frame) dan penangan pesan kedatangan, yang harus tahu ayunannya
+-- sedang di sudut berapa supaya bisa membatalkannya tepat sebanyak itu.
+-- Dulu angkanya cuma hidup di dalam gelung, dan penangan pesan tidak
+-- punya cara membacanya sama sekali.
+local function ayunPada(t)
+	local w   = (2 * math.pi) / math.max(CFG.sweepS or 9, 0.1)
+	local amp = math.rad(CFG.sweepDeg or 20)
+	return amp * math.sin(t * w), amp * w * math.cos(t * w)
+end
+
+-- Batalkan ayunan sekarang juga, lalu lepas pelan-pelan.
+--
+-- sudutBias disetel PERSIS berlawanan dengan ayunan saat ini, jadi
+-- jumlah keduanya nol: kamera memandang lurus ke orang yang baru
+-- datang. Sesudah itu bias-nya meluruh sendiri (SINEMA_PULIH) dan
+-- ayunannya kembali seperti semula.
+--
+-- Tidak ada frame yang meloncat karena yang berubah cuma satu angka
+-- yang memang sudah dijumlahkan ke sudutnya tiap frame -- mesin yang
+-- sama yang dipakai orbit.
+local function pandangLurus()
+	if not CFG.spawnLurus then return end
+	local ayun = ayunPada(os.clock())
+	sudutBias = -ayun
+end
+
+-- ============ ZOOM MASUK LALU KELUAR ============
+--
+-- Tiap kedatangan baru, kamera mulai DEKAT lalu ditarik mundur ke jarak
+-- biasa. Ini yang menggantikan ayunan lebar sebagai sumber gerakan:
+-- ayunan menggerakkan seluruh gambar terus-menerus, zoom bergerak
+-- sekali per kedatangan lalu berhenti.
+--
+-- Yang disimpan cuma KAPAN kedatangan terakhir; sisanya dihitung ulang
+-- tiap frame dari selisih waktunya. Tidak ada tween yang harus
+-- dibatalkan kalau ada yang datang di tengah jalan -- kedatangan
+-- berikutnya cuma menulis ulang satu angka.
+local zoomMulai = -1e9   -- jauh di masa lalu = sedang tidak zoom
+
+-- Berapa lama menahan dekat sebelum mundur. Diisi ulang tiap kedatangan:
+-- yang biasa memakai CFG.zoomTahan, yang BERBAYAR memakai lama
+-- sorotannya sendiri -- jadi kamera menahan dekat di orang yang bayar
+-- selama dia masih jadi sorotan, bukan cuma 1,6 detik pertama.
+local zoomTahan = 0
+
+-- Berapa frame gelung ini benar-benar jalan. Dipakai laporan di bawah:
+-- "gelungnya tidak pernah jalan" dan "gelungnya jalan tapi hasilnya tidak
+-- kelihatan" itu dua penyakit berbeda dengan obat berbeda.
+local frame = 0
+
+RunService.RenderStepped:Connect(function(dt)
+	-- Dibaca ULANG tiap frame, bukan dipakai salinan dari awal script.
+	--
+	-- Ini bug yang bikin kamera diam total tanpa error: `camera` diisi
+	-- sekali di awal dari workspace.CurrentCamera, dan di awal sesi
+	-- nilainya masih bisa nil. Setelah itu satu-satunya yang memperbarui
+	-- salinan lokal ini sinyal "CurrentCamera berubah" -- dan sinyal itu
+	-- TIDAK menyala kalau kameranya sudah terpasang sejak sebelum script
+	-- ini jalan. Jadi salinannya nil selamanya, gelung ini return di
+	-- baris pertama tiap frame, dan tidak ada satu pun yang bisa
+	-- dilihat di Output.
+	--
+	-- Membaca properti tiap frame itu murah; kehilangan kamera karena
+	-- balapan yang tidak kelihatan tidak.
+	camera = workspace.CurrentCamera
+	if not camera then return end
+	frame += 1
+
+	-- Dipaksa tiap frame, bukan cuma lewat sinyal.
+	--
+	-- PlayerModule menyetel CameraType kembali ke Custom, dan sinyal
+	-- GetPropertyChangedSignal kadang kalah cepat (atau tidak menyala
+	-- kalau nilainya diset ke nilai yang sama dari sisi mesin). Menulis
+	-- nilai yang sudah sama tidak memicu apa-apa, jadi ini gratis.
+	if camera.CameraType ~= Enum.CameraType.Scriptable then
+		camera.CameraType = Enum.CameraType.Scriptable
+	end
+
+	-- Penghalusan eksponensial: tidak bergantung frame rate, dan tidak
+	-- perlu tahu kapan gerakannya "selesai" -- fokus baru boleh datang
+	-- kapan saja di tengah jalan.
+	local a = 1 - math.exp(-dt / math.max(CFG.moveS or 0.8, 0.05) * 3)
+	fokusKini = fokusKini:Lerp(fokusTarget, math.clamp(a, 0, 1))
+
+	local t = os.clock()
+
+	-- Ayunan biasa, DAN kecepatan sudutnya (turunan dari sin). Yang
+	-- kedua dipakai supaya orbit bisa mengambil alih sebagai selisih
+	-- kecepatan, bukan sebagai posisi baru -- lihat sudutBias di atas.
+	local ayun, ayunVel = ayunPada(t)
+
+	-- Zoom: 0 = sedekat CFG.zoomMasuk, 1 = jarak penuh.
+	local zoom = 1
+	if CFG.zoom then
+		local zt = t - zoomMulai - zoomTahan
+		if zt <= 0 then
+			zoom = 0
+		elseif zt < CFG.zoomKeluar then
+			local u = zt / CFG.zoomKeluar
+			-- Cubic out: mundurnya cepat di awal lalu melambat, jadi
+			-- gerakannya berhenti dengan lembut dan bukan dengan rem.
+			zoom = 1 - (1 - u) * (1 - u) * (1 - u)
+		end
+	end
+
+	local aktif = CFG.sinema and t < sinemaSampai
+	local tujuanMix = aktif and 1 or 0
+	local m = 1 - math.exp(-dt / 0.9 * 3)
+	sinemaMix = sinemaMix + (tujuanMix - sinemaMix) * math.clamp(m, 0, 1)
+
+	-- Orbit hanya untuk adegan yang memang mengorbit. Tier 2 lewat sini
+	-- dengan sinemaMix penuh tapi sinemaOrbit false: kameranya tetap
+	-- mengayun seperti biasa, yang berubah cuma jaraknya.
+	local orbitAktif = sinemaOrbit and sinemaMix > 0.001
+	if orbitAktif then
+		local orbitVel = (2 * math.pi) / math.max(CFG.sinemaOrbitS or 14, 0.5)
+		sudutBias += (orbitVel - ayunVel) * sinemaMix * dt
+	end
+
+	-- Dilipat ke [-pi, pi] supaya peluruhan di bawah mengambil jalan
+	-- terdekat. Tanpa ini, orbit tiga putaran meninggalkan selisih 18
+	-- radian dan kameranya "memutar balik" tiga kali sebelum tenang --
+	-- padahal sudut 18 dan sudut 18-6pi itu tempat yang sama persis.
+	if sudutBias > math.pi or sudutBias < -math.pi then
+		sudutBias = (sudutBias + math.pi) % (2 * math.pi) - math.pi
+	end
+
+	-- Diluruhkan kapan pun orbit TIDAK sedang mengemudikannya.
+	--
+	-- Syaratnya dulu `sinemaMix < 0.02`, dan itu salah sejak sudutBias
+	-- ikut dipakai pandangLurus. Sorotan tier 2 punya sinemaMix penuh
+	-- tapi tidak mengorbit: bias-nya membeku di angka pembatal ayunan
+	-- selama lima detik penuh, sementara ayunan yang dibatalkannya terus
+	-- berjalan. Hasilnya sudut = ayun(sekarang) - ayun(saat datang),
+	-- yang bisa mencapai DUA KALI lebar ayunan -- justru lebih menyerong
+	-- daripada kalau tidak dibetulkan sama sekali.
+	if not orbitAktif and sudutBias ~= 0 then
+		sudutBias = sudutBias * math.exp(-dt / SINEMA_PULIH)
+		if math.abs(sudutBias) < 0.001 then sudutBias = 0 end
+	end
+
+	local sudut = ayun + sudutBias
+
+	-- Jaraknya dicampur dulu (biasa -> sinematik), lalu zoom bekerja di
+	-- atasnya. Zoom sengaja MENGALIKAN, bukan jadi lapis campuran
+	-- ketiga: dengan begitu dia bekerja sama di jarak mana pun --
+	-- termasuk di jarak raksasa yang berkali lipat -- tanpa satu pun
+	-- angka tambahan.
+	local dasar = offsetDasar:Lerp(offsetSinema * sinemaJauh, sinemaMix)
+	local skala = CFG.zoomMasuk + (1 - CFG.zoomMasuk) * zoom
+
+	-- TINGGINYA tidak ikut dikalikan -- dia justru NAIK saat kameranya
+	-- mundur.
+	--
+	-- Kalau tingginya ikut dikalikan seperti jaraknya, kamera yang
+	-- mundur juga ikut turun mendekati lantai, dan dari sana barisan
+	-- yang sejajar dan sama tinggi saling menutupi: yang terlihat cuma
+	-- baris paling depan, sisanya bersembunyi persis di belakang badan
+	-- mereka. Naik sedikit sambil mundur membuat kepala baris kedua dan
+	-- ketiga muncul di atas bahu baris di depannya.
+	--
+	-- Kenaikannya DITAMBAHKAN, bukan menimpa: jadi mode sinematik yang
+	-- punya tingginya sendiri (sinemaUp) tetap terpakai, dan yang ini
+	-- cuma menumpang di atasnya.
+	-- Tingginya IKUT diskalakan seperti jaraknya, LALU ditambah
+	-- kenaikan yang cuma berlaku waktu mundur.
+	--
+	-- Skalanya tidak boleh dilewati. Kalau tinggi dibiarkan penuh
+	-- sementara jaraknya dipangkas jadi 45%, sudut tunduk kamera
+	-- melonjak dari 13 ke 27 derajat tepat di detik dia paling dekat --
+	-- dan sudut tunduk itu yang memotong kaki. Persis masalah yang
+	-- CAMERA_UP diturunkan untuk menyelesaikannya.
+	--
+	-- Jadi dua suku: yang pertama menjaga sudut pandangnya tetap sama
+	-- di jarak berapa pun, yang kedua menaikkan kamera HANYA saat dia
+	-- sudah mundur -- di situ yang penting kerumunannya, bukan satu
+	-- badan yang utuh.
+	local naik = ((CFG.upJauh or CFG.up) - CFG.up) * zoom
+	dasar = Vector3.new(dasar.X * skala,
+		dasar.Y * skala + naik,
+		dasar.Z * skala)
+
+	local offset = CFrame.Angles(0, sudut, 0):VectorToWorldSpace(dasar)
+	camera.CFrame = CFrame.new(fokusKini + offset, fokusKini)
+end)
+
+-- Laporan sekali, dua detik setelah mulai.
+--
+-- Ini yang membedakan tiga sebab "kamera diam" yang di layar kelihatan
+-- sama persis:
+--   frame = 0             -> gelungnya tidak jalan sama sekali
+--   CameraType ~= Script  -> ada yang merebut kamera (KameraClient lama?)
+--   posisi tidak berubah  -> gelungnya jalan tapi angkanya nol
+task.delay(2, function()
+	local p1 = camera and camera.CFrame.Position
+	task.wait(1)
+	local p2 = camera and camera.CFrame.Position
+
+	print(("[diagnosa kamera] frame=%d  type=%s  geser 1 detik=%.2f studs")
+		:format(frame,
+			camera and tostring(camera.CameraType) or "tanpa kamera",
+			(p1 and p2) and (p2 - p1).Magnitude or -1))
+end)
+
+-- ============ AURA DI TENGAH LAYAR ============
+
+local gui = Instance.new("ScreenGui")
+gui.Name           = "AuraGui"
+gui.ResetOnSpawn   = false
+gui.IgnoreGuiInset = true
+gui.DisplayOrder   = 10
+gui.Parent         = pemain:WaitForChild("PlayerGui")
+
+-- Ukurannya pakai Scale, bukan Offset: layar HP penonton dan layar
+-- Studio jauh berbeda, dan tulisan yang pas di satu layar hilang di
+-- layar lain kalau dipatok pixel.
+-- HUD diagnosa di pojok kiri atas.
+--
+-- Laporan yang sama seperti print di atas, tapi DI LAYAR dan hidup
+-- terus. Sebabnya sederhana: kalau HUD-nya sendiri tidak kelihatan,
+-- itu sudah jawaban -- LocalScript-nya memang tidak jalan, dan tidak
+-- perlu ada yang membaca Output untuk tahu itu.
+--
+-- Matikan lewat DEBUG_HUD di my_scrip_lua_v2 kalau sudah beres.
+local hud = nil
+if CFG.debug then
+	hud = Instance.new("TextLabel")
+	hud.Size                   = UDim2.new(0, 420, 0, 22)
+	hud.Position               = UDim2.new(0, 8, 0, 8)
+	hud.BackgroundColor3       = Color3.fromRGB(0, 0, 0)
+	hud.BackgroundTransparency = 0.4
+	hud.Font                   = Enum.Font.Code
+	hud.TextSize               = 14
+	hud.TextColor3             = Color3.fromRGB(120, 255, 140)
+	hud.TextXAlignment         = Enum.TextXAlignment.Left
+	hud.Text                   = "kamera: menunggu frame pertama"
+	hud.Parent                 = gui
+
+	task.spawn(function()
+		local lalu = nil
+		while true do
+			local cam = workspace.CurrentCamera
+			local p   = cam and cam.CFrame.Position
+			local gsr = (p and lalu) and (p - lalu).Magnitude or 0
+			lalu = p
+
+			hud.Text = ("frame=%d  %s  geser=%.2f  fokus=%s")
+				:format(frame,
+					cam and tostring(cam.CameraType):gsub("Enum.CameraType.", "")
+						or "TANPA KAMERA",
+					gsr,
+					string.format("%.0f,%.0f,%.0f",
+						fokusKini.X, fokusKini.Y, fokusKini.Z))
+			task.wait(0.5)
+		end
+	end)
+end
+
+-- ============ GAYA TEKS (FONT, GRADIEN, GLOW) ============
+--
+-- Font bawaan Roblox (Gotham/Legacy) langsung terbaca "template": semua
+-- game pakai itu. Yang dipakai di sini FontFace, bukan Enum.Font --
+-- keluarga font yang sama dengan yang dipakai UI game modern, dengan
+-- bobot huruf yang bisa dipilih sendiri.
+--
+--   Sarpanch ExtraBold  -> ANGKA. Huruf lebar, sudutnya tajam, terbaca
+--                          dari jauh. Ini yang bikin angkanya terasa
+--                          seperti skor, bukan teks biasa.
+--   Montserrat Bold     -> NAMA. Geometris, bersih, tidak berebut
+--                          perhatian dengan angkanya.
+--
+-- Tiga lapis yang bikin teksnya "hidup" tanpa jadi ramai:
+--   1. UIGradient  -- warnanya bergerak dari atas ke bawah, bukan satu
+--                     warna datar.
+--   2. UIStroke    -- garis gelap tipis, tugasnya cuma memisahkan huruf
+--                     dari langit/avatar di belakangnya.
+--   3. label kembar di belakang -- huruf yang sama, warna neon, stroke
+--                     tebal dan tembus. Roblox tidak punya blur untuk
+--                     GUI, jadi glow-nya dipalsukan begini. Efeknya
+--                     halus: yang dilihat penonton cuma "hurufnya
+--                     bercahaya".
+local FONT_ANGKA = Font.new("rbxasset://fonts/families/Sarpanch.json",
+	Enum.FontWeight.ExtraBold)
+local FONT_NAMA  = Font.new("rbxasset://fonts/families/Montserrat.json",
+	Enum.FontWeight.Bold)
+local FONT_KATA  = Font.new("rbxasset://fonts/families/Montserrat.json",
+	Enum.FontWeight.SemiBold)
+
+local function grad(...)
+	local titik = {}
+	for i, w in ipairs({ ... }) do
+		table.insert(titik, ColorSequenceKeypoint.new(
+			(i - 1) / (select("#", ...) - 1), w))
+	end
+	return ColorSequence.new(titik)
+end
+
+-- Nama: neon biru -> ungu. Dipakai untuk SEMUA nama, sengaja sama --
+-- yang boleh berbeda antar avatar cuma angkanya.
+local GRAD_NAMA = grad(Color3.fromRGB(125, 226, 255),
+                       Color3.fromRGB(150, 170, 255),
+                       Color3.fromRGB(196, 130, 255))
+local GLOW_NAMA = Color3.fromRGB(110, 150, 255)
+
+-- Angka: warnanya IKUT nilainya. Penonton hafal polanya setelah
+-- beberapa kedatangan, dan itu yang bikin angka 900 terasa berbeda dari
+-- 200 sebelum angkanya sendiri terbaca.
+local TIER = {
+	{ min = 850, warna = grad(Color3.fromRGB(255, 236, 150),
+	                          Color3.fromRGB(255, 150,  50),
+	                          Color3.fromRGB(255,  72,  60)),
+	             glow  = Color3.fromRGB(255, 120, 40) },
+	{ min = 600, warna = grad(Color3.fromRGB(255, 170, 240),
+	                          Color3.fromRGB(210, 120, 255),
+	                          Color3.fromRGB(140, 110, 255)),
+	             glow  = Color3.fromRGB(200, 110, 255) },
+	{ min =   0, warna = grad(Color3.fromRGB(160, 255, 250),
+	                          Color3.fromRGB(110, 190, 255),
+	                          Color3.fromRGB(140, 130, 255)),
+	             glow  = Color3.fromRGB(90, 170, 255) },
+}
+
+local function tier(persen)
+	for _, t in ipairs(TIER) do
+		if persen >= t.min then return t end
+	end
+	return TIER[#TIER]
+end
+
+-- Label kembar di belakang tiap teks. Disimpan di tabel, bukan sebagai
+-- anak label aslinya: anak SELALU digambar di atas induknya (ZIndex
+-- Sibling), jadi glow yang jadi anak malah menutupi hurufnya.
+local glowOf = setmetatable({}, { __mode = "k" })
+
+local function setTeks(t, txt)
+	t.Text = txt
+	local g = glowOf[t]
+	if g then g.Text = txt end
+end
+
+local function warnai(t, warna, glow)
+	local g = t:FindFirstChildOfClass("UIGradient")
+	if g then g.Color = warna end
+
+	local kembar = glowOf[t]
+	if kembar then
+		kembar.TextColor3 = glow
+		local s = kembar:FindFirstChildOfClass("UIStroke")
+		if s then s.Color = glow end
+	end
+end
+
+-- Satu baris teks lengkap: gradien + stroke + glow.
+--   induk   ScreenGui/BillboardGui/Frame tempat dia ditaruh
+--   warna   ColorSequence gradiennya
+--   glow    warna cahayanya (nil = tanpa glow)
+--   tembus  transparansi teks aslinya
+local function teksGaya(induk, nama, posY, tinggi, font, warna, glow,
+                        tebalStroke, tembus, ukuranMax)
+	local t = Instance.new("TextLabel")
+	t.Name                   = nama
+	t.Size                   = UDim2.new(1, 0, tinggi, 0)
+	t.Position               = UDim2.new(0, 0, posY, 0)
+	t.BackgroundTransparency = 1
+	t.FontFace               = font
+	t.TextColor3             = Color3.fromRGB(255, 255, 255)
+	t.TextScaled             = true
+	t.TextTransparency       = tembus or 0
+	-- TextStroke lama dimatikan: dia menggandakan huruf jadi blok hitam
+	-- bergerigi. UIStroke di bawah jauh lebih bersih (sudutnya bulat,
+	-- tebalnya bisa pecahan).
+	t.TextStrokeTransparency = 1
+	t.Text                   = ""
+	t.ZIndex                 = 2
+	t.Parent                 = induk
+
+	if ukuranMax then
+		local batas = Instance.new("UITextSizeConstraint")
+		batas.MaxTextSize = ukuranMax
+		batas.Parent      = t
+	end
+
+	local g = Instance.new("UIGradient")
+	g.Color    = warna
+	g.Rotation = 90
+	g.Parent   = t
+
+	local s = Instance.new("UIStroke")
+	s.Color           = Color3.fromRGB(10, 12, 24)
+	s.Thickness       = tebalStroke
+	s.Transparency    = 0.15
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+	s.LineJoinMode    = Enum.LineJoinMode.Round
+	s.Parent          = t
+
+	t:SetAttribute("BaseT", tembus or 0)
+	t:SetAttribute("BaseS", 0.15)
+
+	if glow then
+		-- Clone, bukan bikin dari nol: apa pun yang berubah di label
+		-- aslinya (ukuran, posisi, batas ukuran huruf) ikut sendiri.
+		local k = t:Clone()
+		k.Name              = nama .. "Glow"
+		k.ZIndex            = 1
+		k.TextColor3        = glow
+		k.TextTransparency  = 0.55
+		local kg = k:FindFirstChildOfClass("UIGradient")
+		if kg then kg:Destroy() end
+		local ks = k:FindFirstChildOfClass("UIStroke")
+		ks.Color        = glow
+		ks.Thickness    = tebalStroke * 3.5
+		ks.Transparency = 0.45
+		k:SetAttribute("BaseT", 0.55)
+		k:SetAttribute("BaseS", 0.45)
+		k.Parent = induk
+		glowOf[t] = k
+	end
+
+	return t
+end
+
+-- Label + glow-nya sebagai satu daftar, untuk di-tween bareng.
+local function lapisan(daftar)
+	local out = {}
+	for _, t in ipairs(daftar) do
+		table.insert(out, t)
+		if glowOf[t] then table.insert(out, glowOf[t]) end
+	end
+	return out
+end
+
+-- Muncul/hilang. Tiap lapis kembali ke transparansi ASALNYA, bukan ke
+-- nol: glow yang dipaksa ke nol berhenti jadi cahaya dan jadi huruf
+-- kedua yang tebal.
+local function pudar(daftar, waktu, keluar)
+	for _, t in ipairs(lapisan(daftar)) do
+		local s  = t:FindFirstChildOfClass("UIStroke")
+		local tT = keluar and 1 or (t:GetAttribute("BaseT") or 0)
+		local sT = keluar and 1 or (t:GetAttribute("BaseS") or 0)
+		local info = TweenInfo.new(waktu)
+
+		if not keluar then
+			t.TextTransparency = 1
+			if s then s.Transparency = 1 end
+		end
+		TweenService:Create(t, info, { TextTransparency = tT }):Play()
+		if s then TweenService:Create(s, info, { Transparency = sT }):Play() end
+	end
+end
+
+local kotak = Instance.new("Frame")
+kotak.Size                   = UDim2.new(1, 0, CFG.auraH, 0)
+kotak.Position               = UDim2.new(0, 0, CFG.auraY, 0)
+kotak.BackgroundTransparency = 1
+kotak.Visible                = false
+kotak.Parent                 = gui
+
+-- Aura di layar: ukuran hurufnya besar, jadi stroke dan glow-nya ikut
+-- tebal. Angkanya yang paling menyala; nama dan kata AURA di bawahnya
+-- lebih tenang supaya matanya tetap jatuh ke angka.
+local lblNama = teksGaya(kotak, "Nama", 0.00, 0.22, FONT_NAMA,
+	GRAD_NAMA, GLOW_NAMA, 2, 0, 70)
+local lblPersen = teksGaya(kotak, "Persen", 0.22, 0.48, FONT_ANGKA,
+	TIER[#TIER].warna, TIER[#TIER].glow, 3, 0, 200)
+local lblAura = teksGaya(kotak, "Aura", 0.72, 0.26, FONT_KATA,
+	grad(Color3.fromRGB(225, 232, 245), Color3.fromRGB(170, 182, 210)),
+	nil, 1.5, 0.1, 90)
+lblAura.TextXAlignment = Enum.TextXAlignment.Center
+
+-- Nomor tayangan yang sedang jalan.
+--
+-- Kedatangan berikutnya bisa masuk sebelum yang sekarang selesai (poll
+-- tiap 1 detik). Tanpa nomor ini, task lama yang bangun belakangan
+-- menyembunyikan aura milik orang yang BARU muncul.
+local auraGen = 0
+
+local function tampilkanAura(d)
+	auraGen += 1
+	local gen = auraGen
+
+	setTeks(lblNama,   d.nama or "?")
+	setTeks(lblAura,   "A U R A")
+	setTeks(lblPersen, "0%")
+	-- Warna angkanya dipasang SEBELUM hitungannya jalan: kalau diganti
+	-- di akhir, gradiennya berkedip pas angkanya berhenti.
+	local jenjang = tier(d.persen or 0)
+	warnai(lblPersen, jenjang.warna, jenjang.glow)
+	kotak.Visible = true
+
+	pudar({ lblNama, lblPersen, lblAura }, 0.18, false)
+
+	task.spawn(function()
+		-- Angkanya berhitung naik, tidak langsung ditulis: yang bikin
+		-- angka acak terasa seperti "diundi" itu gerakannya, bukan
+		-- besarnya.
+		local target = d.persen or 0
+		local roll   = math.max(d.roll or CFG.auraRoll or 0.6, 0.01)
+		local mulai  = os.clock()
+
+		while gen == auraGen do
+			local t = (os.clock() - mulai) / roll
+			if t >= 1 then break end
+			-- Melambat di akhir, jadi angka terakhirnya sempat terbaca.
+			local e = 1 - (1 - t) * (1 - t) * (1 - t)
+			setTeks(lblPersen, ("%d%%"):format(math.floor(target * e)))
+			RunService.RenderStepped:Wait()
+		end
+
+		if gen ~= auraGen then return end
+		setTeks(lblPersen, ("%d%%"):format(target))
+
+		-- Sentakan kecil di angka akhirnya. Ini penanda "sudah, ini
+		-- angkanya" -- tanpa itu hitungannya cuma berhenti.
+		for _, t in ipairs(lapisan({ lblPersen })) do
+			t.Size = UDim2.new(1, 0, 0.54, 0)
+			TweenService:Create(t,
+				TweenInfo.new(0.25, Enum.EasingStyle.Back,
+					Enum.EasingDirection.Out),
+				{ Size = UDim2.new(1, 0, 0.48, 0) }):Play()
+		end
+
+		task.wait(math.max((d.lama or CFG.auraTime or 3.5) - roll, 0.2))
+		if gen ~= auraGen then return end
+
+		pudar({ lblNama, lblPersen, lblAura }, 0.3, true)
+		task.wait(0.3)
+		if gen == auraGen then kotak.Visible = false end
+	end)
+end
+
+-- ============ AURA DI ATAS KEPALA ============
+--
+-- Versi dunia dari tulisan yang sama. Bedanya bukan cuma tempat:
+-- yang di layar tampil satu per satu lalu hilang, yang ini MENETAP di
+-- atas kepala pemiliknya sampai avatarnya dihapus. Jadi penonton bisa
+-- membandingkan angka satu avatar dengan tetangganya -- dan itu yang
+-- bikin angka acak jadi bahan omongan di kolom komentar.
+--
+-- Warna dan bobot huruf sengaja tidak rata. Versi sebelumnya putih
+-- pekat + emas terang di tiga barisnya sekaligus: tiap baris berteriak
+-- sama kerasnya, jadi tidak ada yang menonjol dan yang terbaca cuma
+-- "ramai". Sekarang cuma ANGKA-nya yang bergradien dan bercahaya; nama
+-- dan kata AURA lebih tenang, tugasnya memberi konteks.
+-- Papan yang masih terpasang, beserta barisnya. Dipakai untuk melepas
+-- papan baris belakang begitu ada yang membuka baris baru di depan.
+local papanAura = {}
+
+-- Lepaskan papan semua avatar yang barisnya DI BELAKANG baris ini.
+local function lepasBarisBelakang(barisDepan)
+	if not CFG.auraDepanSaja then return end
+
+	for i = #papanAura, 1, -1 do
+		local p = papanAura[i]
+
+		if not p.gui.Parent then
+			table.remove(papanAura, i)
+		elseif p.baris < barisDepan then
+			table.remove(papanAura, i)
+
+			local gui = p.gui
+			if (CFG.auraFadeOut or 0) > 0 then
+				-- Yang dipudarkan ISI-nya, bukan GUI-nya: BillboardGui
+				-- tidak punya properti transparansi sendiri, jadi yang
+				-- bisa di-tween cuma label-labelnya.
+				for _, anak in ipairs(gui:GetChildren()) do
+					if anak:IsA("TextLabel") then
+						local info = TweenInfo.new(CFG.auraFadeOut)
+						TweenService:Create(anak, info, {
+							TextTransparency = 1,
+						}):Play()
+						-- Stroke-nya benda sendiri, tidak ikut pudar
+						-- kalau cuma teksnya yang di-tween: papan yang
+						-- "hilang" akan meninggalkan garis huruf.
+						local s = anak:FindFirstChildOfClass("UIStroke")
+						if s then
+							TweenService:Create(s, info,
+								{ Transparency = 1 }):Play()
+						end
+					end
+				end
+				task.delay(CFG.auraFadeOut + 0.05, function()
+					if gui then gui:Destroy() end
+				end)
+			else
+				gui:Destroy()
+			end
+		end
+	end
+end
+
+local function auraDiKepala(d)
+	local model = d.model
+	if not model then return end
+
+	-- Modelnya sudah ada di client? Server men-spawn-nya beberapa
+	-- milidetik sebelum mengirim pesan ini, tapi replikasinya tidak
+	-- dijamin sudah sampai. WaitForChild dengan batas, bukan tanpa
+	-- batas: kalau avatarnya keburu dihapus (reset panggung), menunggu
+	-- selamanya berarti satu thread menggantung untuk tiap kedatangan.
+	local head = model:FindFirstChild("Head") or model:WaitForChild("Head", 5)
+	if not head then return end
+
+	local lama = head:FindFirstChild("AuraPlate")
+	if lama then lama:Destroy() end
+
+	local gui = Instance.new("BillboardGui")
+	gui.Name        = "AuraPlate"
+	gui.Size        = UDim2.new(0, CFG.auraKepalaW, 0, CFG.auraKepalaH)
+	gui.StudsOffset = Vector3.new(0, CFG.auraKepalaY, 0)
+	-- AlwaysOnTop supaya papannya tidak tertutup badan avatar di
+	-- depannya. Kerumunan berbaris ke arah kamera, jadi tanpa ini
+	-- papan baris belakang hilang separuh-separuh.
+	gui.AlwaysOnTop = true
+	gui.MaxDistance = CFG.auraKepalaJauh
+	gui.Parent      = head
+
+	-- Papan kepala jauh lebih kecil dari aura di layar, jadi angkanya
+	-- dikecilkan dari sisi lain: stroke tipis dan glow cuma di angka.
+	-- Nama dan kata AURA tanpa glow sama sekali -- puluhan papan yang
+	-- semuanya bercahaya bikin panggungnya jadi kabut.
+	-- Raksasa: SATU BARIS NAMA, selesai.
+	--
+	-- Papannya juga dipendekkan jadi sepertiga -- kalau tingginya
+	-- dibiarkan, namanya melayang di sepertiga atas dan dua pertiga
+	-- sisanya kotak kosong yang tetap mendorong papan itu menjauh dari
+	-- kepalanya.
+	if d.namaSaja then
+		gui.Size = UDim2.new(0, CFG.auraKepalaW, 0, CFG.auraKepalaH * 0.34)
+		local lbl = teksGaya(gui, "Nama", 0.00, 1.00, FONT_NAMA,
+			GRAD_NAMA, nil, 1, 0.05)
+		setTeks(lbl, d.nama or "?")
+
+		-- Pembukuan barisnya tetap dijalankan, tidak di-return di sini.
+		--
+		-- Raksasa memang tidak butuh (dia mengirim `tetap` juga), tapi
+		-- meninggalkan `return` berarti papan nama-saja yang suatu saat
+		-- dipakai avatar BIASA tidak pernah terdaftar -- dan yang tidak
+		-- terdaftar tidak pernah dilepas waktu baris di depannya terisi.
+		-- Satu baris ekstra sekarang, bukan bug yang menunggu.
+		if not d.tetap then
+			table.insert(papanAura, { gui = gui, baris = d.baris or 0 })
+			lepasBarisBelakang(d.baris or 0)
+		end
+		return
+	end
+
+	local jenjang   = tier(d.persen or 0)
+	local lblNama   = teksGaya(gui, "Nama", 0.00, 0.26, FONT_NAMA,
+		GRAD_NAMA, nil, 1, 0.05)
+	local lblPersen = teksGaya(gui, "Persen", 0.26, 0.46, FONT_ANGKA,
+		jenjang.warna, jenjang.glow, 1.5, 0)
+	-- Kata "AURA" paling redup dari ketiganya: dia sama di semua avatar,
+	-- jadi tidak membawa satu pun informasi -- tugasnya cuma memberi
+	-- nama pada angka di atasnya.
+	local lblAura   = teksGaya(gui, "Aura", 0.72, 0.24, FONT_KATA,
+		grad(Color3.fromRGB(196, 203, 218), Color3.fromRGB(150, 158, 178)),
+		nil, 1, 0.3)
+
+	setTeks(lblNama, d.nama or "?")
+	setTeks(lblAura, "A U R A")
+
+	-- Papan RAKSASA berdiri di luar aturan baris.
+	--
+	-- Dia tidak ikut didaftarkan dan tidak memicu pelepasan apa pun.
+	-- Kalau dia ikut: nomor slotnya (SLOT_RAKSASA) di server jauh di
+	-- luar barisan, jadi barisnya keluar sebagai angka raksasa juga --
+	-- dan lepasBarisBelakang akan membaca SELURUH papan lain sebagai
+	-- "di belakang dia" lalu melepas semuanya sekaligus.
+	--
+	-- Diamnya juga benar secara tampilan: raksasa berdiri paling jauh
+	-- dari kamera dan menjulang di atas semua orang, jadi papannya
+	-- tidak pernah menembus badan siapa pun -- masalah yang membuat
+	-- aturan baris depan ada sejak awal.
+	-- Yang dilewati HANYA pembukuan barisnya. Angka auranya di bawah
+	-- tetap berputar seperti punya orang lain -- raksasa yang papannya
+	-- diam di "0%" adalah bug yang paling kelihatan dari seluruh
+	-- panggung, justru karena papannya paling besar.
+	if not d.tetap then
+		-- Dia sudah berdiri; kalau dia yang membuka baris baru,
+		-- papan-papan di baris belakangnya lepas sekarang.
+		table.insert(papanAura, { gui = gui, baris = d.baris or 0 })
+		lepasBarisBelakang(d.baris or 0)
+	end
+
+	task.spawn(function()
+		local target = d.persen or 0
+		local roll   = math.max(d.roll or CFG.auraRoll or 0.6, 0.01)
+		local mulai  = os.clock()
+
+		while gui.Parent do
+			local t = (os.clock() - mulai) / roll
+			if t >= 1 then break end
+			local e = 1 - (1 - t) * (1 - t) * (1 - t)
+			setTeks(lblPersen, ("%d%%"):format(math.floor(target * e)))
+			RunService.RenderStepped:Wait()
+		end
+
+		if not gui.Parent then return end
+		setTeks(lblPersen, ("%d%%"):format(target))
+	end)
+end
+
+-- ============ JUDUL LAGU ============
+--
+-- Pojok bawah, kecil, sebentar. Penonton perlu tahu lagunya ganti
+-- (tariannya ikut ganti); yang tidak boleh cuma dia merebut tempat dari
+-- angka aura.
+local lblLagu = Instance.new("TextLabel")
+lblLagu.Size                   = UDim2.new(0.4, 0, 0.05, 0)
+lblLagu.Position               = UDim2.new(0.03, 0, 0.88, 0)
+lblLagu.BackgroundTransparency = 1
+lblLagu.FontFace               = FONT_KATA
+lblLagu.TextColor3             = Color3.fromRGB(255, 255, 255)
+lblLagu.TextScaled             = true
+lblLagu.TextXAlignment         = Enum.TextXAlignment.Left
+lblLagu.TextStrokeTransparency = 1
+lblLagu.TextTransparency       = 1
+lblLagu.Text                   = ""
+lblLagu.Parent                 = gui
+
+local batasLagu = Instance.new("UITextSizeConstraint")
+batasLagu.MaxTextSize = 34
+batasLagu.Parent      = lblLagu
+
+local gradLagu = Instance.new("UIGradient")
+gradLagu.Color    = grad(Color3.fromRGB(210, 232, 255),
+                         Color3.fromRGB(160, 175, 215))
+gradLagu.Rotation = 90
+gradLagu.Parent   = lblLagu
+
+local strokeLagu = Instance.new("UIStroke")
+strokeLagu.Color           = Color3.fromRGB(10, 12, 24)
+strokeLagu.Thickness       = 1.5
+strokeLagu.Transparency    = 1
+strokeLagu.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+strokeLagu.LineJoinMode    = Enum.LineJoinMode.Round
+strokeLagu.Parent          = lblLagu
+
+local laguGen = 0
+
+local function tampilkanLagu(d)
+	laguGen += 1
+	local gen = laguGen
+
+	lblLagu.Text = "♪ " .. (d.nama or "")
+	TweenService:Create(lblLagu, TweenInfo.new(0.3),
+		{ TextTransparency = 0 }):Play()
+	-- Stroke ikut, kalau tidak judulnya "hilang" tapi garis hurufnya
+	-- tertinggal di pojok layar.
+	TweenService:Create(strokeLagu, TweenInfo.new(0.3),
+		{ Transparency = 0.25 }):Play()
+
+	task.spawn(function()
+		task.wait(5)
+		if gen ~= laguGen then return end
+		TweenService:Create(lblLagu, TweenInfo.new(0.5),
+			{ TextTransparency = 1 }):Play()
+		TweenService:Create(strokeLagu, TweenInfo.new(0.5),
+			{ Transparency = 1 }):Play()
+	end)
+end
+
+-- ============ PENYAMAAN TARIAN ============
+--
+-- AnimationTrack.TimePosition yang ditulis SERVER tidak direplikasi:
+-- yang sampai ke client cuma "mainkan animasi ini sekarang", lalu client
+-- memutarnya dari detik nol. Dua avatar yang datang berselang 4 detik
+-- menari berselang 4 detik juga, dan karena Looped selisih itu bertahan
+-- selamanya.
+--
+-- Jadi penyamaannya harus di sini: TimePosition yang ditulis client
+-- langsung mengubah apa yang digambar di layar client itu. Master yang
+-- berbeda antar penonton tidak masalah -- yang penting serempak di dalam
+-- satu layar.
+--
+-- DUA HAL YANG DULU SALAH DI SINI, dan dua-duanya terlihat sebagai
+-- "tariannya patah-patah":
+--
+-- 1. Yang dikumpulkan SEMUA animasi yang sedang jalan, apa pun itu.
+--    Sejak ada raksasa (R15Wave, panjang ~2 detik) dan avatar melayang
+--    (R15Fall), mereka ikut masuk kolam -- dan begitu salah satunya
+--    kebetulan terpilih jadi master, SELURUH kerumunan dipaksa ke
+--    TimePosition milik animasi lambaian tiap 0,6 detik. Tarian 10
+--    detik yang terus-menerus dilempar balik ke detik 0-2 itu persis
+--    yang terlihat sebagai patah-patah. Sekarang track dikelompokkan
+--    per AnimationId dan yang disamakan cuma KELOMPOK TERBESAR --
+--    kerumunan selalu mayoritas, raksasa dan si terbang cuma satu.
+--
+-- 2. Selisihnya dikoreksi dengan MENULIS TimePosition, dan itu selalu
+--    meloncat. Selisih 0,05 detik pun jadi sentakan kecil yang terlihat
+--    tiap 0,6 detik. Sekarang yang digeser KECEPATANNYA: yang
+--    ketinggalan diputar sedikit lebih cepat sampai dia menyusul
+--    sendiri, tanpa satu pun frame yang meloncat. TimePosition cuma
+--    dipakai kalau selisihnya sudah terlalu besar untuk dikejar dengan
+--    cara halus (syncSnap) -- di situ satu loncatan memang lebih baik
+--    daripada menunggu belasan detik.
+local function kumpulkanTarian()
+	local daftar = {}
+	for _, m in ipairs(workspace:GetChildren()) do
+		-- Karakter penonton punya Humanoid juga, dan dia tidak sedang
+		-- menari bersama antrian.
+		if m:IsA("Model") and not Players:GetPlayerFromCharacter(m) then
+			local hum = m:FindFirstChildOfClass("Humanoid")
+			local animator = hum and hum:FindFirstChildOfClass("Animator")
+			if animator then
+				local main = animator:GetPlayingAnimationTracks()[1]
+				if main then table.insert(daftar, main) end
+			end
+		end
+	end
+	return daftar
+end
+
+-- Kelompok terbesar yang memainkan animasi yang SAMA.
+--
+-- Dipilih dengan menghitung, bukan dengan bertanya ke server: client
+-- yang join di tengah siaran tidak pernah menerima pesan "lagunya
+-- sekarang ini", dan menebak dari jumlah selalu benar karena kerumunan
+-- memang selalu lebih banyak daripada satu raksasa dan satu penerbang.
+local function kelompokTerbesar(daftar)
+    local per = {}
+    for _, t in ipairs(daftar) do
+        local anim = t.Animation
+        local id   = anim and anim.AnimationId
+        if id and id ~= "" then
+            local g = per[id]
+            if not g then g = {} per[id] = g end
+            table.insert(g, t)
+        end
+    end
+
+    local terbesar = nil
+    for _, g in pairs(per) do
+        if not terbesar or #g > #terbesar then terbesar = g end
+    end
+    return terbesar
+end
+
+-- Selisih waktu dua track, DILIPAT ke jarak terdekat pada lingkaran.
+--
+-- Tariannya Looped, jadi yang berada di detik 9,9 dari animasi 10 detik
+-- sebenarnya cuma 0,1 detik DI DEPAN yang di detik 0 -- bukan 9,9 detik
+-- di belakangnya. Tanpa lipatan ini, avatar yang kebetulan berada di
+-- seberang titik ulang akan terus-menerus dianggap melenceng jauh dan
+-- terus-menerus diloncatkan. Itu satu lagi sumber patah-patah, dan yang
+-- paling sulit dilacak karena cuma muncul pada avatar tertentu di detik
+-- tertentu.
+--
+-- Hasilnya selalu di rentang [-L/2, +L/2]. Positif = `kini` ketinggalan
+-- dan harus dipercepat.
+local function selisihLingkar(ref, kini, L)
+	local d = ref - kini
+	if not L or L <= 0 then return d end
+	return (d + L / 2) % L - L / 2
+end
+
+task.spawn(function()
+	if (CFG.resyncEvery or 0) <= 0 then return end
+
+	-- Master dipegang lintas putaran. Kalau tiap putaran diambil "yang
+	-- pertama ketemu", urutan GetChildren yang berubah bikin master
+	-- berpindah -- dan tiap perpindahan menyeret semua yang lain ke fase
+	-- baru, jadi seluruh panggung tersentak tiap beberapa detik.
+	local master = nil
+
+	while true do
+		task.wait(CFG.resyncEvery)
+
+		local grup = kelompokTerbesar(kumpulkanTarian())
+		if grup and #grup > 1 then
+			local masihAda = false
+			if master then
+				for _, t in ipairs(grup) do
+					if t == master then masihAda = true break end
+				end
+			end
+			if not masihAda then master = grup[1] end
+
+			-- Master SELALU dikembalikan ke kecepatan normal.
+			--
+			-- Dia bisa saja track yang beberapa detik lalu masih jadi
+			-- pengikut dan sempat dipercepat 9% untuk menyusul. Kalau
+			-- kecepatan itu dibiarkan menempel setelah dia naik jadi
+			-- master, SELURUH kerumunan mengejar acuan yang berlari 9%
+			-- lebih cepat dari seharusnya -- dan mereka berhasil, jadi
+			-- tidak ada satu pun yang terlihat salah. Yang terjadi cuma
+			-- seluruh panggung menari lebih cepat daripada lagunya.
+			master:AdjustSpeed(1)
+
+			local ref = master.TimePosition
+			local L   = master.Length or 0
+
+			for _, t in ipairs(grup) do
+				if t ~= master then
+					local selisih = selisihLingkar(ref, t.TimePosition, L)
+					local jauhnya = math.abs(selisih)
+					if jauhnya > (CFG.syncSnap or 0.35) then
+						-- Terlalu jauh untuk dikejar halus (biasanya
+						-- avatar yang baru berdiri, atau yang baru
+						-- mendarat dari adegan melayang). Satu
+						-- loncatan, lalu kembali normal.
+						t.TimePosition = ref
+						t:AdjustSpeed(1)
+					elseif jauhnya > (CFG.driftLimit or 0.04) then
+						-- Yang ketinggalan diputar lebih cepat, yang
+						-- kedahuluan diperlambat. Dibatasi supaya
+						-- koreksinya tidak pernah terlihat sebagai
+						-- gerakan yang dipercepat.
+						t:AdjustSpeed(math.clamp(1 + (CFG.syncKp or 0.6) * selisih,
+							1 - (CFG.syncSpeedMaks or 0.15),
+							1 + (CFG.syncSpeedMaks or 0.15)))
+					else
+						-- Sudah serempak: kecepatannya dikembalikan ke
+						-- normal. Tanpa baris ini koreksi terakhir
+						-- menempel selamanya dan dia justru melewati
+						-- targetnya, lalu dikoreksi ke arah sebaliknya
+						-- -- berayun tanpa henti.
+						t:AdjustSpeed(1)
+					end
+				end
+			end
+		else
+			master = nil
+		end
+	end
+end)
+
+-- ============ BUNYI SAAT ANGKANYA BERPUTAR ============
+--
+-- Dibunyikan saat putaran mulai, lalu DIPOTONG tepat saat angkanya
+-- mendarat -- bunyi dan angka berhenti bersamaan. Bunyi yang sekarang
+-- lebih panjang dari AURA_ROLL, jadi yang terdengar cuma bagian
+-- depannya; sisanya memang tidak pernah sampai.
+--
+-- auraSfxLoop (mati sekarang) untuk keadaan sebaliknya: bunyi yang
+-- lebih PENDEK dari putaran. Tanpa diulang, dia habis di tengah jalan,
+-- dan hening di tengah putaran terbaca sebagai "sudah selesai" padahal
+-- angkanya masih naik.
+--
+-- Bunyinya ADA DUA, dan pergantian di antara keduanya yang sebenarnya
+-- terdengar sebagai "mendarat": bunyi putaran dipotong dan bunyi
+-- mendarat mulai, di frame yang sama.
+--
+-- Satu Sound dipakai berulang, bukan satu Sound baru tiap kedatangan.
+-- Alasannya bukan hemat: kalau tiap kedatangan punya Sound sendiri,
+-- dua orang yang datang berdekatan (poll tiap 1 detik) membunyikan dua
+-- undian yang saling tumpang tindih -- terdengar seperti bunyi rusak,
+-- bukan dua undian. Satu Sound yang diulang dari nol otomatis memotong
+-- yang sebelumnya: yang terdengar selalu undian yang sedang berjalan.
+--
+-- Parent-nya SoundService, jadi dia tidak punya posisi di dunia: sama
+-- kerasnya di mana pun kamera berada.
+local function buatSfx(nama, id, volume)
+	if not id or id == "" then return nil end
+
+	local s = Instance.new("Sound")
+	s.Name    = nama
+	s.SoundId = id
+	s.Volume  = volume
+	s.Parent  = SoundService
+
+	-- Dimuat di muka. Tanpa ini bunyi pertama datang terlambat --
+	-- tepat pada kedatangan pertama, satu-satunya yang pasti ditonton
+	-- orang dari awal.
+	task.spawn(function()
+		local ok, err = pcall(function()
+			ContentProvider:PreloadAsync({ s })
+		end)
+		if not ok then warn(("Bunyi %s gagal dimuat: %s"):format(nama, err)) end
+	end)
+
+	return s
+end
+
+local sfxAura = buatSfx("AuraRollSfx", CFG.auraSfx, CFG.auraSfxVol or 0.7)
+
+if sfxAura then
+	-- Nadanya ikut naik bersama kecepatannya -- PlaybackSpeed
+	-- menggeser tempo dan nada sekaligus.
+	sfxAura.PlaybackSpeed = math.max(CFG.auraSfxSpeed or 1, 0.1)
+	-- Looped hanya kalau ADA yang menghentikannya. Diulang tanpa
+	-- auraSfxRoll berarti tidak satu pun Stop dipanggil: bunyinya
+	-- berputar sampai sesi berakhir.
+	sfxAura.Looped = (CFG.auraSfxLoop and CFG.auraSfxRoll) and true or false
+end
+
+-- Bunyi mendarat. Sengaja Sound yang TERPISAH, bukan SoundId yang
+-- ditukar pada Sound di atas: keduanya harus bisa berbunyi di frame
+-- yang sama -- yang satu dipotong, yang satu mulai -- dan satu Sound
+-- cuma bisa memainkan satu di antaranya.
+local sfxHit = buatSfx("AuraHitSfx", CFG.auraSfxHit, CFG.auraSfxHitVol or 0.8)
+
+-- Nomor bunyi yang sedang jalan, sejajar dengan auraGen di atas: yang
+-- menghentikan bunyi harus yang menyalakannya, bukan task lama yang
+-- kebetulan bangun setelah undian berikutnya mulai.
+local sfxGen = 0
+
+local function bunyiAura(roll)
+	if not sfxAura and not sfxHit then return end
+
+	sfxGen += 1
+	local gen = sfxGen
+
+	if sfxAura then
+		sfxAura.TimePosition = 0
+		sfxAura:Play()
+	end
+
+	-- Tidak ada yang perlu dikerjakan di akhir putaran: tidak ada bunyi
+	-- mendarat, dan bunyi putarannya memang dibiarkan habis sendiri.
+	if not sfxHit and not CFG.auraSfxRoll then return end
+
+	-- Satu task untuk dua hal yang harus terjadi BERSAMAAN: putarannya
+	-- dipotong dan bunyi mendaratnya mulai. Dipisah jadi dua task, dua
+	-- penjadwalan yang berbeda bisa jatuh di frame yang berbeda -- dan
+	-- celah sekecil itu pun terdengar sebagai bunyi yang tidak nyambung.
+	--
+	-- Batas bawahnya kecil saja -- undian sependek 0.05 detik memang
+	-- tidak masuk akal, tapi 0 di sini berarti task ini jalan di frame
+	-- yang sama dengan Play dan putarannya tidak sempat berbunyi.
+	task.delay(math.max(roll or 0.6, 0.05), function()
+		-- Sudah ada undian baru yang mulai? Dia yang berhak atas kedua
+		-- Sound ini sekarang; memotong atau membunyikan apa pun di sini
+		-- berarti mengganggu undian orang lain yang sedang berjalan.
+		if gen ~= sfxGen then return end
+
+		if sfxAura and CFG.auraSfxRoll and sfxAura.IsPlaying then
+			sfxAura:Stop()
+		end
+
+		if sfxHit then
+			sfxHit.TimePosition = 0
+			sfxHit:Play()
+		end
+	end)
+end
+
+
+-- ============ MUTU VISUAL PER PERANGKAT ============
+--
+-- Pencahayaan dan efeknya dipasang server (my_scrip_lua_v2, bagian
+-- VISUAL) dan direplikasi ke semua orang. Yang tidak bisa dilakukan
+-- server: tahu penontonnya menonton dari PC atau dari HP tahun 2019.
+--
+-- Jadi yang di sini cuma menurunkan, tidak pernah menaikkan. Efek yang
+-- dimatikan dimatikan SECARA LOKAL -- penonton lain tidak ikut kena,
+-- karena perubahan properti di client tidak balik ke server.
+--
+-- Urutannya dari yang paling mahal:
+--   1. DepthOfField -- buram = layar digambar dua kali lalu dicampur
+--   2. SunRays      -- ikut menghitung berkas tiap frame
+--   3. Bloom        -- paling murah, cuma dikecilkan, tidak dimatikan
+local function turunkanMutu(alasan)
+	for _, nama in ipairs({ "VisualDOF", "VisualSunRays" }) do
+		local e = Lighting:FindFirstChild(nama)
+		if e then e.Enabled = false end
+	end
+
+	local pendar = Lighting:FindFirstChild("VisualBloom")
+	if pendar then
+		pendar.Intensity = (CFG.visualBloom or 0.45) * 0.5
+	end
+
+	print(("[visual] mutu diturunkan (%s) -- dof & sunrays mati")
+		:format(alasan))
+end
+
+if CFG.visualAuto then
+	task.spawn(function()
+		-- Layar sentuh tanpa keyboard = HP/tablet. Tidak diukur dulu:
+		-- HP kelas atas memang sanggup 60 FPS, tapi dia mencapainya
+		-- sambil panas, dan sesudah beberapa menit siaran frame-nya
+		-- turun sendiri. Yang dijaga di sini siaran satu jam, bukan
+		-- screenshot menit pertama.
+		local UserInputService = game:GetService("UserInputService")
+		if UserInputService.TouchEnabled
+			and not UserInputService.KeyboardEnabled then
+			turunkanMutu("layar sentuh")
+			return
+		end
+
+		-- Di Studio, JANGAN diukur.
+		--
+		-- Play di Studio menjalankan server dan client dalam satu
+		-- proses, di atas editor yang juga sedang menggambar Explorer
+		-- dan viewport-nya sendiri. Angka yang keluar (15 fps di mesin
+		-- yang sama sekali tidak lemot) tidak mewakili apa pun tentang
+		-- game yang sudah di-publish -- dan menurunkan mutu berdasarkan
+		-- angka itu berarti kamu tidak pernah melihat tampilan yang
+		-- sebenarnya akan dilihat penonton.
+		if RunService:IsStudio() then
+			print("[visual] Studio -- pengukuran FPS dilewati, mutu penuh")
+			return
+		end
+
+		-- Selain itu: ukur SEKALI, lalu putuskan dan selesai.
+		--
+		-- Ditunggu 6 detik dulu. Detik-detik pertama habis untuk memuat
+		-- avatar dan lagu; FPS di situ jelek untuk semua orang, dan
+		-- mengukur di situ berarti menghukum PC yang sebenarnya kuat.
+		task.wait(6)
+
+		local frame = 0
+		local sambung = RunService.RenderStepped:Connect(function()
+			frame += 1
+		end)
+		local mulai = os.clock()
+		task.wait(2)
+		local lama = os.clock() - mulai
+		sambung:Disconnect()
+
+		local fps = frame / math.max(lama, 0.01)
+		if fps < (CFG.visualFpsMin or 32) then
+			turunkanMutu(("%.0f fps"):format(fps))
+		end
+	end)
+end
+
+-- ============ SAMBUNGAN ============
+
+V2Event.OnClientEvent:Connect(function(jenis, d)
+	if jenis == "fokus" then
+		if d.sinema and d.lama and d.lama > 0 then
+			-- Adegan berbayar. Selalu merebut kamera, termasuk dari
+			-- adegan lain yang belum habis -- yang baru bayar yang
+			-- menang.
+			--
+			-- Batas waktunya dihitung dari SEKARANG, bukan dari cap
+			-- waktu server: jam client dan jam server tidak pernah
+			-- sama, dan selisih satu detik di sini berarti kamera
+			-- pulang ke ayunan sedetik sebelum orangnya mendarat.
+			fokusTarget  = d.pos or fokusTarget
+			sinemaSampai = os.clock() + d.lama
+			sinemaOrbit  = (d.orbit == true)
+			sinemaJauh   = tonumber(d.jauh) or 1
+			zoomMulai    = os.clock()
+			-- Adegan berbayar juga dimulai dari depan. Untuk yang
+			-- mengorbit itu malah lebih baik: putarannya berangkat dari
+			-- wajah orangnya, bukan dari sudut acak.
+			pandangLurus()
+			-- Ditahan sama lamanya dengan kedatangan gratisan.
+			--
+			-- Dulu yang bayar ditahan dekat SELAMA SOROTANNYA (5-6
+			-- detik), dan itu justru merugikan dia: papan auranya
+			-- berada di luar frame atas selama kamera masih merapat,
+			-- jadi undian angkanya -- tiga detik yang paling ditonton
+			-- orang -- lewat tanpa terlihat sama sekali. Yang dia dapat
+			-- dari sorotan tetap utuh (kamera tidak bisa direbut
+			-- kedatangan lain), yang berubah cuma kameranya tidak lagi
+			-- menempel terlalu dekat terlalu lama.
+			zoomTahan    = CFG.zoomTahan or 1.0
+
+		elseif os.clock() >= sinemaSampai then
+			fokusTarget = d.pos or fokusTarget
+			sinemaJauh  = 1
+			zoomMulai   = os.clock()
+			zoomTahan   = CFG.zoomTahan or 1.6
+			pandangLurus()
+
+		-- else: kedatangan biasa DI TENGAH adegan berbayar -- diabaikan.
+		--
+		-- Ini penjaga yang di v1 bernama spotlightBusy, dan tanpa dia
+		-- seluruh sorotan tier 2 percuma. Panggung cuma berhenti untuk
+		-- tier 3 (lihat BEKU_MIN_TIER di server), jadi selama lima
+		-- detik sorotan tier 2, komentar gratisan tetap berdatangan --
+		-- dan tiap satu dari mereka akan menyeret kamera pergi dari
+		-- orang yang barusan bayar. Avatarnya tetap muncul; yang tidak
+		-- dia dapat cuma kameranya.
+		end
+	elseif jenis == "ikut" then
+		-- Titik pandang yang mengejar badan yang sedang melayang.
+		-- Sengaja terpisah dari "fokus": pesan ini datang tujuh kali
+		-- per detik dan tidak boleh menyentuh sinemaSampai sama sekali
+		-- -- kalau dia ikut memperbarui batas waktunya, adegan yang
+		-- seharusnya tujuh detik tidak akan pernah berakhir.
+		--
+		-- Juga tidak lewat penjaga "sedang ada adegan": pesan ini
+		-- DATANG dari adegan itu sendiri.
+		fokusTarget = d.pos or fokusTarget
+
+	elseif jenis == "aura" then
+		-- Dibunyikan di sini, bukan di dalam auraDiKepala/tampilkanAura:
+		-- kalau dua-duanya dinyalakan, satu kedatangan memanggil dua
+		-- fungsi -- dan bunyinya akan diulang dari nol dua kali dalam
+		-- satu frame.
+		if CFG.auraKepala or CFG.auraLayar then
+			bunyiAura(d.roll or CFG.auraRoll)
+		end
+		if CFG.auraKepala then auraDiKepala(d) end
+		if CFG.auraLayar  then tampilkanAura(d) end
+	elseif jenis == "musik" then
+		tampilkanLagu(d)
+	end
+end)
+
+-- Bingkai pertama, sebelum ada satu pun kedatangan. Tanpa ini penonton
+-- yang join di tengah siaran memandang avatarnya sendiri sampai orang
+-- berikutnya datang -- dan kalau pollingnya sepi, itu bisa berpuluh
+-- detik.
+if camera then
+	camera.CameraType = Enum.CameraType.Scriptable
+	camera.CFrame = CFrame.new(fokusKini + offsetDasar, fokusKini)
+end

@@ -1,0 +1,2388 @@
+--[[
+	Roblox Avatar Queue Viewer  --  V2 (versi sederhana)
+	Taruh di: ServerScriptService (Insert Object > Script)
+
+	PASANGANNYA: kamera_client_lua_v2
+	Taruh di StarterPlayer > StarterPlayerScripts sebagai LocalScript
+	bernama KameraClientV2.
+
+	PENTING: MATIKAN script lama.
+	Kalau my_sscript_lua (v13) dan KameraClient lama masih aktif, dua
+	server script sama-sama menaruh avatar di panggung dan dua client
+	script sama-sama menulis workspace.CurrentCamera tiap frame --
+	kameranya bergetar dan panggungnya dobel. Hapus, atau klik kanan >
+	Disable, dua-duanya sebelum menjalankan yang ini.
+
+	BEDANYA DENGAN V13
+
+	Yang DIBUANG (ini inti "simple saja"):
+	- meteor: tidak ada jatuh dari langit, tidak ada ekor, tidak ada
+		guncangan kamera. Avatar langsung berdiri lalu menari.
+	- podium, raksasa, kembang api, kolom cahaya.
+	- kamera sinematik 5 gaya dan shake.
+
+	TIER (dibawa kembali, tapi konsepnya BARU)
+
+	V2 sempat membuang tier sama sekali. Sekarang tier ada lagi, hanya
+	bentuknya tidak meniru v13 -- di sana pembedanya TEMPAT (podium) dan
+	UKURAN (raksasa); di sini pembedanya BORDER dan GERAKAN.
+
+	  tier 1  komentar biasa     berdiri, menari, aura acak penuh.
+	  tier 2  gift >= 1 koin     PERHATIAN. Border (garis tepi + cakram
+	                             cahaya di lantai) dan kamera BERHENTI
+	                             di dia 5 detik -- menahan dekat, tidak
+	                             mengorbit. Lantai aura 300%.
+	  tier 3  gift >= 10 koin    UKURAN, dan CUMA itu. Raksasa berdiri
+	                             di belakang barisan, tidak ikut menari,
+	                             cuma melambai. Tidak ada border, tidak
+	                             ada cakram cahaya, tidak ada aura api,
+	                             tidak ada animasi apa pun -- dia cuma
+	                             berdiri, besar. Cuma ADA SATU pada satu
+	                             waktu; yang baru mengganti yang lama.
+	                             Kamera mengorbit sambil mundur supaya
+	                             badannya muat. Lantai aura 550%.
+
+	Tangganya dibangun dari hal yang JENISNYA berbeda -- perhatian lalu
+	ukuran -- bukan dari "efek yang makin banyak". Penonton tidak
+	menghitung efek; yang mereka ingat satu kalimat per tier ("yang itu
+	jadi raksasa"), dan kalimat itu harus ada lebih dulu daripada
+	efeknya.
+
+	Panggung BERHENTI selama adegan tier 3: tidak ada yang di-spawn
+	sampai raksasanya selesai berdiri.
+
+	Ambang koin dan panjang sorotannya milik main.py (.env), bukan file
+	ini -- di sini cuma bentuk visualnya. Semuanya bisa dimatikan lewat
+	TIER_ENABLED di bagian PENGATURAN.
+
+	Yang DITAMBAH:
+	- AURA: tiap kedatangan dapat angka acak 0-1000%, ditampilkan
+		besar di TENGAH LAYAR (bukan di atas kepala): tiga baris,
+		username / persen / "AURA".
+	- MUSIK + TARIAN BERPASANGAN: satu playlist di bawah. Tiap lagu
+		punya DANCE_ID-nya sendiri; begitu lagunya ganti, seluruh
+		panggung ganti tarian bersamaan.
+
+	KAMERA
+
+	Tidak ada potongan sama sekali -- tidak satu pun frame yang
+	meloncat. Yang ada tiga gerakan yang saling menumpuk:
+
+	1. AYUNAN pelan kiri-kanan, terus-menerus. Sengaja cuma 8 derajat:
+	   yang lebar terbaca sebagai kamera gelisah, bukan panggung hidup.
+	2. ZOOM tiap kedatangan -- merapat dulu, menahan sebentar, lalu
+	   mundur ke jarak biasa. Ini sumber gerakan utamanya sekarang:
+	   ayunan bergerak terus (melelahkan), zoom bergerak sekali per
+	   kedatangan lalu berhenti (bercerita).
+	3. ORBIT penuh selama sorotan tier 3. Tier 2 tidak mengorbit -- dia
+	   cuma ditahan dekat lebih lama.
+
+	Kameranya SELALU memandang yang terakhir datang, kecuali selama
+	adegan berbayar: di situ kedatangan gratisan tidak bisa menyeretnya
+	pergi (penjaga di kamera_client_lua_v2).
+
+	TAMPILAN
+
+	Bagian VISUAL di bawah menyetel Lighting, Atmosphere, dan efek
+	pasca-proses (bloom, color correction, sun rays, depth of field)
+	sekali waktu server hidup. Tidak menyentuh gameplay, tata letak,
+	model, atau mekanik mana pun -- cuma cara panggungnya digambar.
+
+	Satu hal MUNGKIN harus dipencet manual, tergantung versi Studio:
+	Lighting > Technology. Roblox tidak mengizinkan script mengubahnya
+	(Command Bar pun ditolak), jadi tempatnya cuma panel Properties,
+	dalam keadaan Stop: klik Lighting > Properties > Technology >
+	Future. Tanpa itu bayangannya kotak-kotak dan sisa penyetelan di
+	bawah cuma memoles gambar yang dasarnya sudah kasar.
+
+	Kalau Technology TIDAK ADA di Properties, jangan dicari-cari:
+	berarti tempat ini sudah pakai Unified Lighting (beta yang menyala
+	sendiri lewat "auto-enable upcoming features"). Di situ Technology
+	dihapus dan diganti LightingStyle, dan pencahayaannya memang sudah
+	lebih baru daripada Future -- tidak ada yang perlu disetel. Script
+	di bawah mengenali keadaan ini sendiri dan diam.
+
+	Cara pakai:
+	1. Nyalakan Allow HTTP Requests (File > Game Settings > Security)
+	2. Jalankan FastAPI + ngrok seperti biasa (make server / make tunnel)
+	3. Cek URL di bawah masih sama dengan ngrok yang jalan
+	4. Isi PLAYLIST di bawah (asset musik + dance yang berpasangan)
+	5. Tekan Play, lalu baca satu baris [visual] di Output
+--]]
+
+local Players      = game:GetService("Players")
+local Lighting     = game:GetService("Lighting")
+local HttpService  = game:GetService("HttpService")
+local RunService   = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ContentProvider   = game:GetService("ContentProvider")
+
+-- ============ PENGATURAN ============
+
+local URL           = "https://deluxe-sash-retired.ngrok-free.dev"
+local POLL_INTERVAL = 1
+
+-- Susunan barisan
+local ROW_SIZE      = 5
+local SPACING_X     = 6
+local SPACING_Z     = 6
+local BASE_Y        = 5
+local FLOOR_Y       = 0
+
+-- Kapasitas panggung. Setelah penuh, panggung dikosongkan dan avatar
+-- berikutnya mulai lagi dari slot 1. 0 = tidak pernah dikosongkan.
+local DELETE_AFTER  = 60
+local RESET_DELAY   = 2
+
+-- Sembunyikan avatar PENONTON supaya tidak ikut berdiri di tengah frame.
+local HIDE_PLAYER_AVATAR = false
+
+-- Papan nama kecil di atas kepala.
+--
+-- DIMATIKAN sejak aura pindah ke atas kepala: papan aura sudah memuat
+-- username di baris pertamanya, dan dua tulisan nama pada satu kepala
+-- cuma saling menumpuk. Nyalakan lagi kalau AURA_DI_KEPALA dimatikan
+-- dan auranya dikembalikan ke tengah layar.
+-- Dikelompokkan jadi satu TABEL, bukan konstanta lepas satu per satu.
+--
+-- Bukan gaya penulisan: Lua membatasi 200 variabel lokal per fungsi, dan
+-- seluruh file ini SATU fungsi (chunk utamanya). File ini pernah
+-- menembus batas itu, dan yang muncul bukan peringatan halus --
+-- script-nya menolak dikompilasi sama sekali:
+--
+--     too many local variables (limit is 200) in main function
+--
+-- Satu tabel = satu variabel lokal, isinya sebanyak yang kamu mau. Cara
+-- memakainya tidak berubah, cuma titiknya menggantikan garis bawah.
+local PLATE = {}
+
+PLATE.ENABLED = false
+PLATE.OFFSET  = 2.2
+PLATE.WIDTH   = 130
+PLATE.HEIGHT  = 24
+PLATE.DIST    = 200
+-- Font papan nama. FontFace, bukan Enum.Font: Enum.Font isinya keluarga
+-- bawaan Roblox yang dipakai semua game, dan bobot hurufnya tidak bisa
+-- dipilih. Montserrat Bold geometris dan bersih -- huruf UI game modern,
+-- masih terbaca waktu dikecilkan jadi papan setinggi 24 pixel.
+PLATE.FONT = Font.new("rbxasset://fonts/families/Montserrat.json",
+	Enum.FontWeight.Bold)
+
+-- ============ AURA ============
+--
+-- Angka acak murni, tidak dipengaruhi tier/koin. Kalau nanti mau yang
+-- bayar dapat angka lebih tinggi, tempat menyetelnya cuma satu fungsi:
+-- lihat hitungAura di bawah.
+local AURA_MIN   = 0
+local AURA_MAX   = 1000
+
+-- Lama tulisan aura menetap di layar, detik. Sengaja lebih pendek dari
+-- jarak antar kedatangan (POLL_INTERVAL sekitar 1 detik + waktu load
+-- avatar ~2-3 detik) supaya layar sempat kosong lagi di antaranya.
+--
+-- Ikut dinaikkan bersama AURA_ROLL. Angka ini mencakup putarannya, jadi
+-- yang tersisa untuk membaca hasil akhirnya cuma AURA_TIME - AURA_ROLL:
+-- kalau ditinggal di 3.5 sementara putarannya 3 detik, angka finalnya
+-- cuma sempat terbaca setengah detik lalu memudar. (Cuma berlaku untuk
+-- aura di TENGAH LAYAR; papan di atas kepala menetap sampai avatarnya
+-- dihapus, tidak memakai angka ini.)
+local AURA_TIME  = 6
+
+-- Lama angkanya berhitung naik dari 0 ke angka akhirnya. Ini yang bikin
+-- angkanya terbaca sebagai "diundi", bukan sekadar ditulis.
+--
+-- Dinaikkan 0.6 -> 3 detik. Setengah detik terbaca sebagai angka yang
+-- langsung muncul; tiga detik cukup lama untuk penonton sempat menebak
+-- dan ikut bersorak sebelum angkanya mendarat -- dan itu yang bikin
+-- mereka mengetik di kolom komentar.
+local AURA_ROLL  = 3
+
+-- --- Bunyi saat angkanya berputar ---
+--
+-- Dibunyikan di CLIENT, bukan di sini: Sound yang dibuat server memang
+-- ikut direplikasi, tapi jaraknya dihitung dari tempat benda itu
+-- ditaruh. Papan aura berpindah-pindah mengikuti siapa yang datang, dan
+-- kamera penonton tidak berada di tempat karakternya berdiri -- jadi
+-- bunyi yang di sini akan terdengar keras-pelan tanpa alasan yang bisa
+-- ditebak. Yang dipasang client tidak punya posisi sama sekali: sama
+-- kerasnya untuk semua orang, seperti bunyi antarmuka.
+--
+-- Kosongkan ("") untuk mematikannya.
+local AURA_SFX_ID  = "rbxassetid://15627079894"
+local AURA_SFX_VOL = 0.7
+
+-- Kecepatan putar bunyinya. 1 = asli, 2 = dua kali lebih cepat (dan
+-- nadanya ikut naik satu oktaf -- PlaybackSpeed menggeser keduanya
+-- sekaligus, persis seperti kaset diputar cepat).
+--
+-- Dikembalikan ke 1 waktu bunyinya diganti dengan yang panjang. Angka
+-- 1.8 dulu ada alasannya: bunyi lamanya di bawah satu detik dan harus
+-- diulang-ulang, jadi dipercepat supaya ulangannya terdengar rapat.
+-- Bunyi yang panjang tidak diulang sama sekali -- mempercepatnya cuma
+-- menaikkan nada tanpa satu pun manfaat.
+local AURA_SFX_SPEED = 1
+
+-- Ulang bunyinya kalau dia habis sebelum angkanya mendarat.
+--
+-- DIMATIKAN: bunyi yang sekarang lebih panjang dari AURA_ROLL, jadi
+-- tidak pernah sampai ke ujungnya -- tidak ada yang perlu diulang.
+-- Nyalakan lagi kalau nanti diganti bunyi pendek (di bawah satu detik);
+-- tanpa itu, putaran tiga detik akan hening di dua detik terakhirnya,
+-- dan hening di tengah putaran terbaca sebagai "sudah selesai" padahal
+-- angkanya masih naik.
+local AURA_SFX_LOOP = false
+
+-- Potong bunyinya tepat saat angkanya mendarat.
+--
+-- Ini yang membuat bunyi dan angka berhenti BERSAMAAN. Tanpa ini, bunyi
+-- yang panjang masih berlanjut ketika angkanya sudah diam -- dan telinga
+-- membaca itu sebagai "masih mengundi", padahal hasilnya sudah tertulis
+-- di layar.
+--
+-- Matikan (false) cuma kalau bunyimu punya ekor penutup yang memang
+-- ingin kamu dengar utuh; dia akan dibiarkan habis sendiri. Kalau
+-- AURA_SFX_LOOP menyala, mematikan yang ini berarti tidak ada satu pun
+-- yang menghentikannya -- dia berputar sampai sesi berakhir.
+local AURA_SFX_IKUT_ROLL = true
+
+-- --- Bunyi saat angkanya MENDARAT ---
+--
+-- Dibunyikan tepat di detik angkanya berhenti, menggantikan bunyi
+-- putaran yang dipotong di saat yang sama. Dua bunyi ini satu pasang:
+-- yang satu berhenti, yang satu mulai, di frame yang sama -- dan
+-- pergantian itulah yang terdengar sebagai "mendarat". Kalau yang ini
+-- dikosongkan (""), putarannya cuma berhenti begitu saja.
+--
+-- Pilih yang PENDEK (di bawah ~1.5 detik) dan hentakannya di frame
+-- pertama. Bunyi yang punya jeda hening di depannya akan terdengar
+-- telat dari angkanya, dan yang panjang akan ketiban undian orang
+-- berikutnya -- pollingnya cuma satu detik.
+local AURA_SFX_HIT_ID  = "rbxassetid://73557803481217"
+local AURA_SFX_HIT_VOL = 0.8
+
+-- DI MANA auranya ditulis.
+--
+-- kepala = melayang di atas kepala avatarnya sendiri (BillboardGui,
+--          benda dunia). Ikut bergerak bersama kameranya, dan tiap
+--          avatar punya angkanya masing-masing yang menetap -- penonton
+--          bisa membandingkan satu sama lain.
+-- layar  = besar di tengah layar (ScreenGui), satu per satu, lalu
+--          hilang. Lebih dramatis untuk satu orang, tapi menutupi
+--          panggung dan angka sebelumnya hilang begitu ada yang datang.
+--
+-- Boleh dua-duanya true. Boleh dua-duanya false (aura mati, tinggal
+-- panggung menari).
+local AURA_DI_KEPALA = true
+local AURA_DI_LAYAR  = false
+
+-- --- Papan aura di atas kepala ---
+--
+-- Tinggi papan dari kepala, dalam studs.
+local AURA_KEPALA_Y  = 3.2
+
+-- Ukuran papannya dalam pixel. Ini yang menentukan besar hurufnya:
+-- ketiga barisnya TextScaled, jadi mereka mengisi jatah tingginya
+-- masing-masing. Papan dunia menyusut sendiri kalau kamera menjauh --
+-- angka ini ukurannya saat kamera dekat.
+local AURA_KEPALA_W  = 190
+local AURA_KEPALA_H  = 96
+
+-- Sejauh apa papannya masih digambar (studs). Lewat dari ini dia hilang
+-- sendiri, jadi barisan paling belakang tidak ikut memenuhi layar.
+local AURA_KEPALA_JAUH = 220
+
+-- Papan aura HANYA di baris paling depan.
+--
+-- Avatarnya tidak disentuh: yang di belakang tetap berdiri dan tetap
+-- menari, cuma papannya yang dilepas begitu ada orang mengisi baris di
+-- depannya. Kerumunan tumbuh ke arah kamera, jadi baris yang lebih baru
+-- selalu lebih dekat -- dan papan baris belakang menembus badan mereka,
+-- saling menumpuk, sampai layar penuh tulisan yang tidak satu pun
+-- kebaca.
+local AURA_DEPAN_SAJA = true
+
+-- Lama papan menyusut sebelum dibuang. 0 = hilang seketika.
+--
+-- Dikasih waktu sedikit karena papan yang lenyap satu frame terbaca
+-- seperti kedip/bug, sementara yang memudar terbaca sebagai "gilirannya
+-- sudah lewat".
+local AURA_FADE_OUT   = 0.3
+
+-- --- Aura di tengah layar (kalau AURA_DI_LAYAR dinyalakan) ---
+--
+-- Letak tulisan aura di layar, dihitung dari TEPI ATAS, dalam pecahan
+-- tinggi layar. 0 = mepet atas, 0.5 = tepat setengah layar ke bawah.
+--
+-- Pecahan, bukan pixel: layar HP penonton dan layar Studio jauh berbeda
+-- tingginya, dan angka pixel yang pas di satu layar meleset di layar
+-- lain. Pecahan selalu jatuh di tempat yang sama secara relatif.
+--
+-- Diturunkan dari 0.22: kepala avatar barisan depan berada di sekitar
+-- sepertiga layar, dan tulisan yang mulai di 0.22 menutupi mereka.
+local AURA_Y     = 0.12
+
+-- Tinggi blok tiga barisnya, juga pecahan tinggi layar. Ini yang
+-- menentukan BESAR HURUFNYA -- ketiga baris pakai TextScaled, jadi
+-- mereka mengisi jatah tingginya masing-masing. Naikkan untuk tulisan
+-- lebih besar; tapi ingat blok ini mulai di AURA_Y, jadi AURA_Y +
+-- AURA_H tidak boleh lewat dari 1 kalau tidak baris "AURA" terpotong
+-- di bawah layar.
+local AURA_H     = 0.32
+
+-- ============ TIER ============
+--
+-- Tier datang dari server (/api/next), bukan dihitung di sini. main.py
+-- yang memutuskan siapa tier berapa; di file ini cuma bentuk visualnya.
+--
+-- Tangganya dibangun dari TIGA hal yang berbeda, bukan dari "efek yang
+-- makin banyak". Tiap naik satu tingkat, yang berubah JENISNYA:
+--
+--   tier 1  komentar biasa   ikut antre, berdiri, menari. Tidak ada
+--                            apa-apa, dan memang harus begitu -- kalau
+--                            yang gratis sudah ramai, yang berbayar
+--                            tidak punya ruang untuk terasa beda.
+--   tier 2  >= 1 koin        PERHATIAN. Border di badan dan cakram
+--                            cahaya di kaki, lalu kamera BERHENTI di
+--                            dia beberapa detik. Kameranya tidak
+--                            mengorbit -- dia cuma menahan dekat.
+--   tier 3  >= 10 koin       UKURAN, dan cuma itu. Raksasa berdiri di
+--                            belakang barisan, tidak ikut menari, cuma
+--                            melambai. Tanpa satu pun efek menempel --
+--                            yang membuatnya terbaca badannya sendiri,
+--                            dan apa pun yang ditambahkan di kakinya
+--                            cuma menyaingi itu. Kamera mengorbit dan
+--                            mundur supaya badannya muat di frame.
+--
+-- Kenapa dibedakan begitu, bukan sekadar "efeknya makin banyak":
+-- penonton tidak menghitung efek. Yang mereka ingat satu kalimat per
+-- tier -- "yang itu jadi raksasa" -- dan kalimat itu harus ada lebih
+-- dulu daripada efeknya.
+--
+-- Ambang koin dan panjang sorotannya milik main.py (.env). Semuanya
+-- bisa dimatikan sekaligus lewat TIER_ENABLED.
+local TIER_ENABLED = true
+
+-- --- BORDER (tier 2 ke atas) ---
+--
+-- Dua cara sekaligus, dan dua-duanya bisa dimatikan sendiri-sendiri.
+-- Sengaja dua karena keduanya kebaca di jarak yang berbeda: garis tepi
+-- hilang kalau kameranya mundur, cakram lantai justru baru kelihatan
+-- utuh dari jauh.
+local BORDER_ENABLED = true
+local BORDER_GARIS   = true
+local BORDER_CAKRAM  = true
+
+-- Satu warna per tier. Ini bahasa yang paling cepat dibaca penonton --
+-- lebih cepat daripada ukuran, apalagi daripada angka.
+local BORDER_T2_WARNA = Color3.fromRGB(120, 200, 255)  -- biru es
+local BORDER_T3_WARNA = Color3.fromRGB(255, 140,  56)  -- oranye bara
+
+-- Highlight TIDAK punya properti ketebalan -- Roblox menggambar
+-- garisnya dengan lebar tetap, dan satu-satunya yang bisa disetel dua
+-- transparansi di bawah ini.
+local BORDER_ISI         = 0.92  -- transparansi isian (1 = garis saja)
+local BORDER_GARIS_ALPHA = 0     -- transparansi garisnya (0 = pekat)
+
+-- Garis tengah cakram, studs. Jangan lewat dari SPACING_X (6):
+-- tetangga sebelahnya berdiri sejauh itu, dan cakram yang lebih lebar
+-- akan bertindihan jadi satu genangan cahaya, bukan lingkaran per orang.
+-- Raksasa mengalikannya sendiri dengan skalanya.
+local BORDER_CAKRAM_D     = 5.5
+local BORDER_CAKRAM_TIPIS = 0.15
+local BORDER_CAKRAM_ALPHA = 0.55
+local BORDER_CAKRAM_LAMPU = 14     -- jangkauan PointLight, 0 = mati
+
+-- Lama border sebelum pudar, detik. 0 = menetap sampai panggung reset.
+--
+-- Tier 2 diberi umur, dan itu BUKAN selera. Roblox cuma menggambar
+-- sekitar 31 Highlight sekaligus; lewat dari itu sisanya diam-diam
+-- TIDAK DIGAMBAR -- tanpa error, tanpa peringatan. Dengan DELETE_AFTER
+-- = 60, panggung yang penuh orang tier 2 pasti menembus batas itu, dan
+-- yang kamu lihat cuma "border kadang muncul kadang tidak" yang
+-- mustahil dilacak.
+--
+-- Tier 3 tidak memakai border sama sekali, jadi jatah itu praktis cuma
+-- diperebutkan tier 2.
+local BORDER_T2_UMUR = 15
+local BORDER_T3_UMUR = 0
+local BORDER_PUDAR   = 0.8
+
+-- Pengaman kedua: begitu jumlah garis tepi hidup menyentuh angka ini,
+-- yang PALING TUA dilepas. Ditaruh di bawah 31 supaya masih ada ruang
+-- untuk Highlight dari tempat lain (plugin, efek bawaan).
+local BORDER_MAKS_GARIS = 24
+
+-- --- TIER 3: RAKSASA ---
+--
+-- Satu raksasa saja pada satu waktu. Yang baru menggantikan yang lama.
+--
+-- Bukan penghematan: dua raksasa 10x berdiri berdampingan saling
+-- menutupi, dan yang ketiga sudah keluar frame. Yang membuat raksasa
+-- terasa besar itu SENDIRIAN-nya -- begitu ada dua, keduanya cuma jadi
+-- latar belakang.
+local GIANT_ENABLED = true
+
+-- Skalanya dibaca dari field `scale` milik /api/next (TIER3_SCALE di
+-- .env). Angka di bawah cuma batas atas kalau server mengirim sesuatu
+-- yang liar -- rig 40x bikin fisikanya meledak dan lantainya tembus.
+local GIANT_SKALA_MAKS = 14
+
+-- Di mana dia berdiri. Z POSITIF = di belakang barisan.
+--
+-- Arahnya gampang terbalik, jadi ini alasannya: barisan tumbuh ke arah
+-- -Z (getPosition), dan kamera duduk di CAMERA_BACK yang juga negatif
+-- -- artinya kamera ada di sisi -Z dan memandang ke +Z. Yang paling
+-- JAUH dari kamera adalah z terbesar. Raksasa di z negatif akan berdiri
+-- tepat di depan lensa dan menutupi seluruh panggung.
+-- Jaraknya IKUT skalanya, dan ini yang gampang salah kalau skalanya
+-- diturunkan.
+--
+-- Pada 10x, z=26 pas: badan setinggi 50 stud tetap menjulang walaupun
+-- jauh. Pada 3x badannya cuma ~15 stud, dan di jarak yang sama dia
+-- menyusut jadi sosok kecil di kejauhan -- terbaca sebagai "raksasanya
+-- tidak muncul", padahal dia berdiri di sana. Jadi begitu skalanya
+-- dikecilkan, dia harus DIDEKATKAN.
+--
+-- 18 = tiga baris di belakang baris depan (SPACING_Z = 6): masih jelas
+-- di luar barisan, tapi masih mengisi frame.
+local GIANT_X = 0
+local GIANT_Z = 18
+
+-- TIDAK ADA EFEK APA PUN di raksasa. Tidak ada border, tidak ada
+-- cakram cahaya, tidak ada aura api, tidak ada animasi naik dari tanah.
+-- Dia cuma berdiri, besar, di belakang barisan.
+--
+-- Ini bukan penyederhanaan selera -- ini yang MEMPERBAIKI bugnya.
+--
+-- Versi sebelumnya menyembunyikan raksasa 400 stud di bawah tanah
+-- dulu, lalu menaikkannya dengan BodyPosition supaya dia terlihat
+-- tumbuh dari lantai. Begitu satu langkah di jalur itu gagal, dia
+-- tinggal di bawah tanah SELAMANYA -- dan yang tersisa di layar cuma
+-- cakram cahayanya, yang memang ditaruh di permukaan lantai lepas dari
+-- posisi badannya. Persis "raksasanya tidak muncul, cuma ada lingkaran
+-- besar bersinar".
+--
+-- Sekarang dia di-spawn persis seperti avatar lain: langsung berdiri di
+-- tempatnya. Jalur itu sudah terbukti jalan enam puluh kali per sesi
+-- untuk kerumunan biasa, dan raksasa tidak lagi punya jalur khusus yang
+-- bisa gagal sendirian.
+
+-- Emote-nya. Melambai, bukan menari.
+--
+-- Dua alasan, dan yang kedua yang menentukan: (1) badan 10x yang
+-- ngedance gerakannya menyapu belasan stud tiap ketukan dan terbaca
+-- sebagai kacau, bukan sebagai keren; (2) seluruh panggung sudah
+-- menari serempak, jadi raksasa yang ikut menari cuma jadi salah satu
+-- dari mereka, kebetulan lebih besar. Yang DIAM di antara yang bergerak
+-- justru yang ditonton.
+--
+-- R15Wave (507770239) bawaan Roblox. Alternatif yang juga sudah dicek
+-- ada: 507770677 R15Cheer, 507770453 R15Point, 507770818 R15Laugh.
+local GIANT_EMOTE_ID    = "rbxassetid://507770239"
+local GIANT_EMOTE_SPEED = 0.55   -- dilambatkan: gerakan raksasa yang
+                                 -- secepat orang biasa terlihat gugup
+
+-- Berapa kali lipat kamera harus mundur untuk raksasa.
+--
+-- Tanpa ini kamera sinematik (12 stud) berakhir DI DALAM tulang
+-- keringnya. Dikali skalanya sendiri terlalu jauh -- pada 10x dia jadi
+-- 120 stud dan raksasanya kembali jadi titik kecil; setengahnya pas.
+local GIANT_KAMERA_JAUH = 0.55   -- pengali terhadap skala avatarnya
+
+-- --- PANGGUNG BERHENTI SELAMA SINEMATIK ---
+--
+-- Tidak ada yang di-spawn selama adegannya berlangsung, jadi kamera
+-- boleh nempel penuh ke satu orang tanpa ada yang datang di belakangnya
+-- dan mencuri perhatian.
+--
+-- Ambangnya tier 3, bukan 2. Tier 2 cuma butuh 1 koin dan saat live
+-- ramai dia datang tiap beberapa detik -- membekukan panggung untuk
+-- tiap satu koin berarti panggungnya lebih sering beku daripada jalan,
+-- dan antrian gratisan tidak pernah kebagian. Tier 2 tetap dapat border
+-- dan kamera 5 detik; yang dia tidak dapat cuma hak menghentikan
+-- panggung.
+local BEKU_ENABLED   = true
+local BEKU_MIN_TIER  = 3
+
+-- Tambahan waktu beku SESUDAH sorotannya habis, detik. Jeda napas
+-- supaya orang berikutnya tidak muncul di frame yang sama dengan avatar
+-- sinematik yang baru saja selesai.
+local BEKU_EKOR      = 0.8
+
+-- Batas atas berapa lama panggung boleh beku sekali adegan.
+--
+-- Pengaman, bukan penyetelan. spotlightMs dihitung dari koin, dan kalau
+-- suatu saat KOIN_SPOT_MAX_MUL di .env dinaikkan tanpa sengaja, angka
+-- itu langsung jadi lama panggung ini mati. Salah ketik satu digit
+-- tidak boleh berarti siaran diam semenit.
+local BEKU_MAKS      = 20
+
+-- --- LANTAI AURA UNTUK YANG BAYAR ---
+--
+-- Aura tetap diundi, cuma titik terendahnya yang naik. Ini menutup satu
+-- lubang yang kelihatan konyol di layar: orang kirim 10 koin, jadi
+-- raksasa setinggi tiga orang -- lalu auranya keluar 4%. Seluruh
+-- kesannya dibatalkan oleh satu angka.
+--
+-- Yang gratisan tidak disentuh: tetap 0-1000, tetap boleh dapat 998%.
+-- Kalau lantainya dinaikkan untuk semua orang, angka besar berhenti
+-- terasa besar.
+local AURA_LANTAI_T2 = 300
+local AURA_LANTAI_T3 = 550
+
+-- --- KAMERA SINEMATIK ---
+--
+-- Selama sorotan tier 3 dan 4, kamera berhenti mengayun dan MENGORBIT
+-- penuh mengelilingi orangnya. Tier 2 TIDAK mengorbit -- dia cuma
+-- menahan dekat. Bedanya sengaja di jenis gerakan, bukan di lamanya:
+-- dua gerakan yang sama dengan durasi berbeda tidak terbaca sebagai dua
+-- tingkat, cuma sebagai satu tingkat yang kadang lebih panjang.
+--
+-- Yang memutuskan mengorbit atau tidak field `orbit` dari /api/next,
+-- bukan angka di sini.
+--
+-- Perpindahan masuk-keluar mode ini TIDAK meloncat: sudut kameranya
+-- disimpan sebagai satu angka yang terus dijalankan, dan yang berganti
+-- cuma KECEPATAN putarnya (lihat gelung RenderStepped di client).
+local SINEMA_ENABLED = true
+local SINEMA_ORBIT_S = 14    -- lama satu putaran penuh, detik
+
+-- Sengaja TIDAK lebih dekat dari CAMERA_BACK (-11).
+--
+-- Godaannya merapat, karena adegan berbayar "harusnya" lebih intim.
+-- Yang membuat itu salah bukan badannya -- titik pandang kamera ikut
+-- naik bersama dia (lihat ikutiFokus), jadi sedekat apa pun dia tetap
+-- di tengah frame. Yang butuh jarak KERUMUNAN DI BAWAHNYA: seluruh
+-- alasan mengangkat dia 13 stud adalah supaya penonton melihat dia
+-- terpisah dari barisan orang lain, dan barisan itu harus ikut masuk
+-- frame untuk perbandingannya ada.
+local SINEMA_BACK    = -12
+local SINEMA_UP      = 5.5
+
+-- ============ KAMERA ============
+--
+-- Cuma satu gerakan: mengayun kiri-kanan mengitari titik fokus.
+-- Titik fokusnya avatar yang terakhir datang, dan kamera selalu
+-- memandang ke situ.
+-- Diperdekat dari -18/5. Yang datang harus mengisi frame, bukan berdiri
+-- sebagai titik kecil di tengah panggung -- dan papan aura di atas
+-- kepalanya baru kebaca kalau kameranya sedekat ini.
+--
+-- Jangan lebih dekat dari sekitar -8: baris kerumunan berjarak
+-- SPACING_Z = 6, jadi kamera yang masuk lebih dekat dari itu berakhir
+-- DI DALAM badan avatar yang berdiri di depan si fokus.
+local CAMERA_BACK      = -11   -- jarak mundur (negatif = di belakang)
+
+-- Tinggi kamera saat MERAPAT (zoom masuk).
+--
+-- Diturunkan 4 -> 2.5. Kamera yang duduk tinggi harus MENUNDUK untuk
+-- memandang titik fokusnya, dan sudut tunduk itu yang memotong kaki:
+-- badan avatar jadi miring di frame, kepalanya di tengah, telapaknya
+-- keluar lewat tepi bawah. Dari 2,5 sumbu pandangnya nyaris mendatar --
+-- avatarnya berdiri tegak di layar, utuh dari kepala sampai kaki.
+local CAMERA_UP        = 2.5
+
+-- Tinggi kamera saat MUNDUR PENUH (zoom keluar).
+--
+-- Dua angka, bukan satu, karena dua jarak itu mengerjakan dua hal yang
+-- berbeda -- dan satu ketinggian tidak bisa melayani keduanya:
+--
+--   dekat  yang penting SATU ORANG utuh. Kamera harus rendah, hampir
+--          sejajar mata, kalau tidak kakinya terpotong.
+--   jauh   yang penting KERUMUNANNYA. Barisan berdiri sejajar dan
+--          sama tinggi, jadi dari ketinggian mata yang terlihat cuma
+--          baris paling depan -- sisanya bersembunyi persis di
+--          belakang badan mereka. Kamera harus naik dan menunduk
+--          supaya kepala baris kedua, ketiga, keempat muncul di atas
+--          bahu baris di depannya.
+--
+-- Perpindahannya ikut zoom, jadi tidak ada gerakan tambahan yang harus
+-- dijadwalkan: dia naik sambil mundur, dan turun lagi sambil merapat.
+local CAMERA_UP_JAUH   = 7
+
+-- Setinggi apa kamera MEMANDANG, diukur dari lantai.
+--
+-- Ini bukan tempat avatarnya berdiri (itu BASE_Y) -- ini titik yang
+-- ditaruh kamera di tengah layar. Dulu keduanya dipakai angka yang
+-- sama, dan itu salahnya: BASE_Y = 5 kira-kira setinggi KEPALA avatar,
+-- jadi yang duduk di tengah frame kepalanya dan kakinya jatuh di bawah
+-- tepi layar -- apalagi waktu zoom sedang merapat.
+--
+-- 3,2 kira-kira setinggi dada. Dari situ kepala dan telapak kaki
+-- berjarak sama dari tengah, jadi dua-duanya masuk.
+local CAMERA_FOKUS_Y   = 3.2
+-- Diturunkan 22 -> 8.
+--
+-- Dua puluh dua derajat itu hampir seperempat lingkaran bolak-balik
+-- tiap sembilan detik, dan di layar penuh itu terbaca sebagai kamera
+-- yang gelisah -- bukan sebagai panggung yang hidup. Delapan derajat
+-- masih cukup untuk membuat gambarnya tidak beku, tapi tidak lagi
+-- menyeret mata penonton ke kiri dan ke kanan sepanjang siaran.
+--
+-- Ayunan bukan lagi satu-satunya gerakan sejak ada zoom di bawah, jadi
+-- dia memang tidak perlu sebesar dulu. Diturunkan lagi 8 -> 5 bersama
+-- SPAWN_LURUS di bawah: dua-duanya menyerang keluhan yang sama, yaitu
+-- avatar yang datang dilihat dari sudut, bukan dari depan.
+local CAMERA_SWEEP_DEG = 5     -- lebar ayunan, derajat ke kiri dan kanan
+local CAMERA_SWEEP_S   = 9     -- lama satu ayunan penuh (kiri-kanan-kiri)
+local CAMERA_MOVE_S    = 0.8   -- lama kamera berpindah ke fokus baru
+
+-- --- ZOOM: merapat waktu ada yang datang, lalu mundur lagi ---
+--
+-- Tiap kedatangan, kamera mulai DEKAT lalu ditarik mundur ke jarak
+-- biasa. Ini yang menggantikan ayunan lebar sebagai sumber gerakan:
+-- ayunan menggerakkan seluruh gambar terus-menerus (melelahkan), zoom
+-- bergerak sekali per kedatangan dan berhenti (bercerita).
+--
+-- Urutan yang dirasakan penonton: wajah orangnya dulu, baru panggung
+-- tempat dia berdiri. Kebalikannya -- mundur dulu lalu merapat -- juga
+-- gerakan, tapi dia menyembunyikan orangnya justru di detik dia datang.
+--
+-- Cuma dipicu kedatangan BARU. Pesan "ikut" yang mengejar avatar
+-- melayang tidak menyentuh ini; kalau ikut, zoom-nya akan diulang tujuh
+-- kali per detik dan kamera tidak pernah sempat mundur.
+local ZOOM_ENABLED = true
+
+-- Sedekat apa awalnya, sebagai pecahan dari jarak biasa. 0.45 = mulai
+-- di 45% jarak normal (kira-kira setengah badan mengisi frame).
+--
+-- Jangan di bawah ~0.3: pada CAMERA_BACK -11 itu berarti 3,3 stud, dan
+-- di jarak segitu kamera sudah masuk ke dalam kepala avatar yang
+-- berdiri di depan si fokus.
+local ZOOM_MASUK = 0.45
+
+-- Berapa lama dia MENAHAN dekat sebelum mulai mundur, detik.
+--
+-- Ada supaya "zoom in lalu zoom out" benar-benar terasa dua gerakan.
+-- Tanpa jeda ini keduanya menyatu jadi satu tarikan mundur, dan bagian
+-- dekatnya -- yang justru gunanya -- lewat sebelum sempat dilihat.
+--
+-- Diturunkan 1,6 -> 1,0, dan itu bukan selera: papan aura di atas
+-- kepala butuh AURA_ROLL (3 detik) untuk angkanya berputar naik, dan
+-- selama kamera masih merapat papan itu berada di luar frame atas.
+-- Menahan terlalu lama berarti undian yang jadi inti panggung ini lewat
+-- tanpa terlihat. Satu detik cukup untuk wajahnya terbaca; sisanya
+-- jatah papan.
+local ZOOM_TAHAN = 1.0
+
+-- Lama mundurnya, detik.
+--
+-- Dipercepat 2,8 -> 1,8 dengan alasan yang sama. Tahan 1,0 + mundur
+-- 1,8 = kamera sudah di jarak penuh pada detik 2,8, tepat sebelum
+-- putaran angkanya mendarat di detik 3,0.
+local ZOOM_KELUAR = 1.8
+
+-- Pandang LURUS ke orang yang baru datang.
+--
+-- Ayunan kiri-kanan jalan terus-menerus, jadi waktu ada yang muncul
+-- kameranya kebetulan sedang berada di suatu sudut -- dan avatar yang
+-- baru datang dilihat menyerong, bukan dari depan. Yang paling terasa
+-- justru di detik pertama, satu-satunya detik yang pasti ditonton.
+--
+-- Yang dilakukan: begitu ada kedatangan, sudut ayunannya digeser ke NOL
+-- (tepat di belakang si avatar, memandang punggung kamera ke depannya),
+-- lalu dilepas pelan supaya dia kembali mengayun sendiri.
+--
+-- Perpindahannya TIDAK meloncat, dan tidak butuh mesin baru: dia
+-- memakai sudutBias yang sudah ada -- angka yang sama yang dipakai
+-- orbit untuk mengambil alih ayunan tanpa satu pun frame yang lompat.
+local SPAWN_LURUS = true
+
+-- ============ MUSIK + TARIAN ============
+--
+-- Satu baris = satu lagu DAN tarian pasangannya. Begitu lagunya ganti,
+-- seluruh avatar di panggung ganti tarian bersamaan -- termasuk yang
+-- sudah berdiri sejak lagu sebelumnya.
+--
+-- `dance` boleh dikosongkan ("") -> dipakai DANCE_FALLBACK.
+-- `musik` boleh dikosongkan ("") -> tarian ganti tanpa ada lagu (kalau
+-- musiknya kamu putar dari luar Roblox, misalnya OBS).
+--
+-- Cara cari ID: View > Toolbox > Audio / Marketplace, klik kanan
+-- hasilnya > Copy Asset ID. Audio berlisensi (bukan milikmu) sering
+-- tidak bisa diputar di game yang di-publish -- kalau di Studio bunyi
+-- tapi di game senyap, itu sebabnya.
+local MUSIC_ENABLED = true
+local MUSIC_VOLUME  = 0.5
+
+-- Jeda hening antar lagu, detik.
+local MUSIC_GAP     = 1.5
+
+local DANCE_FALLBACK = "rbxassetid://106865236633450"
+
+local PLAYLIST = {
+	{ nama = "Lagu 1", musik = "", dance = "rbxassetid://106865236633450" },
+	{ nama = "Lagu 2", musik = "", dance = "rbxassetid://106865236633450" },
+	{ nama = "Lagu 3", musik = "", dance = "rbxassetid://106865236633450" },
+}
+
+-- Kalau satu lagu gagal dimuat, TimeLength-nya 0 dan Ended tidak pernah
+-- menyala -- tanpa batas ini playlist berhenti selamanya di lagu itu.
+local MUSIC_MAX_S = 300
+
+-- Kendali lagu dari luar Roblox (opsional, MATI secara default).
+--
+-- Kalau dinyalakan, script ini ikut menanyakan URL .. "/api/music" tiap
+-- polling dan menuruti jawabannya:
+--     { "action": "next" }   -> lompat ke lagu berikutnya
+--     { "index": 2 }         -> lompat ke lagu nomor 2 (mulai dari 1)
+--     { }                    -> tidak melakukan apa-apa
+--
+-- Endpoint-nya BELUM ADA di main.py. Biarkan false sampai dibuat;
+-- dinyalakan tanpa endpoint-nya cuma menghasilkan warning tiap detik.
+local MUSIC_API = false
+
+-- HUD diagnosa kecil di pojok kiri atas layar penonton: jumlah frame,
+-- CameraType, berapa studs kamera bergeser, dan titik fokusnya. Matikan
+-- kalau sudah beres -- ini alat servis, bukan bagian dari tampilan.
+local DEBUG_HUD = true
+
+-- Sinkronisasi tarian (dikerjakan client, angkanya disetel di sini).
+--
+-- Diperketat 3 -> 0.6 detik. Avatar yang baru berdiri SELALU mulai
+-- menari dari detik nol -- animasi direplikasi sebagai perintah "mainkan
+-- sekarang", bukan sebagai posisi waktu -- jadi jeda penyamaan itu
+-- persis lamanya dia terlihat menari sendiri di luar barisan. Tiga detik
+-- itu terlalu lama untuk tidak disadari; setengah detik nyaris tidak.
+--
+-- Jangan diturunkan ke bawah ~0.3: menyetel TimePosition membuat
+-- gerakannya meloncat sedikit, dan menyamakan terlalu sering justru
+-- terlihat seperti tersendat.
+local RESYNC_EVERY = 0.6
+local DRIFT_LIMIT  = 0.04
+
+-- Cara mengoreksi yang melenceng.
+--
+-- Dulu satu-satunya cara menulis TimePosition, dan itu SELALU
+-- meloncat: selisih 0,05 detik pun jadi sentakan kecil yang terlihat
+-- tiap RESYNC_EVERY. Yang digeser sekarang kecepatannya -- yang
+-- ketinggalan diputar sedikit lebih cepat sampai menyusul sendiri.
+--
+--   KP          seberapa kuat koreksinya. Naikkan = cepat menyusul
+--               tapi mudah kebablasan lalu berayun; turunkan = halus
+--               tapi lama.
+--   SPEED_MAKS  batas perubahan kecepatan. 0.15 = paling banyak
+--               15% lebih cepat/lambat. Di atas ~0.3 koreksinya
+--               sendiri mulai kelihatan sebagai gerakan aneh.
+--   SNAP        di atas selisih ini, tetap diloncatkan. Dipakai avatar
+--               yang baru berdiri (mulai dari detik nol) dan yang baru
+--               mendarat dari adegan melayang -- mengejar selisih
+--               sebesar itu dengan 15% butuh belasan detik, dan selama
+--               itu dia menari sendiri di tengah barisan.
+local SYNC_KP         = 0.6
+local SYNC_SPEED_MAKS = 0.15
+local SYNC_SNAP       = 0.35
+
+-- ============ VISUAL / PENCAHAYAAN ============
+--
+-- Semua yang di bawah ini CUMA tampilan: Lighting, Atmosphere, dan
+-- efek pasca-proses. Tidak ada satu pun yang menyentuh posisi avatar,
+-- kamera, musik, atau panggung.
+--
+-- Dipasang SEKALI waktu server hidup, bukan tiap frame. Lighting itu
+-- service yang direplikasi, jadi satu kali set di server = semua
+-- penonton ikut, tanpa ada gelung yang jalan terus.
+-- Dikelompokkan jadi satu TABEL, bukan konstanta lepas satu per satu.
+--
+-- Bukan gaya penulisan: Lua membatasi 200 variabel lokal per fungsi, dan
+-- seluruh file ini SATU fungsi (chunk utamanya). File ini pernah
+-- menembus batas itu, dan yang muncul bukan peringatan halus --
+-- script-nya menolak dikompilasi sama sekali:
+--
+--     too many local variables (limit is 200) in main function
+--
+-- Satu tabel = satu variabel lokal, isinya sebanyak yang kamu mau. Cara
+-- memakainya tidak berubah, cuma titiknya menggantikan garis bawah.
+local VISUAL = {}
+
+VISUAL.ENABLED = true
+
+-- Jam di langit. 15-16 = sore: mataharinya miring, jadi avatarnya
+-- punya bayangan panjang dan wajahnya kena cahaya dari samping.
+-- Tengah hari (12) bikin cahaya jatuh lurus dari atas -- rata, tanpa
+-- kedalaman, dan itu yang bikin map terlihat "default".
+VISUAL.JAM       = 15.2
+VISUAL.LINTANG   = 12      -- kemiringan lintasan matahari
+
+-- Terang keseluruhan dan bukaan "lensa"-nya. Exposure dinaikkan
+-- sedikit saja: di atas ~0.4 warna terangnya mulai putih pecah.
+VISUAL.TERANG    = 2.2
+VISUAL.EXPOSURE  = 0.15
+
+-- Kelembutan bayangan. Cuma berlaku di Technology = Future.
+-- 0 = tepi bayangan setajam pisau (terlihat palsu), 1 = kabur.
+VISUAL.BAYANG    = 0.22
+
+-- Kabut udara. Ini yang bikin baris belakang terlihat LEBIH JAUH, bukan
+-- cuma lebih kecil. Jangan di atas ~0.45: panggungnya ikut berkabut.
+VISUAL.KABUT     = 0.30
+
+-- Efek pasca-proses. 0 = matikan efeknya.
+VISUAL.BLOOM     = 0.45    -- pendar di bagian paling terang
+VISUAL.SUNRAYS   = 0.06    -- berkas matahari; di atas 0.15 norak
+VISUAL.KONTRAS   = 0.14
+VISUAL.SATURASI  = 0.06    -- sengaja kecil: "vivid" bukan "lebay"
+
+-- Depth of field: baris belakang sedikit buram, yang di depan tajam.
+-- Angkanya menempel ke CAMERA_BACK -- kamera duduk ~11 studs dari
+-- avatar yang sedang disorot, dan barisan mundur 6 studs per baris.
+VISUAL.DOF       = true
+VISUAL.DOF_FOKUS = 12      -- jarak bidang fokus, studs
+VISUAL.DOF_TAJAM = 26      -- radius yang tetap tajam
+VISUAL.DOF_BURAM = 0.12    -- kekuatan buram di belakangnya
+
+-- Turunkan mutu otomatis di HP / perangkat lemot.
+--
+-- Client menghitung FPS-nya SEKALI di detik-detik pertama, lalu
+-- mematikan efek yang paling mahal kalau ternyata tidak kuat. Sekali,
+-- bukan terus-menerus: pengukuran yang jalan selamanya justru ikut
+-- memakan frame yang mau diselamatkan.
+VISUAL.AUTO      = true
+VISUAL.FPS_MIN   = 32
+
+-- --- Warna lantai (Baseplate) ---
+--
+-- Cuma WARNA. Ukuran, posisi, dan bentuk lantainya tidak disentuh sama
+-- sekali -- avatar tetap berdiri di tempat yang persis sama.
+--
+-- Lantai bawaan Roblox itu dua lapis, dan ini sering bikin bingung:
+--   1. Part "Baseplate" -- warna dasarnya
+--   2. Texture di permukaan atasnya -- pola kotak-kotaknya
+-- Mengubah warna partnya saja tidak cukup: polanya digambar di atasnya
+-- dan tetap abu bawaan, jadi lantainya terlihat "setengah berubah".
+-- Dua-duanya disetel di bawah.
+-- Dikelompokkan jadi satu TABEL, bukan konstanta lepas satu per satu.
+--
+-- Bukan gaya penulisan: Lua membatasi 200 variabel lokal per fungsi, dan
+-- seluruh file ini SATU fungsi (chunk utamanya). File ini pernah
+-- menembus batas itu, dan yang muncul bukan peringatan halus --
+-- script-nya menolak dikompilasi sama sekali:
+--
+--     too many local variables (limit is 200) in main function
+--
+-- Satu tabel = satu variabel lokal, isinya sebanyak yang kamu mau. Cara
+-- memakainya tidak berubah, cuma titiknya menggantikan garis bawah.
+local LANTAI = {}
+
+LANTAI.ENABLED = true
+
+-- Nama part lantainya. Ganti kalau di map-mu namanya bukan "Baseplate".
+LANTAI.NAMA    = "Baseplate"
+
+-- Warna dasar dan warna kotak-kotaknya.
+--
+-- Sengaja abu KEBIRUAN, bukan abu netral: lantai netral memantulkan
+-- warna apa adanya dan bikin panggung terasa seperti studio foto.
+-- Sedikit biru di lantai membuat cahaya sore yang hangat dari atas
+-- punya lawan, dan itu yang bikin gambarnya terasa punya kedalaman.
+--
+-- Gelap juga disengaja. Lantai terang memantul ke bawah badan avatar
+-- dan menghapus bayangannya sendiri -- dan bayangan itu satu-satunya
+-- yang menempelkan mereka ke tanah.
+LANTAI.WARNA  = Color3.fromRGB(48, 52, 62)   -- warna dasar
+LANTAI.GARIS  = Color3.fromRGB(74, 80, 94)   -- pola kotaknya
+
+-- Material. SmoothPlastic = permukaan bersih tanpa butiran, dan dia
+-- menangkap pantulan langit dari EnvironmentSpecularScale di atas --
+-- ini yang bikin lantainya terlihat seperti panggung, bukan seperti
+-- tanah. Kosongkan (nil) kalau mau materialnya dibiarkan apa adanya.
+LANTAI.MATERIAL = Enum.Material.SmoothPlastic
+
+-- ====================================
+
+if HIDE_PLAYER_AVATAR then
+	Players.CharacterAutoLoads = false
+	for _, pemain in ipairs(Players:GetPlayers()) do
+		if pemain.Character then pemain.Character:Destroy() end
+	end
+end
+
+-- Remote dibuat lewat kode, bukan di-insert manual: satu objek yang
+-- salah nama = kamera mati tanpa satu pun error di Output.
+local V2Event = ReplicatedStorage:FindFirstChild("V2Event")
+	or Instance.new("RemoteEvent")
+V2Event.Name   = "V2Event"
+V2Event.Parent = ReplicatedStorage
+
+local V2Config = ReplicatedStorage:FindFirstChild("V2Config")
+	or Instance.new("RemoteFunction")
+V2Config.Name   = "V2Config"
+V2Config.Parent = ReplicatedStorage
+
+local avatars   = {}   -- slot -> model
+local tracks    = {}   -- slot -> AnimationTrack
+local slotCount = 0
+local resetting = false
+
+-- Garis tepi yang sedang hidup, urut dari yang paling tua. Roblox cuma
+-- menggambar sekitar 31 Highlight sekaligus, jadi daftar ini yang
+-- memutuskan siapa yang dilepas duluan waktu penuh.
+local borderHidup = {}
+
+local laguIndex = 0    -- 0 = belum ada lagu yang jalan
+local laguSound = nil
+
+-- ============ POSISI & TINGGI ============
+
+-- Nomor slot raksasa dipisah jauh dari nomor kerumunan (1, 2, 3, ...).
+--
+-- Dengan nomor terpisah, raksasa tidak pernah ikut menggeser urutan
+-- barisan: dia tidak menghabiskan jatah DELETE_AFTER, tidak mendorong
+-- siapa pun mundur satu baris, dan tidak membuat orang berikutnya
+-- berdiri di tempat yang seharusnya kosong. Cuma ada satu pada satu
+-- waktu, jadi satu nomor cukup.
+local SLOT_RAKSASA = 9999
+
+local function getPosition(slot)
+	if slot == SLOT_RAKSASA then
+		return Vector3.new(GIANT_X, BASE_Y, GIANT_Z)
+	end
+	local i   = slot - 1
+	local row = math.floor(i / ROW_SIZE)
+	local col = i % ROW_SIZE
+	local x = (col - (ROW_SIZE - 1) / 2) * SPACING_X
+	local z = -row * SPACING_Z
+	return Vector3.new(x, BASE_Y, z)
+end
+
+-- Jarak pivot ke telapak kaki, DIUKUR dari rig-nya sendiri.
+--
+-- HipHeight didefinisikan Roblox persis sebagai jarak sisi bawah
+-- HumanoidRootPart ke tanah. Kotak pembungkus tidak dipakai karena dia
+-- ikut membungkus aksesori: rambut panjang atau ekor yang menjulur ke
+-- bawah membuat avatarnya terangkat sebanyak itu.
+local function tinggiPivot(model)
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	local hrp = model:FindFirstChild("HumanoidRootPart")
+	if hum and hrp then
+		local ok, hasil = pcall(function()
+			return hum.HipHeight + hrp.Size.Y / 2
+		end)
+		if ok and hasil and hasil > 0 then return hasil end
+	end
+	return nil
+end
+
+-- Titik yang DIPANDANG kamera untuk sebuah slot.
+--
+-- Sengaja fungsi sendiri, tidak menumpang getPosition: keduanya
+-- kebetulan punya X dan Z yang sama, tapi artinya beda dan tingginya
+-- beda. getPosition = tempat kaki avatarnya berdiri; yang ini = tempat
+-- kamera menaruh titik tengah layarnya. Waktu keduanya masih satu
+-- fungsi, menurunkan bidikan kamera berarti ikut memindahkan avatarnya.
+local function titikPandang(slot)
+	local p = getPosition(slot)
+	return Vector3.new(p.X, CAMERA_FOKUS_Y, p.Z)
+end
+
+local function finalCFrame(model, slot)
+	local p = getPosition(slot)
+	local y = FLOOR_Y + (tinggiPivot(model) or BASE_Y)
+	return CFrame.new(p.X, y, p.Z)
+end
+
+-- Kunci posisi TANPA Anchored.
+--
+-- Anchored menghentikan Motor6D, jadi avatarnya diam seperti patung
+-- meskipun track:Play() dipanggil dan tidak ada error. Ketiga angka
+-- pegasnya dikali massa supaya selisih tahannya tidak bergantung ukuran
+-- avatar.
+local function lockInPlace(model, hrp, targetCF)
+	local massa = 0
+	pcall(function()
+		for _, bagian in ipairs(model:GetDescendants()) do
+			if bagian:IsA("BasePart") then massa += bagian:GetMass() end
+		end
+	end)
+	massa = math.max(massa, 1)
+
+	local bp = Instance.new("BodyPosition")
+	bp.Name     = "PositionLock"
+	bp.MaxForce = Vector3.new(1, 1, 1) * (massa * workspace.Gravity * 200)
+	bp.P        = massa * 3000
+	bp.D        = massa * 160
+	bp.Position = targetCF.Position
+	bp.Parent   = hrp
+
+	local bg = Instance.new("BodyGyro")
+	bg.Name      = "RotationLock"
+	bg.MaxTorque = Vector3.new(1, 1, 1) * (massa * 5000)
+	bg.P         = massa * 3000
+	bg.D         = massa * 200
+	bg.CFrame    = targetCF
+	bg.Parent    = hrp
+end
+
+-- ============ NAMEPLATE ============
+
+-- Warna nama dari huruf-hurufnya sendiri: orang yang sama selalu dapat
+-- warna yang sama, dan tetangganya hampir pasti beda. Tidak perlu ada
+-- daftar warna yang disimpan.
+--
+-- Rentang HUE-nya dikunci ke 190-290 derajat (biru muda -> ungu), bukan
+-- lingkaran penuh. Sebelumnya nama bisa keluar hijau lumut atau coklat
+-- -- warna yang di atas kepala avatar terbaca seperti bug, bukan gaya.
+-- Yang dipakai gradien dua warna dari titik itu, jadi hurufnya
+-- berpindah warna dari atas ke bawah.
+local function gradienNama(username)
+	local hash = 0
+	for i = 1, #username do
+		hash = (hash * 31 + string.byte(username, i)) % 360
+	end
+	local h = (190 + (hash % 100)) / 360
+
+	local atas  = Color3.fromHSV(h, 0.55, 1)
+	local bawah = Color3.fromHSV(((h * 360 + 55) % 360) / 360, 0.70, 1)
+	return ColorSequence.new({
+		ColorSequenceKeypoint.new(0, atas),
+		ColorSequenceKeypoint.new(1, bawah),
+	}), Color3.fromHSV(((h * 360 + 30) % 360) / 360, 0.75, 1)
+end
+
+local function createNameplate(model, username)
+	if not PLATE.ENABLED then return end
+
+	local head = model:FindFirstChild("Head")
+	if not head then return end
+
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	end
+
+	local gui = Instance.new("BillboardGui")
+	gui.Name        = "Nameplate"
+	gui.Size        = UDim2.new(0, PLATE.WIDTH, 0, PLATE.HEIGHT)
+	gui.StudsOffset = Vector3.new(0, PLATE.OFFSET, 0)
+	gui.AlwaysOnTop = true
+	gui.MaxDistance = PLATE.DIST
+	gui.Parent      = head
+
+	local warna, glow = gradienNama(username)
+
+	-- Glow-nya label KEMBAR di belakang, bukan efek: Roblox tidak punya
+	-- blur untuk GUI. Huruf yang sama, warna neon, stroke tebal dan
+	-- setengah tembus -- dari jarak main yang terlihat cuma "namanya
+	-- bercahaya". Dibuat duluan supaya digambar di bawah (ZIndex).
+	local glowLbl = Instance.new("TextLabel")
+	glowLbl.Name                   = "Glow"
+	glowLbl.Size                   = UDim2.new(1, 0, 1, 0)
+	glowLbl.BackgroundTransparency = 1
+	glowLbl.Text                   = username
+	glowLbl.TextColor3             = glow
+	glowLbl.FontFace               = PLATE.FONT
+	glowLbl.TextScaled             = true
+	glowLbl.TextTransparency       = 0.55
+	glowLbl.TextStrokeTransparency = 1
+	glowLbl.ZIndex                 = 1
+	glowLbl.Parent                 = gui
+
+	local glowStroke = Instance.new("UIStroke")
+	glowStroke.Color           = glow
+	glowStroke.Thickness       = 4
+	glowStroke.Transparency    = 0.5
+	glowStroke.ApplyStrokeMode  = Enum.ApplyStrokeMode.Contextual
+	glowStroke.LineJoinMode    = Enum.LineJoinMode.Round
+	glowStroke.Parent          = glowLbl
+
+	local label = Instance.new("TextLabel")
+	label.Size                   = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text                   = username
+	label.TextColor3             = Color3.fromRGB(255, 255, 255)
+	label.FontFace               = PLATE.FONT
+	label.TextScaled             = true
+	-- TextStroke bawaan dimatikan: dia menebalkan huruf jadi blok hitam
+	-- bergerigi. UIStroke sudutnya bulat dan tebalnya bisa pecahan.
+	label.TextStrokeTransparency = 1
+	label.ZIndex                 = 2
+	label.Parent                 = gui
+
+	local gradien = Instance.new("UIGradient")
+	gradien.Color    = warna
+	gradien.Rotation = 90
+	gradien.Parent   = label
+
+	local garis = Instance.new("UIStroke")
+	garis.Color           = Color3.fromRGB(10, 12, 24)
+	garis.Thickness       = 1.5
+	garis.Transparency    = 0.15
+	garis.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+	garis.LineJoinMode    = Enum.LineJoinMode.Round
+	garis.Parent          = label
+end
+
+-- ============ TARIAN ============
+
+local function danceSekarang()
+	local lagu = PLAYLIST[laguIndex]
+	local id   = lagu and lagu.dance
+	if id and id ~= "" then return id end
+	return DANCE_FALLBACK
+end
+
+local function playDance(model, animId)
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	if not hum then return nil end
+
+	local animator = hum:FindFirstChildOfClass("Animator")
+	if not animator then
+		animator = Instance.new("Animator")
+		animator.Parent = hum
+	end
+
+	local anim = Instance.new("Animation")
+	anim.AnimationId = animId or danceSekarang()
+	anim.Parent = model
+
+	local ok, track = pcall(function()
+		return animator:LoadAnimation(anim)
+	end)
+	if not ok then
+		warn("Gagal load animasi:", track)
+		return nil
+	end
+
+	track.Looped = true
+	-- Play(0) = tanpa fade-in. Fade default 0,1 detik bikin gerakan awal
+	-- terlihat meleset dari yang lain.
+	track:Play(0)
+	return track
+end
+
+-- Ganti tarian SELURUH panggung. Dipanggil tiap lagu berganti.
+local function gantiTarianSemua()
+	local id = danceSekarang()
+
+	for slot, model in pairs(avatars) do
+		-- Yang sedang mengambang dilewati: dia memang sengaja tidak
+		-- menari, dan tarian baru di sini akan menghidupkannya kembali
+		-- di tengah udara. Dia menyusul sendiri waktu mendarat.
+		-- Raksasa juga dilewati: dia sengaja melambai, bukan menari,
+		-- dan lagu yang berganti tidak boleh diam-diam menariknya
+		-- masuk ke koreografi kerumunan.
+		if model.Parent and slot ~= SLOT_RAKSASA then
+			local lama = tracks[slot]
+			if lama then pcall(function() lama:Stop(0.15) end) end
+			tracks[slot] = playDance(model, id)
+		end
+	end
+end
+
+-- ============ MUSIK ============
+
+local function putarLagu(index)
+	if not MUSIC_ENABLED or #PLAYLIST == 0 then return end
+
+	-- Berputar balik ke awal setelah lagu terakhir.
+	laguIndex = ((index - 1) % #PLAYLIST) + 1
+	local lagu = PLAYLIST[laguIndex]
+
+	if laguSound then
+		laguSound:Destroy()
+		laguSound = nil
+	end
+
+	-- Tarian diganti DULU, sebelum lagunya bunyi: kalau sesudah,
+	-- ada sepersekian detik di mana lagu baru berjalan di atas gerakan
+	-- lagu lama.
+	gantiTarianSemua()
+
+	if lagu.musik and lagu.musik ~= "" then
+		local s = Instance.new("Sound")
+		s.Name    = "Musik"
+		s.SoundId = lagu.musik
+		s.Volume  = MUSIC_VOLUME
+		s.Looped  = false
+		-- Sound yang diparent SERVER ke workspace direplikasi ke semua
+		-- client, jadi semua penonton mendengar lagu yang sama pada
+		-- posisi yang sama.
+		s.Parent  = workspace
+		s:Play()
+		laguSound = s
+	end
+
+	V2Event:FireAllClients("musik", {
+		nama  = lagu.nama or ("Lagu " .. laguIndex),
+		index = laguIndex,
+	})
+
+	print(("Lagu %d/%d: %s"):format(laguIndex, #PLAYLIST,
+		lagu.nama or "(tanpa nama)"))
+end
+
+local function laguBerikutnya()
+	putarLagu(laguIndex + 1)
+end
+
+-- Gelung playlist.
+--
+-- Yang dipakai Sound.Ended, dengan MUSIC_MAX_S sebagai jaring pengaman:
+-- asset yang gagal dimuat tidak pernah menyalakan Ended, dan tanpa batas
+-- itu playlist berhenti selamanya di lagu yang rusak.
+local function startMusicLoop()
+	if not MUSIC_ENABLED or #PLAYLIST == 0 then return end
+
+	task.spawn(function()
+		putarLagu(1)
+
+		while true do
+			local mulai   = os.clock()
+			local sekarang = laguIndex
+			local s        = laguSound
+
+			if s then
+				local selesai = false
+				local conn = s.Ended:Connect(function() selesai = true end)
+
+				while not selesai
+					and laguIndex == sekarang
+					and os.clock() - mulai < MUSIC_MAX_S do
+					task.wait(0.2)
+				end
+				conn:Disconnect()
+			else
+				-- Lagu tanpa asset (musik diputar dari luar Roblox):
+				-- tariannya tetap berganti tiap MUSIC_MAX_S supaya
+				-- playlist tidak macet di satu gerakan.
+				while laguIndex == sekarang
+					and os.clock() - mulai < MUSIC_MAX_S do
+					task.wait(0.2)
+				end
+			end
+
+			-- Dilewati kalau lagunya sudah keburu diganti dari luar
+			-- (MUSIC_API): yang mengganti sudah memanggil putarLagu
+			-- sendiri, dan memanggilnya lagi di sini akan melompat dua.
+			if laguIndex == sekarang then
+				task.wait(MUSIC_GAP)
+				if laguIndex == sekarang then
+					laguBerikutnya()
+				end
+			end
+		end
+	end)
+end
+
+-- ============ AURA ============
+
+local function hitungAura(tier)
+	local bawah = AURA_MIN
+
+	-- Yang naik cuma LANTAINYA; langit-langitnya tetap AURA_MAX untuk
+	-- semua orang. Jadi yang bayar tidak pernah dapat angka memalukan,
+	-- tapi juga tidak dijamin menang -- yang gratisan masih bisa
+	-- mengalahkan dia, dan justru itu yang bikin panggungnya seru.
+	if TIER_ENABLED and tier then
+		if tier >= 3 then
+			bawah = math.max(bawah, AURA_LANTAI_T3)
+		elseif tier >= 2 then
+			bawah = math.max(bawah, AURA_LANTAI_T2)
+		end
+	end
+
+	if bawah > AURA_MAX then bawah = AURA_MAX end
+	return math.random(bawah, AURA_MAX)
+end
+
+-- `model` ikut dikirim supaya client bisa menempelkan papan auranya di
+-- kepala avatar yang benar. Instance boleh lewat RemoteEvent apa adanya;
+-- yang sampai di sana referensi ke objek yang sama, bukan salinan.
+--
+-- Papannya dibuat CLIENT, bukan server, walaupun BillboardGui itu benda
+-- dunia yang seharusnya bisa dibuat sekali di server. Alasannya angka
+-- yang berhitung naik: animasi itu mengubah Text puluhan kali per
+-- detik, dan kalau dibuat di server tiap perubahan itu satu paket
+-- replikasi ke SEMUA penonton -- untuk sesuatu yang hasil akhirnya sama
+-- di semua layar. Dibuat client, animasinya gratis dan semulus frame
+-- rate masing-masing.
+local function tampilkanAura(model, nama, persen, slot)
+	V2Event:FireAllClients("aura", {
+		model  = model,
+		nama   = nama,
+		persen = persen,
+		lama   = AURA_TIME,
+		roll   = AURA_ROLL,
+		-- Papan raksasa cuma menampilkan USERNAME -- tanpa angka, tanpa
+		-- kata AURA.
+		--
+		-- Angkanya tetap diundi dan tetap masuk log (berguna buat yang
+		-- menjaga siaran), yang dilewati cuma tampilannya. Alasannya
+		-- sama dengan kenapa raksasa tidak dapat border: yang membuat
+		-- tier 3 terbaca UKURAN badannya, dan papan tiga baris di atas
+		-- kepala setinggi belasan stud jadi papan reklame yang
+		-- menyaingi badannya sendiri. Satu baris nama sudah cukup untuk
+		-- menjawab "itu siapa".
+		namaSaja = (slot == SLOT_RAKSASA) or nil,
+
+		-- Papan raksasa tidak ikut aturan "hanya baris depan".
+		--
+		-- Dia berdiri di luar barisan, dan nomor barisnya kalau dipaksa
+		-- dihitung akan keluar sebagai angka raksasa juga -- yang di
+		-- client berarti SEMUA papan lain dianggap ada di belakangnya
+		-- dan dilepas sekaligus. Penanda ini membuat dia diam saja:
+		-- tidak melepas siapa pun, dan tidak dilepas siapa pun.
+		tetap  = (slot == SLOT_RAKSASA) or nil,
+		-- Nomor barisnya, bukan nomor slotnya: client cuma perlu tahu
+		-- siapa yang berdiri di DEPAN siapa, dan itu urusan baris.
+		-- Menghitungnya di sini supaya client tidak perlu tahu ROW_SIZE
+		-- sama sekali.
+		baris  = math.floor((slot - 1) / ROW_SIZE),
+	})
+end
+
+-- ============ TIER: BORDER, AKSESORI, MELAYANG ============
+
+local function warnaTier(tier)
+	if tier >= 3 then return BORDER_T3_WARNA end
+	return BORDER_T2_WARNA
+end
+
+local function umurBorder(tier)
+	if tier >= 3 then return BORDER_T3_UMUR end
+	return BORDER_T2_UMUR
+end
+
+-- Lepas satu border, memudar dulu kalau sempat.
+--
+-- Highlight tidak bisa di-tween (Roblox tidak mengizinkan properti
+-- Highlight jadi target TweenService), jadi pudarnya ditulis tangan
+-- dengan gelung Heartbeat. Cakramnya tween biasa.
+local function lepasBorder(rec, seketika)
+	if not rec or rec.lepas then return end
+	rec.lepas = true
+
+	for i, lain in ipairs(borderHidup) do
+		if lain == rec then table.remove(borderHidup, i) break end
+	end
+
+	local waktu = seketika and 0 or BORDER_PUDAR
+
+	task.spawn(function()
+		if waktu > 0 then
+			local mulai = os.clock()
+			while os.clock() - mulai < waktu do
+				local t = (os.clock() - mulai) / waktu
+				if rec.garis and rec.garis.Parent then
+					rec.garis.OutlineTransparency =
+						BORDER_GARIS_ALPHA + (1 - BORDER_GARIS_ALPHA) * t
+					rec.garis.FillTransparency =
+						BORDER_ISI + (1 - BORDER_ISI) * t
+				end
+				if rec.cakram and rec.cakram.Parent then
+					rec.cakram.Transparency =
+						BORDER_CAKRAM_ALPHA + (1 - BORDER_CAKRAM_ALPHA) * t
+				end
+				RunService.Heartbeat:Wait()
+			end
+		end
+
+		if rec.garis  then rec.garis:Destroy()  end
+		if rec.cakram then rec.cakram:Destroy() end
+	end)
+end
+
+-- Pasang border untuk satu avatar. Mengembalikan catatannya supaya
+-- pemanggil bisa ikut menaikkan cakramnya waktu adegan Matrix jalan.
+local function pasangBorder(model, slot, tier, kakiY, skala)
+	if not (TIER_ENABLED and BORDER_ENABLED and tier >= 2) then return nil end
+
+	local warna = warnaTier(tier)
+	local rec   = { slot = slot, tier = tier }
+	-- Cakram raksasa harus ikut membesar. Cakram 5,5 stud di bawah kaki
+	-- selebar 8 stud bukan lingkaran cahaya, cuma titik di antara dua
+	-- telapak -- dan dari kamera yang mundur 60 stud dia hilang sama
+	-- sekali.
+	local d = BORDER_CAKRAM_D * (skala or 1)
+
+	if BORDER_GARIS then
+		-- Yang paling tua dilepas duluan waktu penuh. Tanpa ini, yang
+		-- KE-32 dan seterusnya cuma tidak digambar -- dan yang hilang
+		-- justru border baru, milik orang yang barusan bayar.
+		while #borderHidup >= BORDER_MAKS_GARIS do
+			lepasBorder(borderHidup[1], true)
+		end
+
+		local h = Instance.new("Highlight")
+		h.Name                = "BorderTier"
+		h.Adornee             = model
+		h.OutlineColor        = warna
+		h.OutlineTransparency = BORDER_GARIS_ALPHA
+		h.FillColor           = warna
+		h.FillTransparency    = BORDER_ISI
+		-- AlwaysOnTop, bukan Occluded: kerumunan tumbuh ke arah kamera,
+		-- jadi yang bayar lima menit lalu berdiri di belakang badan
+		-- orang-orang yang datang sesudahnya. Border yang bisa
+		-- terhalang berarti dia membayar untuk sesuatu yang hilang
+		-- justru saat panggungnya ramai.
+		h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		h.Parent    = model
+		rec.garis   = h
+
+		table.insert(borderHidup, rec)
+	end
+
+	if BORDER_CAKRAM then
+		local c = Instance.new("Part")
+		c.Name         = "CakramTier"
+		c.Shape        = Enum.PartType.Cylinder
+		-- Cylinder Roblox tidur di sumbu X: sisi bundarnya menghadap
+		-- +X/-X. Diputar 90 derajat di sumbu Z supaya bundarnya
+		-- menghadap ke atas, jadi cakram, bukan tiang.
+		c.Size         = Vector3.new(BORDER_CAKRAM_TIPIS * (skala or 1),
+			d, d)
+		c.Anchored     = true
+		c.CanCollide   = false
+		c.CanQuery     = false
+		c.CanTouch     = false
+		c.CastShadow   = false
+		c.Material     = Enum.Material.Neon
+		c.Color        = warna
+		c.Transparency = BORDER_CAKRAM_ALPHA
+		c.CFrame       = CFrame.new(model:GetPivot().Position.X, kakiY + 0.05,
+			model:GetPivot().Position.Z) * CFrame.Angles(0, 0, math.rad(90))
+		c.Parent       = workspace
+		rec.cakram     = c
+
+		if BORDER_CAKRAM_LAMPU > 0 then
+			local l = Instance.new("PointLight")
+			l.Color     = warna
+			l.Range     = BORDER_CAKRAM_LAMPU * (skala or 1)
+			l.Brightness = 2
+			l.Parent    = c
+		end
+	end
+
+	local umur = umurBorder(tier)
+	if umur > 0 then
+		task.delay(umur, function() lepasBorder(rec) end)
+	end
+
+	return rec
+end
+
+-- --- RAKSASA (tier 3) ---
+
+-- Buang raksasa yang sedang berdiri.
+--
+-- Langsung dihapus, tanpa animasi tenggelam. Versi sebelumnya
+-- menurunkannya pelan-pelan lewat BodyPosition supaya pergantiannya
+-- terlihat halus -- tapi itu jalur khusus yang sama yang membuat
+-- raksasa bisa tersangkut di bawah tanah, dan satu detik kehalusan
+-- tidak sebanding dengan itu.
+local function buangRaksasa()
+	local lama = avatars[SLOT_RAKSASA]
+	if not lama then return end
+
+	local t = tracks[SLOT_RAKSASA]
+	if t then pcall(function() t:Stop() end) end
+
+	avatars[SLOT_RAKSASA] = nil
+	tracks[SLOT_RAKSASA]  = nil
+
+	if lama.Parent then lama:Destroy() end
+end
+
+-- ============ KAMERA ============
+
+-- Titik yang dipandang kamera. Cuma satu pesan: "pandang ke sini".
+-- Ayunan kiri-kanannya jalan terus-menerus di client.
+-- `lamaS` diisi cuma untuk kedatangan bertier. Selama itu client
+-- berhenti mengayun dan mengorbit penuh; sesudahnya dia kembali sendiri
+-- tanpa perlu pesan kedua. Sengaja begitu: pesan "sudah selesai" yang
+-- hilang di jaringan akan meninggalkan kamera terkunci selamanya,
+-- sementara batas waktu yang sudah ada di tangan client tidak bisa
+-- hilang.
+-- `orbit` memisahkan sorotan tier 2 dari tier 3/4: yang satu cuma
+-- menahan dekat, yang lain mengelilingi. `jauh` mengalikan jarak
+-- kameranya -- dipakai raksasa, yang tidak muat di frame pada jarak
+-- biasa.
+local function fokusKamera(pos, lamaS, orbit, jauh)
+	V2Event:FireAllClients("fokus", {
+		pos      = pos,
+		sinema   = (lamaS and lamaS > 0) and true or nil,
+		lama     = lamaS,
+		orbit    = orbit and true or nil,
+		jauh     = (jauh and jauh > 1) and jauh or nil,
+	})
+end
+
+local function titikPanggung()
+	for slot = slotCount, 1, -1 do
+		local m = avatars[slot]
+		if m and m.Parent then return titikPandang(slot) end
+	end
+	return Vector3.new(0, CAMERA_FOKUS_Y, 0)
+end
+
+-- ============ PANGGUNG ============
+
+local function resetStage()
+	if resetting then return end
+	resetting = true
+
+	local dihapus = 0
+
+	-- RAKSASA TIDAK IKUT DIHAPUS.
+	--
+	-- Nomornya di luar 1..slotCount, jadi gelung di bawah memang tidak
+	-- menyentuhnya -- dan itu sekarang disengaja. Dia cuma berganti
+	-- kalau ADA GIFT RAKSASA BARU; tidak ada hal lain di panggung ini
+	-- yang boleh menurunkannya.
+	--
+	-- Reset apa pun -- panggung penuh, atau nanti kalau ada tier baru
+	-- yang mengosongkannya -- cuma menyapu BARISAN. Raksasa berdiri di
+	-- belakang, di luar barisan, dan dia tetap di sana: gilirannya
+	-- berakhir waktu ada raksasa berikutnya, bukan sebelum itu.
+	--
+	-- Yang menghapusnya cuma satu tempat: buangRaksasa().
+
+	for slot = 1, slotCount do
+		local track = tracks[slot]
+		if track then pcall(function() track:Stop() end) end
+
+		local model = avatars[slot]
+		if model and model.Parent then
+			model:Destroy()
+			dihapus += 1
+		end
+
+		avatars[slot] = nil
+		tracks[slot]  = nil
+	end
+
+	-- Cakram lantai hidup di workspace, BUKAN di dalam model avatarnya
+	-- -- dia harus bisa bergerak sendiri waktu adegan Matrix jalan.
+	-- Artinya menghapus avatarnya saja meninggalkan cakram menyala di
+	-- panggung kosong. Ini yang membersihkannya.
+	for i = #borderHidup, 1, -1 do
+		lepasBorder(borderHidup[i], true)
+	end
+	for _, benda in ipairs(workspace:GetChildren()) do
+		if benda.Name == "CakramTier" then benda:Destroy() end
+	end
+
+	slotCount = 0
+	resetting = false
+	print(("Panggung dikosongkan (%d avatar)."):format(dihapus))
+end
+
+-- username (huruf kecil) -> userId. Sebuah userId tidak pernah berubah,
+-- jadi nama yang muncul dua kali -- dan saat live itu sering -- cuma
+-- boleh memakan satu panggilan.
+local idCache = {}
+
+-- userId untuk sebuah nama.
+--
+-- Jalur utamanya: dibaca dari /api/next. main.py sudah memanggil
+-- users.roblox.com untuk displayName, dan satu panggilan itu membawa
+-- id-nya sekalian -- gratis, dan sudah di-cache di sisi Python.
+--
+-- Kenapa itu penting: GetUserIdFromNameAsync punya rate limit sendiri
+-- yang jauh lebih ketat daripada polling antrian. Begitu kena, dia
+-- membalas HTTP 429 untuk SEMUA nama berikutnya -- termasuk nama yang
+-- valid -- jadi panggung mendadak kosong total padahal antriannya penuh.
+-- Persis itu yang terjadi waktu `make mock` mengisi antrian sekaligus.
+--
+-- Jalur cadangannya tetap ada (server versi lama tidak mengirim userId),
+-- dan di situ kegagalan dicoba ulang dengan jeda MEMANJANG: 429 artinya
+-- "kamu terlalu cepat", jadi mengulang seketika cuma memperpanjang
+-- hukumannya.
+local function cariUserId(username, dariServer)
+	if type(dariServer) == "number" and dariServer > 0 then
+		return dariServer
+	end
+
+	local key = string.lower(username)
+	if idCache[key] then return idCache[key] end
+
+	local jeda = 2
+	for percobaan = 1, 3 do
+		local ok, id = pcall(function()
+			return Players:GetUserIdFromNameAsync(username)
+		end)
+
+		if ok and id then
+			idCache[key] = id
+			return id
+		end
+
+		if percobaan == 3 then
+			-- Dilempar ulang, bukan dikembalikan nil: pemanggilnya
+			-- membungkus spawnAvatar dengan pcall dan sudah mencetak
+			-- pesan gagalnya.
+			error(tostring(id), 0)
+		end
+
+		warn(("userId '%s' gagal (percobaan %d), ulang %d detik lagi: %s")
+			:format(username, percobaan, jeda, tostring(id)))
+		task.wait(jeda)
+		jeda *= 2
+	end
+end
+
+local function spawnAvatar(entry, slot)
+	local username = entry.username
+
+	-- Semua angka tier datang dari /api/next. Kalau server-nya versi
+	-- lama (atau TIER_ENABLED dimatikan), semuanya jatuh ke tier 1 dan
+	-- bagian di bawah ini tidak satu pun menyala.
+	local tier   = TIER_ENABLED and tonumber(entry.tier) or 1
+	if not tier or tier < 1 then tier = 1 end
+	local lamaMs = tonumber(entry.spotlightMs) or 0
+	local sorot  = (entry.spotlight == true) and lamaMs > 0
+	local lamaS  = sorot and (lamaMs / 1000) or 0
+	local orbit  = (entry.orbit == true)
+
+	-- Raksasa. Skalanya datang dari server (TIER3_SCALE di .env) dan
+	-- cuma DIBATASI di sini -- rig 40x membuat massanya melonjak
+	-- ~64.000 kali dan pegas penahannya tidak sanggup lagi: badannya
+	-- melorot menembus lantai beberapa detik setelah mendarat.
+	--
+	-- Angka cadangan 3 di bawah cuma dipakai kalau server tidak
+	-- mengirim `scale` sama sekali (versi lama). Disamakan dengan
+	-- TIER3_SCALE di .env supaya keduanya tidak pernah bercerita beda.
+	local raksasa = TIER_ENABLED and GIANT_ENABLED and tier == 3
+	local skala   = 1
+	if raksasa then
+		skala = math.clamp(tonumber(entry.scale) or 3, 1, GIANT_SKALA_MAKS)
+	end
+
+	-- Dipotong di sini, bukan di gelung utama, supaya kamera dan
+	-- panggung memakai angka yang PERSIS sama. Dua tempat yang
+	-- memotong angka yang sama adalah cara paling rapi untuk suatu
+	-- saat punya kamera yang masih mengorbit setelah orangnya mendarat.
+	if lamaS > BEKU_MAKS then lamaS = BEKU_MAKS end
+
+	local userId = cariUserId(username, entry.userId)
+	local desc   = Players:GetHumanoidDescriptionFromUserId(userId)
+
+	local model  = Players:CreateHumanoidModelFromDescription(
+		desc, Enum.HumanoidRigType.R15)
+
+	model.Name = username
+
+	-- ScaleTo, bukan mengubah skala di HumanoidDescription.
+	--
+	-- HumanoidDescription punya HeightScale/WidthScale, tapi mereka
+	-- dibatasi rentang yang dianggap wajar untuk avatar pemain --
+	-- sepuluh kali lipat lewat jauh dari itu dan diam-diam dipangkas.
+	-- ScaleTo tidak punya batas dan ikut menyesuaikan Motor6D serta
+	-- HipHeight, jadi animasinya tetap benar dan kakinya tetap
+	-- menyentuh lantai.
+	if raksasa and skala > 1 then
+		-- Tingginya diukur SEBELUM dan SESUDAH, lalu dibandingkan.
+		--
+		-- Dulu baris ini cuma `pcall(... ScaleTo ...)` tanpa membaca
+		-- hasilnya, dan itu kesalahan yang mahal: ada DUA cara ScaleTo
+		-- gagal, dan dua-duanya diam.
+		--
+		--   a. dia melempar error  -> ditelan pcall
+		--   b. dia jalan tapi tidak mengubah apa pun
+		--
+		-- Yang terlihat di layar untuk keduanya sama: avatar seukuran
+		-- orang biasa berdiri sendirian jauh di belakang barisan --
+		-- yaitu "raksasanya tidak muncul". Sekarang keduanya bicara.
+		local sebelum = select(2, model:GetBoundingBox()).Y
+		local okSkala, errSkala = pcall(function()
+			model:ScaleTo(skala)
+		end)
+		local sesudah = select(2, model:GetBoundingBox()).Y
+
+		if not okSkala then
+			warn(("[raksasa] ScaleTo(%.1f) DITOLAK: %s -- dia akan " ..
+				"berdiri seukuran orang biasa."):format(skala, tostring(errSkala)))
+		elseif sebelum > 0 and sesudah / sebelum < skala * 0.8 then
+			warn(("[raksasa] ScaleTo(%.1f) jalan tapi tingginya cuma " ..
+				"naik %.1fx (%.1f -> %.1f stud). Rig-nya menolak " ..
+				"diperbesar sebanyak itu; turunkan TIER3_SCALE di .env.")
+				:format(skala, sesudah / math.max(sebelum, 0.01),
+					sebelum, sesudah))
+		else
+			print(("[raksasa] skala %.1fx -- tinggi %.1f -> %.1f stud")
+				:format(skala, sebelum, sesudah))
+		end
+	end
+
+	-- Pivot dipaksa ke HumanoidRootPart. Kalau PrimaryPart kosong, pivot
+	-- jatuh ke tengah kotak pembungkus -- yang ikut bergeser kalau
+	-- avatarnya pakai topi tinggi.
+	local hrp = model:FindFirstChild("HumanoidRootPart")
+	if hrp then model.PrimaryPart = hrp end
+
+	-- Tabrakan dimatikan: mereka cuma pajangan, posisinya dipegang
+	-- BodyPosition. Anggota badan yang menyerempet tetangga waktu menari
+	-- cuma jadi gaya dorong yang harus dilawan.
+	for _, bagian in ipairs(model:GetDescendants()) do
+		if bagian:IsA("BasePart") then bagian.CanCollide = false end
+	end
+
+	if hrp then hrp.Anchored = true end
+
+	-- Langsung berdiri di slotnya. Tidak ada jatuh, tidak ada meteor.
+	--
+	-- Raksasa lewat jalur yang PERSIS SAMA. Dia tidak lagi disembunyikan
+	-- di bawah tanah untuk dinaikkan belakangan -- lihat catatan di
+	-- bagian TIER 3 soal kenapa jalur khusus itu dibuang.
+	model:PivotTo(finalCFrame(model, slot))
+	model.Parent = workspace
+
+	createNameplate(model, username)
+
+	-- Satu frame: HipHeight baru final setelah modelnya masuk workspace,
+	-- dan tinggi yang meleset sedikit langsung terlihat sebagai kaki
+	-- mengambang atau terbenam.
+	RunService.Heartbeat:Wait()
+	if not model.Parent then return end
+
+	local target = finalCFrame(model, slot)
+	model:PivotTo(target)
+
+	if hrp then
+		hrp.Anchored = false
+		lockInPlace(model, hrp, target)
+	end
+
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	if hum then
+		-- Nametag bawaan Roblox -- nama kecil abu-abu di bawah papan
+		-- aura, yang bikin username tertulis DUA KALI.
+		--
+		-- Dulu baris ini tinggal di dalam createNameplate, jadi dia ikut
+		-- mati waktu PLATE.ENABLED dimatikan -- dan nametag bawaannya
+		-- hidup lagi. Sekarang di sini: berlaku untuk semua avatar,
+		-- lepas dari papan nama mana pun yang dipakai.
+		hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+		hum.HealthDisplayType   = Enum.HumanoidHealthDisplayType.AlwaysOff
+
+		hum.WalkSpeed = 0
+		hum.JumpPower = 0
+		hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+		-- Mesin keadaan Humanoid terus mendorong badan supaya berdiri
+		-- setinggi HipHeight, dan dorongan itu tarik-menarik dengan
+		-- BodyPosition -- hasilnya tarian yang bergetar. Physics
+		-- mematikannya; animasi tetap jalan karena digerakkan Motor6D.
+		pcall(function()
+			hum:ChangeState(Enum.HumanoidStateType.Physics)
+		end)
+		pcall(function() hum.EvaluateStateMachine = false end)
+	end
+
+	avatars[slot] = model
+
+	-- Raksasa MELAMBAI, bukan menari. Alasan lengkapnya di
+	-- GIANT_EMOTE_ID; ringkasnya, yang diam di antara yang bergerak
+	-- justru yang ditonton.
+	if raksasa then
+		local emote = playDance(model, GIANT_EMOTE_ID)
+		if emote then
+			pcall(function() emote:AdjustSpeed(GIANT_EMOTE_SPEED) end)
+		end
+		tracks[slot] = emote
+	else
+		tracks[slot] = playDance(model, danceSekarang())
+	end
+
+	-- Raksasa TIDAK dapat border maupun cakram lantai.
+	--
+	-- Cakram itu justru satu-satunya yang sempat terlihat waktu
+	-- raksasanya sendiri tersangkut di bawah tanah: dia ditaruh di
+	-- permukaan lantai lepas dari posisi badannya, jadi yang tampil
+	-- cuma lingkaran besar bersinar tanpa siapa pun berdiri di atasnya.
+	--
+	-- Dan memang tidak dibutuhkan: yang membuat tier 3 terbaca UKURAN
+	-- badannya. Menambahkan lingkaran di kakinya cuma menyaingi satu-
+	-- satunya hal yang jadi intinya.
+	-- Border cuma untuk tier 2. Raksasa tidak dapat: yang membuatnya
+	-- terbaca ukuran badannya, dan lingkaran di kakinya cuma menyaingi
+	-- itu.
+	if not raksasa then
+		pasangBorder(model, slot, tier, FLOOR_Y, skala)
+	end
+
+
+	-- Kamera dikasih tahu berapa lama dia harus nempel SEBELUM
+	-- auranya keluar: angka aura butuh AURA_ROLL detik untuk berputar,
+	-- dan kalau kameranya baru pindah sesudah itu, putarannya sudah
+	-- setengah jalan waktu orangnya masuk frame.
+	local fokusPos = titikPandang(slot)
+	local jauh     = 1
+	if raksasa then
+		-- Dipandang di TENGAH BADAN, bukan di titik berdirinya.
+		-- Kamera yang membidik kakinya menampilkan sepatu setinggi
+		-- layar dan kepalanya jauh di luar frame atas.
+		local tp = tinggiPivot(model) or (BASE_Y * skala)
+		fokusPos = Vector3.new(GIANT_X, FLOOR_Y + tp * 1.15, GIANT_Z)
+		jauh     = math.max(1, skala * GIANT_KAMERA_JAUH)
+	end
+	fokusKamera(fokusPos, lamaS, orbit, jauh)
+
+	local persen = hitungAura(tier)
+	tampilkanAura(model, entry.displayName or username, persen, slot)
+
+	local dari = entry.tiktokUser and (" <- " .. entry.tiktokUser) or ""
+	local cap  = ""
+	if tier >= 2 then
+		cap = (" -- tier %d, %d koin, sorotan %.1fs")
+			:format(tier, tonumber(entry.koin) or 0, lamaS)
+	end
+	print(("[%d/%d] %s tampil -- aura %d%% (userId: %d)%s%s")
+		:format(slot, DELETE_AFTER, username, persen, userId, dari, cap))
+
+	-- Adegan Matrix ditaruh PALING AKHIR dan sengaja memblokir: gelung
+	-- utama memanggil spawnAvatar tier 3 tanpa task.spawn, jadi selama
+	-- fungsi ini belum kembali, tidak ada satu pun kedatangan baru yang
+	-- diambil. Itulah "panggung ikut berhenti" -- tidak butuh flag
+	-- kedua, tidak ada keadaan yang bisa nyangkut kalau adegannya
+	-- error di tengah.
+	if raksasa then
+		-- Di mana dia BENAR-BENAR berdiri. Tidak ada lagi yang bisa
+		-- gagal di antara sini dan penempatannya, tapi baris ini tetap
+		-- ada: dia yang menjawab "raksasanya tidak muncul" tanpa perlu
+		-- menebak sama sekali.
+		local pos = model:GetPivot().Position
+		local tinggi = select(2, model:GetBoundingBox()).Y
+		print(("[raksasa] berdiri di (%.0f, %.0f, %.0f), tinggi %.1f stud, " ..
+			"kamera mundur %.1fx")
+			:format(pos.X, pos.Y, pos.Z, tinggi, jauh))
+		if pos.Y < FLOOR_Y then
+			warn("[raksasa] posisinya DI BAWAH lantai -- dia tidak akan " ..
+				"terlihat.")
+		end
+	end
+
+	return model
+end
+
+-- ============ SERVER API ============
+
+local function ambilJson(path)
+	local ok, res = pcall(function()
+		return HttpService:RequestAsync({
+			Url     = URL .. path,
+			Method  = "GET",
+			Headers = { ["ngrok-skip-browser-warning"] = "true" },
+		})
+	end)
+	if not ok then
+		warn("Request gagal:", res)
+		return nil
+	end
+	if res.StatusCode ~= 200 then
+		warn("HTTP", res.StatusCode, path)
+		return nil
+	end
+
+	local decoded, data = pcall(HttpService.JSONDecode, HttpService, res.Body)
+	if not decoded then
+		warn("Body bukan JSON valid:", res.Body)
+		return nil
+	end
+	return data
+end
+
+local function fetchNext()
+	local data = ambilJson("/api/next")
+	if data and data.username then return data end
+	return nil
+end
+
+local function cekMusikApi()
+	if not MUSIC_API then return end
+	local data = ambilJson("/api/music")
+	if not data then return end
+
+	if data.action == "next" then
+		laguBerikutnya()
+	elseif type(data.index) == "number" and data.index >= 1 then
+		putarLagu(data.index)
+	end
+end
+
+-- ============ ANGKA KAMERA UNTUK CLIENT ============
+--
+-- DITARIK client saat dia mulai, bukan didorong lewat PlayerAdded:
+-- PlayerAdded di server sering menyala sebelum LocalScript-nya sempat
+-- jalan, dan paket ke client yang belum mendengarkan hilang begitu saja.
+-- Sudah ada client yang menarik config?
+--
+-- Ini satu-satunya bukti yang bisa dilihat dari SISI SERVER bahwa
+-- LocalScript kameranya benar-benar jalan. Tanpa penanda ini, "kamera
+-- tidak bergerak" dan "LocalScript tidak pernah dieksekusi" terlihat
+-- sama persis di Output -- dua-duanya cuma senyap.
+local adaClient = false
+
+V2Config.OnServerInvoke = function(pemain)
+	adaClient = true
+	print(("Kamera client menyambung: %s"):format(pemain.Name))
+
+	return {
+		up       = CAMERA_UP,
+		upJauh   = CAMERA_UP_JAUH,
+		back     = CAMERA_BACK,
+		sweepDeg = CAMERA_SWEEP_DEG,
+		sweepS   = CAMERA_SWEEP_S,
+		moveS    = CAMERA_MOVE_S,
+		fokus    = titikPanggung(),
+
+		auraTime = AURA_TIME,
+		auraRoll = AURA_ROLL,
+		auraSfx     = AURA_SFX_ID,
+		auraSfxVol  = AURA_SFX_VOL,
+		auraSfxSpeed = AURA_SFX_SPEED,
+		auraSfxRoll = AURA_SFX_IKUT_ROLL,
+		auraSfxLoop = AURA_SFX_LOOP,
+		auraSfxHit    = AURA_SFX_HIT_ID,
+		auraSfxHitVol = AURA_SFX_HIT_VOL,
+		auraY    = AURA_Y,
+		auraH    = AURA_H,
+
+		auraKepala   = AURA_DI_KEPALA,
+		auraLayar    = AURA_DI_LAYAR,
+		auraKepalaY  = AURA_KEPALA_Y,
+		auraKepalaW  = AURA_KEPALA_W,
+		auraKepalaH  = AURA_KEPALA_H,
+		auraKepalaJauh = AURA_KEPALA_JAUH,
+		auraDepanSaja  = AURA_DEPAN_SAJA,
+		auraFadeOut    = AURA_FADE_OUT,
+
+		-- Kamera sinematik selama sorotan. Client yang menjalankan
+		-- gerakannya; angkanya tetap tinggal di file ini seperti yang
+		-- lain.
+		sinema       = SINEMA_ENABLED,
+		sinemaOrbitS = SINEMA_ORBIT_S,
+		sinemaBack   = SINEMA_BACK,
+		sinemaUp     = SINEMA_UP,
+
+		zoom       = ZOOM_ENABLED,
+		zoomMasuk  = ZOOM_MASUK,
+		zoomTahan  = ZOOM_TAHAN,
+		zoomKeluar = ZOOM_KELUAR,
+		spawnLurus = SPAWN_LURUS,
+
+		debug    = DEBUG_HUD,
+
+		-- Penyamaan tarian dikerjakan client (TimePosition tidak
+		-- direplikasi dari server), tapi angkanya disetel di sini.
+		resyncEvery = RESYNC_EVERY,
+		driftLimit  = DRIFT_LIMIT,
+		syncKp        = SYNC_KP,
+		syncSpeedMaks = SYNC_SPEED_MAKS,
+		syncSnap      = SYNC_SNAP,
+
+		-- Mutu visual: yang mengukur kuat-tidaknya perangkat cuma bisa
+		-- client (server tidak menggambar apa pun), tapi ambangnya
+		-- disetel di sini bersama angka yang lain.
+		visualAuto   = VISUAL.AUTO,
+		visualFpsMin = VISUAL.FPS_MIN,
+		visualBloom  = VISUAL.BLOOM,
+	}
+end
+
+-- Peringatan kalau sampai 8 detik tidak ada client yang menyambung.
+--
+-- 8 detik itu jauh lebih lama daripada yang dibutuhkan: LocalScript di
+-- StarterPlayerScripts jalan beberapa ratus milidetik setelah pemain
+-- masuk. Lewat dari itu, dia memang tidak akan datang.
+task.delay(8, function()
+	if adaClient then return end
+
+	-- Berapa pemain yang benar-benar ada di server ini.
+	--
+	-- Angka ini memisahkan dua hal yang di log terlihat sama:
+	--   0 pemain  -> ini mode RUN, bukan PLAY. Run menjalankan server
+	--                saja: tidak ada pemain, jadi tidak ada PlayerGui,
+	--                tidak ada Camera milik pemain, dan tidak satu pun
+	--                LocalScript di StarterPlayerScripts dieksekusi.
+	--                Avatar tetap muncul dan log server tetap jalan --
+	--                persis seperti sekarang.
+	--   1 pemain  -> ini PLAY, pemainnya ada, tapi LocalScript-nya yang
+	--                tidak jalan (Disabled, salah ClassName, atau salah
+	--                folder).
+	local jumlah = #Players:GetPlayers()
+
+	warn("=====================================================")
+	warn(("TIDAK ADA CLIENT KAMERA yang menyambung dalam 8 detik. " ..
+		"(pemain di server: %d)"):format(jumlah))
+
+	if jumlah == 0 then
+		warn("")
+		warn("PEMAINNYA NOL. Itu berarti kamu menekan RUN, bukan PLAY.")
+		warn("Run menjalankan server saja -- tidak ada pemain, jadi")
+		warn("tidak satu pun LocalScript dijalankan. Tekan PLAY (F5).")
+		warn("=====================================================")
+		return
+	end
+
+	warn("Kamera TIDAK akan bergerak dan aura TIDAK akan muncul,")
+	warn("karena dua-duanya dikerjakan LocalScript, bukan script ini.")
+	warn("")
+	warn("Periksa berurutan:")
+	warn("1. StarterPlayer > StarterPlayerScripts berisi KameraClientV2")
+	warn("2. ClassName-nya LocalScript (lihat Properties, bukan namanya)")
+	warn("3. Properti Disabled-nya TIDAK dicentang")
+	warn("4. Kamu menekan PLAY, bukan Run  (Run tidak membuat pemain,")
+	warn("   jadi tidak satu pun LocalScript dijalankan)")
+	warn("5. Filter Output menampilkan pesan Client, bukan Server saja")
+	warn("=====================================================")
+end)
+
+-- ============ VISUAL / PENCAHAYAAN ============
+--
+-- Dipasang sekali, waktu server hidup. Sesudah ini tidak ada satu baris
+-- pun dari bagian ini yang jalan lagi -- tidak ada gelung, tidak ada
+-- koneksi event, tidak ada beban per frame. Yang mahal di grafis Roblox
+-- itu MENGGAMBAR-nya (dikerjakan mesin, di client), bukan menyetel
+-- propertinya.
+
+-- Ambil efek yang SUDAH ada sebelum bikin baru.
+--
+-- Kalau map-nya sudah punya ColorCorrection buatan tangan, yang terjadi
+-- tanpa ini bukan "efeknya diganti" tapi DUA efek menumpuk: kontras dan
+-- saturasinya dihitung dua kali, dan hasilnya map yang gosong. Roblox
+-- tidak melarang efek sejenis lebih dari satu.
+local function efek(kelas, nama)
+	local x = Lighting:FindFirstChild(nama)
+		or Lighting:FindFirstChildOfClass(kelas)
+	if not x then
+		x = Instance.new(kelas)
+	end
+	x.Name   = nama
+	x.Parent = Lighting
+	return x
+end
+
+local function pasangVisual()
+	if not VISUAL.ENABLED then return end
+
+	-- Technology TIDAK bisa disentuh dari script biasa. Bukan cuma
+	-- ditulis -- DIBACA pun tidak boleh:
+	--
+	--   The current thread cannot read 'Technology'
+	--   (lacking capability RobloxScript)
+	--
+	-- Jadi dua-duanya masuk pcall, dan pcall pembacaan itu bukan
+	-- kehati-hatian berlebihan: versi pertama bagian ini membaca
+	-- Lighting.Technology di luar pcall untuk menyusun pesan
+	-- peringatannya, error itu melempar keluar dari pasangVisual, dan
+	-- akibatnya SELURUH penyetelan di bawah tidak pernah jalan --
+	-- gagal memasang lampu gara-gara mau memberi tahu kenapa lampunya
+	-- mungkin gagal dipasang.
+	--
+	-- Command Bar Studio pun ditolak, jadi tidak ada jalan lewat script
+	-- sama sekali: satu-satunya tempat menyetelnya panel Properties.
+	--
+	-- KECUALI kalau tempat ini sudah pakai Unified Lighting. Di situ
+	-- Technology dihapus sepenuhnya dan diganti LightingStyle, dan
+	-- memberi tahu orang "setel Technology ke Future" jadi salah arah:
+	-- properti yang disuruh dicari memang sudah tidak ada, dan
+	-- pencahayaannya justru sudah lebih baru daripada Future.
+	--
+	-- Jadi yang ditanya duluan LightingStyle. Ada = tidak usah bicara
+	-- soal Technology lagi.
+	local okGaya, gaya = pcall(function() return Lighting.LightingStyle end)
+
+	if okGaya and gaya ~= nil then
+		print(("[visual] Unified Lighting aktif (LightingStyle = %s) -- "
+			.. "Technology tidak dipakai lagi, tidak ada yang perlu disetel")
+			:format((tostring(gaya):gsub("Enum.LightingStyle.", ""))))
+	else
+		local okTulis = pcall(function()
+			Lighting.Technology = Enum.Technology.Future
+		end)
+
+		if not okTulis then
+			local okBaca, tech = pcall(function() return Lighting.Technology end)
+			if okBaca and tech == Enum.Technology.Future then
+				-- Sudah Future dari Studio; tidak ada yang perlu dikatakan.
+			else
+				if okBaca then
+					warn(("[visual] Lighting.Technology = %s.")
+						:format((tostring(tech):gsub("Enum.Technology.", ""))))
+				else
+					warn("[visual] Lighting.Technology tidak bisa dibaca script.")
+				end
+				warn("[visual] Setel manual di Studio (keadaan Stop):")
+				warn("[visual] klik Lighting > Properties > Technology > Future.")
+				warn("[visual] Tidak ketemu propertinya? Berarti Unified")
+				warn("[visual] Lighting menyala di Beta Features -- itu lebih")
+				warn("[visual] baru dari Future, biarkan saja.")
+			end
+		end
+	end
+
+	-- --- Cahaya dasar ---
+	Lighting.Brightness           = VISUAL.TERANG
+	Lighting.ExposureCompensation = VISUAL.EXPOSURE
+	Lighting.ClockTime            = VISUAL.JAM
+	Lighting.GeographicLatitude   = VISUAL.LINTANG
+	Lighting.GlobalShadows        = true
+
+	-- Ambient = cahaya yang mengisi bagian yang TIDAK kena matahari.
+	-- Dibiarkan kebiruan, tidak abu netral: bayangan di dunia nyata
+	-- memang biru (yang menyinarinya langit, bukan matahari). Ini
+	-- perbedaan kecil yang paling terasa antara "render" dan "Roblox".
+	--
+	-- Jangan dinaikkan lagi: ambient terang = bayangan hilang, dan
+	-- panggungnya jadi rata seperti sticker.
+	Lighting.Ambient        = Color3.fromRGB(28, 30, 38)
+	Lighting.OutdoorAmbient = Color3.fromRGB(96, 104, 120)
+
+	-- Warna cahaya matahari (atas) dan pantulan tanah (bawah). Hangat
+	-- di atas, dingin di bawah -- kontras suhu warna, bukan kontras
+	-- gelap-terang. Ini yang bikin gambar terasa "sinematik" tanpa
+	-- filter apa pun.
+	Lighting.ColorShift_Top    = Color3.fromRGB(30, 22, 10)
+	Lighting.ColorShift_Bottom = Color3.fromRGB(10, 14, 26)
+
+	-- Pantulan langit di permukaan mengkilap. Specular penuh, diffuse
+	-- ditahan: diffuse tinggi + OutdoorAmbient di atas sama-sama
+	-- menyiram cahaya rata, dan dua-duanya kencang = tercuci.
+	--
+	-- Satu pcall PER properti, bukan satu pcall untuk bertiga: yang
+	-- pertama gagal di dalam satu pcall bersama berarti dua sisanya
+	-- tidak pernah dicoba. Pelajaran yang sama dengan Technology di
+	-- atas, sekarang dipakai di sini juga.
+	for prop, nilai in pairs({
+		EnvironmentDiffuseScale  = 0.75,
+		EnvironmentSpecularScale = 1,
+		ShadowSoftness           = VISUAL.BAYANG,
+	}) do
+		local okSet = pcall(function() Lighting[prop] = nilai end)
+		if not okSet then
+			warn(("[visual] %s tidak bisa disetel di tempat ini")
+				:format(prop))
+		end
+	end
+
+	-- Kabut lama (FogStart/FogEnd) dimatikan. Dia diabaikan selama ada
+	-- Atmosphere, tapi kalau nanti Atmosphere-nya dihapus, angka bawaan
+	-- (FogEnd 100000) yang tertinggal lebih aman daripada kabut abu.
+	Lighting.FogEnd = 100000
+
+	-- --- Atmosphere: kedalaman ---
+	--
+	-- Bukan sekadar kabut. Dia menghitung udara di antara kamera dan
+	-- benda, jadi barisan belakang tidak cuma mengecil tapi juga
+	-- memucat -- satu-satunya petunjuk jarak yang dipunyai mata di
+	-- layar datar.
+	local udara = efek("Atmosphere", "Atmosphere")
+	udara.Density = VISUAL.KABUT
+	udara.Offset  = 0.20
+	udara.Color   = Color3.fromRGB(202, 208, 220)
+	udara.Decay   = Color3.fromRGB(104, 112, 128)
+	udara.Glare   = 0.25
+	udara.Haze    = 1.4
+
+	-- --- Warna: kontras & saturasi ---
+	--
+	-- Angkanya kecil semua, dan itu disengaja. Saturasi 0.3 dan kontras
+	-- 0.5 memang langsung terlihat "wah" di screenshot pertama, tapi
+	-- kulit avatar jadi oranye dan baju merah kehilangan lipatannya.
+	-- Yang dicari di sini: penonton tidak sadar ada filter.
+	local warna = efek("ColorCorrectionEffect", "VisualColor")
+	warna.Brightness = 0
+	warna.Contrast   = VISUAL.KONTRAS
+	warna.Saturation = VISUAL.SATURASI
+	warna.TintColor  = Color3.fromRGB(255, 251, 246)
+	warna.Enabled    = true
+
+	-- --- Bloom: pendar ---
+	--
+	-- Threshold di atas 1 penting: di bawah itu SEMUA yang putih ikut
+	-- berpendar, termasuk baju avatar, dan gambarnya berkabut susu.
+	-- Dengan 1.15 yang berpendar cuma yang benar-benar lebih terang
+	-- dari putih -- matahari, pantulan, dan angka aura yang bergradien.
+	local pendar = efek("BloomEffect", "VisualBloom")
+	pendar.Intensity = VISUAL.BLOOM
+	pendar.Size      = 22
+	pendar.Threshold = 1.15
+	pendar.Enabled   = VISUAL.BLOOM > 0
+
+	-- --- Berkas matahari ---
+	--
+	-- Sangat tipis. Efek ini mudah sekali jadi murahan: begitu
+	-- berkasnya kelihatan sebagai "garis", yang tertangkap penonton
+	-- bukan mataharinya tapi efeknya.
+	local berkas = efek("SunRaysEffect", "VisualSunRays")
+	berkas.Intensity = VISUAL.SUNRAYS
+	berkas.Spread    = 0.85
+	berkas.Enabled   = VISUAL.SUNRAYS > 0
+
+	-- --- Kedalaman lensa ---
+	--
+	-- Fokusnya dipatok ke jarak kamera-ke-avatar (CAMERA_BACK = -11),
+	-- jadi yang datang SELALU tajam dan kerumunan di belakangnya
+	-- meluruh pelan. Buramnya cuma 0.12: ini pemisah latar, bukan
+	-- foto makro.
+	--
+	-- Papan aura tidak ikut buram -- BillboardGui digambar sesudah
+	-- pasca-proses, bukan sebelum.
+	local lensa = efek("DepthOfFieldEffect", "VisualDOF")
+	lensa.FocusDistance = VISUAL.DOF_FOKUS
+	lensa.InFocusRadius = VISUAL.DOF_TAJAM
+	lensa.FarIntensity  = VISUAL.DOF_BURAM
+	lensa.NearIntensity = 0      -- 0 mati: kamera tidak pernah sedekat itu
+	lensa.Enabled       = VISUAL.DOF
+
+	print(("[visual] terpasang -- jam %.1f, kabut %.2f, bloom %.2f, dof %s")
+		:format(VISUAL.JAM, VISUAL.KABUT, VISUAL.BLOOM,
+			VISUAL.DOF and "aktif" or "mati"))
+end
+
+-- Warna lantai. Terpisah dari pasangVisual karena ini menyentuh BENDA
+-- di workspace, bukan service Lighting -- dan yang menyentuh benda
+-- orang lain harus lebih hati-hati soal apa yang ditemukannya.
+local function warnaiLantai()
+	if not LANTAI.ENABLED then return end
+
+	local lantai = workspace:FindFirstChild(LANTAI.NAMA)
+
+	-- Tidak ketemu? Berhenti dengan pesan yang menyebut APA yang dicari.
+	-- "Baseplate" cuma nama bawaan template; map yang dibangun sendiri
+	-- sering menamainya Floor, Ground, atau Panggung -- dan tanpa nama
+	-- yang disebut di sini, yang terbaca cuma "warnanya tidak berubah"
+	-- tanpa petunjuk sama sekali.
+	if not lantai or not lantai:IsA("BasePart") then
+		warn(("[lantai] part '%s' tidak ada di workspace -- warna lantai "
+			.. "dilewati. Ganti LANTAI.NAMA ke nama part lantaimu.")
+			:format(LANTAI.NAMA))
+		return
+	end
+
+	lantai.Color = LANTAI.WARNA
+	if LANTAI.MATERIAL then
+		lantai.Material = LANTAI.MATERIAL
+	end
+
+	-- Pola kotak-kotaknya. Dicari sebagai Texture DAN Decal: template
+	-- Baseplate memakai Texture (yang berulang), tapi map yang lantainya
+	-- dibuat sendiri sering pakai Decal (satu gambar diregangkan).
+	--
+	-- Yang diubah Color3-nya, bukan gambarnya: Texture punya tint, jadi
+	-- pola yang sama bisa jadi warna apa saja tanpa mengganti asset.
+	local dicat = 0
+	for _, anak in ipairs(lantai:GetChildren()) do
+		if anak:IsA("Texture") or anak:IsA("Decal") then
+			anak.Color3 = LANTAI.GARIS
+			dicat += 1
+		end
+	end
+
+	if dicat == 0 then
+		print("[lantai] warna dasar diganti; tidak ada Texture/Decal "
+			.. "di lantainya, jadi tidak ada pola untuk diwarnai")
+	else
+		print(("[lantai] warna diganti -- dasar + %d pola"):format(dicat))
+	end
+end
+
+-- ============ MULAI ============
+
+-- Dibungkus pcall: bagian visual ini murni hiasan, dan tidak ada satu
+-- pun alasan sebuah properti Lighting yang ditolak boleh menghentikan
+-- script yang tugas aslinya menaruh avatar di panggung.
+local okVisual, errVisual = pcall(pasangVisual)
+if not okVisual then
+	warn("[visual] gagal dipasang, panggung tetap jalan:", errVisual)
+end
+
+local okLantai, errLantai = pcall(warnaiLantai)
+if not okLantai then
+	warn("[lantai] gagal diwarnai, panggung tetap jalan:", errLantai)
+end
+
+print("V2 -- polling:", URL)
+print(("Playlist: %d lagu, musik %s"):format(
+	#PLAYLIST, MUSIC_ENABLED and "aktif" or "dimatikan"))
+print(("Aura: %d-%d%%, tampil %.1f detik"):format(AURA_MIN, AURA_MAX, AURA_TIME))
+if TIER_ENABLED then
+	print(("Tier: border %s, panggung beku dari tier %d")
+		:format(BORDER_ENABLED and "on" or "off",
+			BEKU_ENABLED and BEKU_MIN_TIER or 99))
+	print(("Lantai aura: tier 2 = %d%%, tier 3 = %d%%")
+		:format(AURA_LANTAI_T2, AURA_LANTAI_T3))
+	print(("Tier 3: raksasa %s (batas %dx) di z=%d, emote %s, tanpa efek, " ..
+		"bertahan lewat reset")
+		:format(GIANT_ENABLED and "on" or "off", GIANT_SKALA_MAKS,
+			GIANT_Z, GIANT_EMOTE_ID ~= "" and "on" or "off"))
+else
+	print("Tier: DIMATIKAN (TIER_ENABLED = false)")
+end
+
+if MUSIC_ENABLED then
+	task.spawn(function()
+		for i, lagu in ipairs(PLAYLIST) do
+			if lagu.musik and lagu.musik ~= "" then
+				local ok, err = pcall(function()
+					ContentProvider:PreloadAsync({ lagu.musik })
+				end)
+				if not ok then
+					warn(("Lagu %d gagal dimuat: %s (%s)")
+						:format(i, tostring(lagu.musik), tostring(err)))
+				end
+			end
+		end
+	end)
+end
+
+startMusicLoop()
+
+while true do
+	local entry = fetchNext()
+
+	if entry then
+		local tierMasuk = TIER_ENABLED and (tonumber(entry.tier) or 1) or 1
+		local slot
+
+		if TIER_ENABLED and GIANT_ENABLED and tierMasuk == 3 then
+			-- Raksasa memakai nomornya sendiri dan MENGGANTIKAN yang
+			-- sedang berdiri. Barisan tidak disentuh sama sekali:
+			-- slotCount tidak naik, jadi orang berikutnya tetap
+			-- mendapat tempat yang seharusnya.
+			buangRaksasa()
+			slot = SLOT_RAKSASA
+
+		else
+			if DELETE_AFTER > 0 and slotCount >= DELETE_AFTER then
+				task.wait(RESET_DELAY)
+				resetStage()
+			end
+
+			slotCount += 1
+			slot = slotCount
+		end
+
+		-- Tier 3 dan 4 dijalankan LANGSUNG di gelung ini, bukan di task
+		-- terpisah. Itu satu-satunya bedanya, dan itu yang membekukan
+		-- panggung: spawnAvatar baru kembali setelah adegan Matrix-nya
+		-- selesai, jadi fetchNext berikutnya memang tidak terjadi.
+		--
+		-- Antrian tidak ikut membeku -- dia menumpuk di main.py, dan
+		-- SPOTLIGHT_GAP_S di sana sudah menahan sesama gift supaya
+		-- tidak menempel. Yang menumpuk cuma tier 1, dan mereka dibatasi
+		-- QUEUE_MAX; begitu beku selesai mereka keluar satu per detik
+		-- seperti biasa, bukan sekaligus.
+		local beku = BEKU_ENABLED and TIER_ENABLED
+			and tierMasuk >= BEKU_MIN_TIER
+			and entry.spotlight == true
+
+		local function jalankan()
+			local ok, err = pcall(spawnAvatar, entry, slot)
+			if not ok then
+				warn(("Gagal load '%s': %s")
+					:format(tostring(entry.username), tostring(err)))
+			end
+		end
+
+		if beku then
+			jalankan()
+			task.wait(BEKU_EKOR)
+		else
+			task.spawn(jalankan)
+		end
+	end
+
+	cekMusikApi()
+	task.wait(POLL_INTERVAL)
+end

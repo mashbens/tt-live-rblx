@@ -1,0 +1,58 @@
+--[[
+    TES KAMERA -- sementara, hapus kalau sudah ketemu.
+
+    Taruh di StarterPlayer > StarterPlayerScripts sebagai LocalScript
+    (nama bebas), dan DISABLE dulu KameraClientV2 + KameraClient lama
+    supaya tidak ada yang rebutan menulis kamera.
+
+    Isinya cuma gerakan kamera. Tidak ada RemoteEvent, tidak ada
+    RemoteFunction, tidak ada ScreenGui, tidak ada apa pun yang bisa
+    menggantung menunggu server. Jadi hasilnya cuma bisa dua, dan
+    dua-duanya memberi jawaban:
+
+      kamera BERGERAK  -> mesin kameranya sehat, penempatan LocalScript
+                          sudah benar. Berarti yang salah ada di jalur
+                          config/remote KameraClientV2, dan itu yang
+                          kita kejar berikutnya.
+
+      kamera DIAM      -> ada yang lebih mendasar: script-nya memang
+                          tidak dijalankan, atau ada hal lain di place
+                          ini yang memegang kamera.
+--]]
+
+local RunService = game:GetService("RunService")
+
+print("TES KAMERA: script jalan")
+
+-- Kotak merah di tengah panggung, sebagai patokan mata.
+--
+-- Tanpa benda diam sebagai acuan, kamera yang mengayun di atas baseplate
+-- polos memang nyaris tidak terbaca bergerak -- dan itu sendiri salah
+-- satu kemungkinan jawabannya.
+local patok = Instance.new("Part")
+patok.Name        = "PatokTes"
+patok.Size        = Vector3.new(2, 12, 2)
+patok.Position    = Vector3.new(0, 6, 0)
+patok.Anchored    = true
+patok.CanCollide  = false
+patok.Color       = Color3.fromRGB(255, 60, 60)
+patok.Material    = Enum.Material.Neon
+patok.Parent      = workspace
+
+local fokus = Vector3.new(0, 5, 0)
+
+RunService.RenderStepped:Connect(function()
+	local cam = workspace.CurrentCamera
+	if not cam then return end
+
+	cam.CameraType = Enum.CameraType.Scriptable
+
+	-- Sengaja DIBESAR-BESARKAN: 60 derajat dalam 4 detik. Ini bukan
+	-- selera akhir, ini supaya "bergerak" dan "diam" tidak mungkin
+	-- tertukar.
+	local sudut  = math.rad(60) * math.sin(os.clock() * (2 * math.pi) / 4)
+	local offset = CFrame.Angles(0, sudut, 0):VectorToWorldSpace(
+		Vector3.new(0, 5, -18))
+
+	cam.CFrame = CFrame.new(fokus + offset, fokus)
+end)
