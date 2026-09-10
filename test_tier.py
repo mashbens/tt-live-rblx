@@ -266,6 +266,47 @@ cek("tier 2 berputar, tapi tidak lebih dari setengah", 0 < d2 <= 180,
 cek("tier 4 tidak mengorbit (dia pakai jalur tiga sudut)",
     derajat(4, srv.SPOTLIGHT_MS_T4) == 0)
 
+print("\n7. Raksasa: satu jawaban, dipakai dua tempat")
+#
+# Bug yang pernah TERJADI, bukan hipotesis: syarat "tier ini raksasa
+# atau bukan" dulu ditulis dua kali -- di gelung utama yang memilih
+# SLOT-nya, dan di spawnAvatar yang MEMPERBESAR badannya. Waktu raksasa
+# dipindah dari tier 3 ke tier 4, cuma satu yang ikut berubah, dan
+# hasilnya tertukar: tier 3 berdiri di belakang barisan dengan badan
+# normal, tier 4 jadi raksasa DI DALAM barisan.
+#
+# Tidak ada error dan tidak ada nil, jadi lint tidak melihat apa pun.
+# Yang mengunci sekarang: kedua tempat memanggil adalahRaksasa(), dan
+# tes ini menjaga jawabannya.
+lua.execute(f"""
+GIANT_ENABLED = true
+GIANT_MIN_TIER = {int(angka("GIANT_MIN_TIER"))}
+""")
+lua.execute(ambil("adalahRaksasa").replace("local function", "function", 1))
+
+for t in (1, 2, 3):
+    cek(f"tier {t} BUKAN raksasa", g.adalahRaksasa(t) is False,
+        f"tier {t} ikut jadi raksasa -- dia harus berdiri di barisan")
+cek("tier 4 raksasa", g.adalahRaksasa(4) is True)
+cek("tier di atas 4 tetap raksasa", g.adalahRaksasa(5) is True,
+    "tier baru di atasnya harus ikut raksasa, bukan diam-diam kembali "
+    "jadi badan normal")
+
+# Yang membekukan panggung harus DIIKAT ke tier raksasa, bukan angka
+# yang kebetulan sama sekarang. Yang diperiksa sumbernya, bukan
+# nilainya: dua angka yang hari ini sama-sama 4 lolos pemeriksaan nilai,
+# lalu berpisah diam-diam di perubahan berikutnya.
+baris_beku = next((l for l in src if l.startswith("local BEKU_MIN_TIER")), "")
+cek("beku diikat ke GIANT_MIN_TIER, bukan angka sendiri",
+    "GIANT_MIN_TIER" in baris_beku,
+    f"tertulis: {baris_beku.strip()!r} -- kalau raksasa pindah tier, "
+    "angka ini tertinggal dan tier di bawahnya ikut membekukan panggung")
+
+# Aura VFX tidak boleh menyentuh raksasa -- dia harus polos.
+cek("aura VFX bukan milik tier raksasa",
+    int(angka("AURA_VFX_TIER")) < int(angka("GIANT_MIN_TIER")),
+    "raksasa harus polos: aura di badan sebesar itu menyaingi ukurannya")
+
 print()
 if gagal:
     print("GAGAL:", ", ".join(gagal))

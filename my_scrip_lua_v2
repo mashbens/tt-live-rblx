@@ -542,6 +542,30 @@ local GIANT_EMOTE_SPEED = 0.55   -- dilambatkan: gerakan raksasa yang
 -- 120 stud dan raksasanya kembali jadi titik kecil; setengahnya pas.
 local GIANT_KAMERA_JAUH = 0.55   -- pengali terhadap skala avatarnya
 
+-- Dari tier berapa seseorang jadi raksasa.
+local GIANT_MIN_TIER = 4
+
+-- SATU-SATUNYA tempat yang menjawab "tier ini raksasa atau bukan".
+--
+-- Dulu jawabannya ditulis dua kali: sekali di gelung utama (yang
+-- memilih SLOT-nya) dan sekali di spawnAvatar (yang MEMPERBESAR
+-- badannya). Waktu raksasa dipindah dari tier 3 ke tier 4, cuma satu
+-- dari keduanya ikut berubah -- dan akibatnya tertukar: tier 3 berdiri
+-- di belakang barisan dengan badan normal, tier 4 jadi raksasa DI DALAM
+-- barisan.
+--
+-- Yang bikin itu mahal untuk dilacak: tidak ada error, tidak ada nil,
+-- dan kedua tempat itu masing-masing masih terbaca masuk akal kalau
+-- dibaca sendirian. Lint tidak bisa menangkapnya, dan uji pun tidak --
+-- yang salah bukan kodenya, tapi dua kode yang tidak sepakat.
+--
+-- Ditaruh di sini, bukan di dekat spawnAvatar, supaya dia berada tepat
+-- di bawah angka yang mengaturnya.
+local function adalahRaksasa(tier)
+	if not (TIER_ENABLED and GIANT_ENABLED) then return false end
+	return (tonumber(tier) or 1) >= GIANT_MIN_TIER
+end
+
 -- --- PANGGUNG BERHENTI SELAMA SINEMATIK ---
 --
 -- Tidak ada yang di-spawn selama adegannya berlangsung, jadi kamera
@@ -561,7 +585,15 @@ local BEKU_ENABLED   = true
 -- badan normal di barisan: adegannya 7 detik dan datang jauh lebih
 -- sering daripada 30 koin, jadi memberinya hak membekukan panggung
 -- berarti antrian gratisan berhenti berjalan sebagian besar waktu.
-local BEKU_MIN_TIER  = 4
+-- Diikatkan ke GIANT_MIN_TIER, bukan ditulis 4 lagi.
+--
+-- Niatnya "cuma raksasa yang boleh menghentikan panggung", dan itu satu
+-- kalimat tentang RAKSASA -- bukan tentang angka 4. Kalau suatu saat
+-- raksasa dipindah ke tier 5, angka yang ditulis terpisah akan
+-- tertinggal di 4 dan tier 4 diam-diam membekukan panggung tanpa jadi
+-- raksasa. Itu persis jenis kesalahan yang sudah sekali terjadi di file
+-- ini (lihat adalahRaksasa), jadi sekali ini cukup.
+local BEKU_MIN_TIER  = GIANT_MIN_TIER
 
 -- Tambahan waktu beku SESUDAH sorotannya habis, detik. Jeda napas
 -- supaya orang berikutnya tidak muncul di frame yang sama dengan avatar
@@ -2052,11 +2084,11 @@ local function spawnAvatar(entry, slot)
 	-- mengirim `scale` sama sekali (versi lama). Disamakan dengan
 	-- TIER4_SCALE di .env supaya keduanya tidak pernah bercerita beda.
 	--
-	-- `>= 4`, bukan `== 4`: kalau suatu saat ada tier 5, dia raksasa
-	-- juga sampai ada yang memutuskan sebaliknya. Yang `== 3` dulu
-	-- membuat tier di ATASNYA diam-diam kembali jadi badan normal --
-	-- kesalahan yang tidak memunculkan error di mana pun.
-	local raksasa = TIER_ENABLED and GIANT_ENABLED and tier >= 4
+	-- Lewat adalahRaksasa(), BUKAN dengan menulis ulang syaratnya di
+	-- sini. Alasannya ada di komentar fungsi itu -- ringkasnya, versi
+	-- sebelumnya menulis syarat ini dua kali dan keduanya sempat tidak
+	-- sepakat, yang membuat tier 3 dan tier 4 tertukar tempat.
+	local raksasa = adalahRaksasa(tier)
 	local skala   = 1
 	if raksasa then
 		skala = math.clamp(tonumber(entry.scale) or 3, 1, GIANT_SKALA_MAKS)
@@ -2800,7 +2832,7 @@ while true do
 		local tierMasuk = TIER_ENABLED and (tonumber(entry.tier) or 1) or 1
 		local slot
 
-		if TIER_ENABLED and GIANT_ENABLED and tierMasuk == 3 then
+		if adalahRaksasa(tierMasuk) then
 			-- Raksasa memakai nomornya sendiri dan MENGGANTIKAN yang
 			-- sedang berdiri. Barisan tidak disentuh sama sekali:
 			-- slotCount tidak naik, jadi orang berikutnya tetap
