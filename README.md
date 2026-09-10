@@ -153,8 +153,30 @@ Semua angka di atas bisa ditimpa lewat `.env`: `USER_COOLDOWN_S`,
 Tier ditentukan **harga gift dalam koin**, bukan nama gift. TikTok mengirim
 harganya sendiri di tiap `GiftEvent` (`gift.diamond_count`), jadi tidak ada
 gift yang "tidak dikenal": `rose` 1 koin → tier 2, `rosa` 10 koin → tier 3,
-dan gift 1.000 koin yang dulu jatuh ke tier 1 sekarang langsung naik podium.
-Ambangnya `TIER2_KOIN` (1) dan `TIER3_KOIN` (10) di `.env`.
+dan gift 1.000 koin yang dulu jatuh ke tier 1 sekarang naik ke tier tertinggi.
+Ambangnya `TIER2_KOIN` (1), `TIER3_KOIN` (10), dan `TIER4_KOIN` (30) di `.env`.
+
+> **Ada EMPAT tier sekarang, dan tabel di bawah menjelaskan yang v13.**
+>
+> Tabel serta penjelasan podium di bagian ini menggambarkan `my_sscript_lua`
+> (v13), tempat pembeda tier-nya TEMPAT (podium). Pasangan yang aktif
+> sekarang — `my_scrip_lua_v2` + `kamera_client_lua_v2` — memakai pembeda
+> yang berbeda, dan tier 3 di sana **bukan** raksasa:
+>
+> | | Tier 1 | Tier 2 (≥1 koin) | Tier 3 (≥10 koin) | Tier 4 (≥30 koin) |
+> |---|---|---|---|---|
+> | Antrian | normal | potong ke depan | potong ke depan | potong ke depan |
+> | Ukuran | 1,0× | 1,0× | 1,0× | **3,0× (raksasa)** |
+> | Border | — | biru es | oranye bara | — |
+> | Aura VFX di badan | — | — | **1 dari 3, diacak** | — (polos) |
+> | Sorotan | — | 4 detik | 7 detik | 9 detik |
+> | Putaran kamera | — | 90° | 180° | jalur 3 sudut |
+> | Membekukan panggung | — | — | — | **ya** |
+>
+> Undian aura ≥900% milik penonton gratisan cuma mengganti **bunyi**
+> mendaratnya, bukan memberi efek — kalau tidak, aura berhenti menjadi
+> penanda tier 3. Rinciannya ada di docstring kepala `my_scrip_lua_v2`
+> dan tabel `KAMERA_TIER` di file yang sama.
 
 Tangganya bertambah **kategori**, bukan bertambah angka:
 
@@ -559,6 +581,5 @@ game:GetObjects("rbxassetid://96976207749910")[1].Parent = workspace
 ngrok http --url=deluxe-sash-retired.ngrok-free.dev 8000
 
 129577777879366 - green aura
-139177902695289 -  sayap putih
 12010147091 - red aura
 10088609715 - rimuru aura

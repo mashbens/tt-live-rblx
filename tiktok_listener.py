@@ -96,8 +96,9 @@ BLACKLIST_PATH = Path(os.environ.get("BLACKLIST_PATH", BASE_DIR / "roblox_blackl
 #
 # Ambangnya dibaca dari besar ke kecil, yang pertama cocok yang dipakai.
 # Di bawah ambang terendah = tier 1 (sama dengan komentar biasa).
-TIER2_KOIN = int(_env_float("TIER2_KOIN", 1))    # rose  = 1 koin  -> border
-TIER3_KOIN = int(_env_float("TIER3_KOIN", 10))   # rosa  = 10 koin -> raksasa
+TIER2_KOIN = int(_env_float("TIER2_KOIN", 1))    # rose  = 1 koin  -> border + sinematik pendek
+TIER3_KOIN = int(_env_float("TIER3_KOIN", 10))   # rosa  = 10 koin -> border + aura VFX acak
+TIER4_KOIN = int(_env_float("TIER4_KOIN", 30))   #         30 koin -> RAKSASA, tanpa aura
 
 
 def tier_dari_koin(koin: int) -> int:
@@ -107,6 +108,8 @@ def tier_dari_koin(koin: int) -> int:
     penulisan: dibalik, 30 koin akan berhenti di cabang tier 2 yang juga
     cocok, dan tidak ada satu pun tier di atasnya yang pernah tercapai.
     """
+    if koin >= TIER4_KOIN:
+        return 4
     if koin >= TIER3_KOIN:
         return 3
     if koin >= TIER2_KOIN:
@@ -284,7 +287,11 @@ class Pipeline:
         # Saat live sungguhan angkanya ikut dicetak waktu Ctrl+C, dan di
         # situ dia menjawab pertanyaan yang berbeda: berapa banyak yang
         # benar-benar bayar malam ini, dipecah per tingkat.
-        self.per_tier = {1: 0, 2: 0, 3: 0}
+        # Kunci 4 ada supaya tier itu ikut tercetak di ringkasan walau
+        # tidak ada yang mencapainya. Penambahannya sendiri lewat
+        # .get(tier, 0), jadi tier tak terdaftar tidak akan error --
+        # cuma tidak akan pernah muncul di laporan.
+        self.per_tier = {1: 0, 2: 0, 3: 0, 4: 0}
         self.gifts = 0         # gift yang harganya kebaca
         self.boost_hangus = 0  # gift yang tidak pernah disusul komentar
         self.likes = 0         # tap yang tercatat sepanjang siaran
@@ -750,9 +757,9 @@ def _log_setelan(pipeline: "Pipeline", dry_run: bool) -> None:
     log.info("Target antrian: %s%s", PUSH_URL, "  (DRY RUN)" if dry_run else "")
     log.info("Setelan: cooldown %.0fs | dedupe nama %.0fs | verifikasi Roblox %s | blacklist %s nama",
              USER_COOLDOWN_S, NAME_DEDUPE_S, "ya" if VERIFY_ROBLOX else "tidak", len(pipeline.blacklist))
-    log.info("Tier dari koin: >=%s = tier 2 (border), >=%s = tier 3 (raksasa)"
-             " | boost menunggu username %.0fs",
-             TIER2_KOIN, TIER3_KOIN, GIFT_BOOST_TTL_S)
+    log.info("Tier dari koin: >=%s = tier 2 (border), >=%s = tier 3 (aura VFX),"
+             " >=%s = tier 4 (raksasa) | boost menunggu username %.0fs",
+             TIER2_KOIN, TIER3_KOIN, TIER4_KOIN, GIFT_BOOST_TTL_S)
     log.info("Tap-tap: %s tap = tier %s gratis (berulang), haknya menunggu username %.0fs",
              LIKE_PODIUM, LIKE_TIER, LIKE_PODIUM_TTL_S)
 

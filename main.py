@@ -106,24 +106,38 @@ TIER_EFFECTS = {
         "scale": _env_float("TIER2_SCALE", 1.0),
         "effects": ["border"],
         "nameStyle": "gold",
-        # Sorotannya TIDAK mengorbit -- itu jatah tier 3 ke atas. Yang
-        # dia dapat kamera yang berhenti dan menahan dekat. Bedanya
-        # harus di JENIS gerakan, bukan cuma di lamanya: dua gerakan
-        # yang sama dengan durasi berbeda tidak terbaca sebagai dua
-        # tingkat, cuma sebagai satu tingkat yang kadang lebih lama.
+        # Sekarang IKUT mengorbit, dan itu berubah dari sebelumnya.
+        #
+        # Dulu tier 2 sengaja tidak mengorbit supaya bedanya dengan tier 3
+        # ada di JENIS gerakan, bukan cuma di lamanya. Alasan itu masih
+        # benar, cuma pembedanya dipindah: yang membedakan sekarang
+        # BERAPA BANYAK putarannya (tier 2 seperempat, tier 3 setengah,
+        # diatur SINEMA_ORBIT_S per tier di Lua) plus aura VFX yang cuma
+        # dipunyai tier 3. Dua tingkat masih terbaca sebagai dua tingkat;
+        # yang hilang cuma "berputar atau tidak" sebagai penandanya.
         "spotlight": True,
-        "orbit": False,
+        "orbit": True,
     },
     3: {
+        # BADAN NORMAL sekarang. Raksasanya pindah ke tier 4.
+        "scale": _env_float("TIER3_SCALE", 1.0),
+        # Yang membedakan tier 3 dari tier 2 aura VFX acak di badannya
+        # (satu dari tiga asset, dipilih di Lua) plus putaran kamera yang
+        # penuh. Daftar ini keterangan, bukan perintah -- Lua bercabang
+        # dari `tier` -- tapi dua sisi yang bercerita beda adalah cara
+        # paling gampang menyesatkan orang yang membacanya nanti.
+        "effects": ["border", "aura-vfx"],
+        "nameStyle": "gold",
+        "spotlight": True,
+        "orbit": True,
+    },
+    4: {
         # Dibaca Lua sebagai skala raksasa. Di sini, bukan di Lua,
         # supaya bisa digeser lewat .env tanpa menyentuh Studio.
-        "scale": _env_float("TIER3_SCALE", 10.0),
-        # Cuma "giant" -- tidak ada border, cakram, atau aura di
-        # raksasa. Yang membuat tier 3 terbaca ukuran badannya, dan apa
-        # pun yang ditempel di kakinya cuma menyaingi itu. Daftar ini
-        # keterangan, bukan perintah (Lua bercabang dari `tier`), tapi
-        # dua sisi yang bercerita beda adalah cara paling gampang
-        # menyesatkan orang yang membacanya nanti.
+        "scale": _env_float("TIER4_SCALE", 3.0),
+        # Cuma "giant" -- TANPA border, cakram, maupun aura. Yang membuat
+        # tier 4 terbaca ukuran badannya, dan apa pun yang ditempel di
+        # kakinya cuma menyaingi satu-satunya hal yang jadi intinya.
         "effects": ["giant"],
         "nameStyle": "gold",
         "spotlight": True,
@@ -139,6 +153,7 @@ TIER_EFFECTS = {
 # /api/settings supaya alat lain tidak perlu menebak.
 TIER2_KOIN = int(_env_float("TIER2_KOIN", 1))
 TIER3_KOIN = int(_env_float("TIER3_KOIN", 10))
+TIER4_KOIN = int(_env_float("TIER4_KOIN", 30))
 
 # Lama sorotan tier 2 (1 koin). Sengaja DATAR: tidak ikut memanjang oleh
 # koin seperti tier 3.
@@ -157,7 +172,16 @@ SPOTLIGHT_MS_T2 = int(_env_float("SPOTLIGHT_MS_TIER2", 5000))
 #
 # Enam detik, bukan lima: badan 10x butuh waktu lebih lama untuk dibaca
 # mata -- kamera harus sempat menyapu dari kaki ke kepala.
-SPOTLIGHT_MS_T3 = int(_env_float("SPOTLIGHT_MS_TIER3", 6000))
+SPOTLIGHT_MS_T3 = int(_env_float("SPOTLIGHT_MS_TIER3", 7000))
+
+# Lama sorotan tier 4 (raksasa). Juga DATAR, dan alasannya sama: raksasa
+# itu pose diam -- dia melambai sekali lalu berdiri saja.
+#
+# Sembilan detik karena jalur kameranya punya TIGA perhentian (serong
+# kiri -> serong kanan -> belakang). Dibagi tiga, tiap sudut dapat 3
+# detik; di bawah itu perhentiannya berhenti terbaca sebagai perhentian
+# dan yang terlihat cuma satu sapuan panjang.
+SPOTLIGHT_MS_T4 = int(_env_float("SPOTLIGHT_MS_TIER4", 9000))
 
 # Sanity guard untuk angka yang masuk lewat /api/push. Sama dengan
 # KOIN_WARAS di tiktok_listener.py.
@@ -179,6 +203,7 @@ def _cek_sorotan_vs_jeda() -> None:
     for tier, lama, jeda, nama in (
         (2, SPOTLIGHT_MS_T2, SPOTLIGHT_GAP_T2_S, "SPOTLIGHT_GAP_TIER2_S"),
         (3, SPOTLIGHT_MS_T3, SPOTLIGHT_GAP_T3_S, "SPOTLIGHT_GAP_TIER3_S"),
+        (4, SPOTLIGHT_MS_T4, SPOTLIGHT_GAP_T4_S, "SPOTLIGHT_GAP_TIER4_S"),
     ):
         if lama >= jeda * 1000:
             print(
@@ -194,15 +219,22 @@ def durasi_sorotan(tier: int = 3) -> int:
     Tidak lagi bergantung koin. Ketiganya angka tetap, dan itu keputusan
     yang datang dari bentuk adegannya sendiri:
 
-      tier 2  sorotan datar, tiket masuk paling murah
-      tier 3  raksasa itu pose diam -- waktu tambahan cuma memperlihatkan
-              hal yang sama lebih lama
+      tier 2  sorotan datar dan PENDEK, tiket masuk paling murah --
+              yang menentukan berapa banyak yang kebagian, bukan seberapa
+              megah satu sorotan
+      tier 3  putaran kamera penuh + aura VFX, butuh waktu lebih supaya
+              dua-duanya sempat terlihat
+      tier 4  raksasa itu pose diam -- panjangnya ditentukan jalur kamera
+              tiga perhentian, bukan oleh badannya
+
     Yang membedakan kiriman besar bukan lamanya, tapi BENTUKNYA: 1 koin
-    dapat perhatian, 10 koin jadi raksasa.
+    dapat perhatian, 10 koin dapat aura, 30 koin jadi raksasa.
     """
     if tier < 3:
         return SPOTLIGHT_MS_T2
-    return SPOTLIGHT_MS_T3
+    if tier == 3:
+        return SPOTLIGHT_MS_T3
+    return SPOTLIGHT_MS_T4
 
 # Jeda khusus sorotan tier 2. Lebih pendek dari tier 3 karena sorotannya
 # sendiri lebih pendek (5 detik vs 7 detik ke atas) -- dan karena tier 2
@@ -216,12 +248,22 @@ SPOTLIGHT_GAP_T2_S = _env_float("SPOTLIGHT_GAP_TIER2_S", 7.0)
 
 # Jeda tier 3. Di antara keduanya, sejalan dengan sorotannya yang juga
 # di antara keduanya (6 detik).
-SPOTLIGHT_GAP_T3_S = _env_float("SPOTLIGHT_GAP_TIER3_S", 10.0)
+SPOTLIGHT_GAP_T3_S = _env_float("SPOTLIGHT_GAP_TIER3_S", 9.0)
+
+# Jeda tier 4 (raksasa). Paling panjang karena sorotannya paling panjang;
+# syaratnya sama seperti yang lain -- harus lebih besar dari sorotannya
+# sendiri plus fade keluar, kalau tidak Studio membuang sorotan
+# berikutnya dan yang bayar 30 koin tidak dapat apa-apa.
+SPOTLIGHT_GAP_T4_S = _env_float("SPOTLIGHT_GAP_TIER4_S", 11.0)
 
 
 def _jeda_sorotan(tier: int) -> float:
     """Jeda minimal yang harus dilewati sebelum tier ini boleh disorot."""
-    return SPOTLIGHT_GAP_T2_S if tier == 2 else SPOTLIGHT_GAP_T3_S
+    if tier == 2:
+        return SPOTLIGHT_GAP_T2_S
+    if tier == 3:
+        return SPOTLIGHT_GAP_T3_S
+    return SPOTLIGHT_GAP_T4_S
 
 # Kapan sorotan terakhir disajikan. None = belum pernah.
 last_spotlight_at: float | None = None
@@ -473,6 +515,7 @@ def settings():
         "queueMax": QUEUE_MAX,
         "spotlightGapTier2S": SPOTLIGHT_GAP_T2_S,
         "spotlightGapTier3S": SPOTLIGHT_GAP_T3_S,
+        "spotlightGapTier4S": SPOTLIGHT_GAP_T4_S,
         "spotlightMsTier2": SPOTLIGHT_MS_T2,
         "spotlightMsTier3": SPOTLIGHT_MS_T3,
         "koinTier2": TIER2_KOIN,

@@ -51,6 +51,7 @@ AURA_MIN   = int(angka("AURA_MIN"))
 AURA_MAX   = int(angka("AURA_MAX"))
 LANTAI_T2  = int(angka("AURA_LANTAI_T2"))
 LANTAI_T3  = int(angka("AURA_LANTAI_T3"))
+LANTAI_T4  = int(angka("AURA_LANTAI_T4"))
 MAKS_GARIS = int(angka("BORDER_MAKS_GARIS"))
 
 lua.execute(f"""
@@ -59,6 +60,7 @@ AURA_MIN       = {AURA_MIN}
 AURA_MAX       = {AURA_MAX}
 AURA_LANTAI_T2 = {LANTAI_T2}
 AURA_LANTAI_T3 = {LANTAI_T3}
+AURA_LANTAI_T4 = {LANTAI_T4}
 
 BORDER_ENABLED    = true
 BORDER_GARIS      = true
@@ -126,6 +128,7 @@ print("1. Lantai aura")
 t1 = [g.hitungAura(1) for _ in range(4000)]
 t2 = [g.hitungAura(2) for _ in range(4000)]
 t3 = [g.hitungAura(3) for _ in range(4000)]
+t4 = [g.hitungAura(4) for _ in range(4000)]
 
 cek("tier 1 tidak dikasih lantai", min(t1) < LANTAI_T2,
     f"terendah {min(t1)}, harusnya bisa di bawah {LANTAI_T2}")
@@ -133,13 +136,18 @@ cek(f"tier 2 tidak pernah di bawah {LANTAI_T2}%", min(t2) >= LANTAI_T2,
     f"terendah {min(t2)}")
 cek(f"tier 3 tidak pernah di bawah {LANTAI_T3}%", min(t3) >= LANTAI_T3,
     f"terendah {min(t3)}")
-cek("lantainya naik terus, tidak pernah turun", LANTAI_T2 < LANTAI_T3,
-    f"{LANTAI_T2} / {LANTAI_T3} -- tier yang lebih mahal tidak boleh "
-    "punya lantai lebih rendah")
-cek("langit-langitnya tidak ikut naik", max(t1 + t2 + t3) <= AURA_MAX,
-    f"tertinggi {max(t1 + t2 + t3)}")
-cek("yang gratisan masih bisa mengalahkan tier 3", max(t1) > LANTAI_T3,
-    f"tertinggi tier 1 cuma {max(t1)}")
+cek(f"tier 4 tidak pernah di bawah {LANTAI_T4}%", min(t4) >= LANTAI_T4,
+    f"terendah {min(t4)}")
+cek("lantainya naik terus, tidak pernah turun",
+    LANTAI_T2 < LANTAI_T3 < LANTAI_T4,
+    f"{LANTAI_T2} / {LANTAI_T3} / {LANTAI_T4} -- tier yang lebih mahal "
+    "tidak boleh punya lantai lebih rendah")
+cek("langit-langitnya tidak ikut naik",
+    max(t1 + t2 + t3 + t4) <= AURA_MAX,
+    f"tertinggi {max(t1 + t2 + t3 + t4)}")
+cek("yang gratisan masih bisa mengalahkan tier 4", max(t1) > LANTAI_T4,
+    f"tertinggi tier 1 cuma {max(t1)} -- kalau tidak, undian penonton "
+    "gratisan berhenti punya arti")
 
 print("\n2. Jatah Highlight: yang paling tua yang dilepas")
 for i in range(MAKS_GARIS):
@@ -180,7 +188,83 @@ cek("dua warna berbeda", g.warnaTier(2) != g.warnaTier(3),
     "tier 2 dan 3 memakai warna yang sama -- penonton tidak bisa "
     "membedakannya dari jauh")
 cek("umur border punya jawaban untuk tiap tier",
-    all(g.umurBorder(t) is not None for t in (2, 3)))
+    all(g.umurBorder(t) is not None for t in (2, 3, 4)))
+
+
+
+print("\n6. Kamera per tier")
+#
+# Yang diuji di sini BUKAN rasa, tapi dua hal yang bisa salah tanpa
+# terlihat sampai ada yang bayar:
+#
+#   1. Putaran angka aura harus SELESAI di dalam sorotannya. Kalau
+#      tunda + AURA_ROLL melebihi panjang sorotan, angkanya mendarat
+#      setelah kamera pergi -- momen yang dibayar orangnya jatuh di luar
+#      sorotannya sendiri, dan itu tidak memunculkan error apa pun.
+#   2. Tier 3 harus berputar lebih jauh dari tier 2. Itu satu-satunya
+#      pembeda gerakan di antara keduanya sekarang; kalau orbitS
+#      kebetulan disetel sama, dua tier berhenti terbaca sebagai dua
+#      tingkat dan yang tersisa cuma auranya.
+#
+# Durasi sorotannya diambil dari main.py, bukan ditulis ulang: dua sisi
+# yang menyimpan angka yang sama secara terpisah adalah cara paling
+# gampang membuat keduanya diam-diam berbeda.
+import main as srv
+
+AURA_ROLL = angka("AURA_ROLL")
+
+lua.execute(f"""
+ZOOM_KELUAR       = {angka("ZOOM_KELUAR")}
+ZOOM_KELUAR_GIANT = {angka("ZOOM_KELUAR_GIANT")}
+""")
+
+awal_tab = next(i for i, l in enumerate(src) if l.startswith("local KAMERA_TIER = {"))
+akhir_tab = next(i for i in range(awal_tab + 1, len(src)) if src[i] == "}")
+lua.execute("\n".join(src[awal_tab:akhir_tab + 1]).replace("local ", "", 1))
+lua.execute(ambil("kameraTier").replace("local function", "function", 1))
+
+for t in (1, 2, 3, 4):
+    k = g.kameraTier(t)
+    cek(f"tier {t} punya semua angka kamera",
+        None not in (k.tahan, k.keluar, k.maks, k.orbitS, k.tunda))
+    cek(f"tier {t} mundurnya tidak melebihi jarak penuh",
+        0 < k.maks <= 1.0, f"maks {k.maks}")
+
+cek("tier tak dikenal jatuh ke tier 1, bukan nil",
+    g.kameraTier(99).tahan == g.kameraTier(1).tahan)
+
+# Putaran angka harus selesai di dalam sorotan (tier berbayar saja --
+# tier 1 tidak punya sorotan, papannya hidup selama AURA_TIME).
+for t, ms in ((2, srv.SPOTLIGHT_MS_T2), (3, srv.SPOTLIGHT_MS_T3)):
+    k = g.kameraTier(t)
+    habis = k.tunda + AURA_ROLL
+    cek(f"tier {t}: angka mendarat sebelum sorotan habis "
+        f"({k.tunda:.1f}+{AURA_ROLL:.1f} <= {ms / 1000:.1f}s)",
+        habis <= ms / 1000 + 1e-9,
+        f"mendarat di {habis:.1f}s, sorotan cuma {ms / 1000:.1f}s")
+
+# Raksasa: papannya cuma nama, jadi tidak ada yang perlu ditunggu.
+cek("tier 4 tidak menunda apa-apa (papannya cuma nama)",
+    g.kameraTier(4).tunda == 0)
+
+# Derajat putaran = panjang sorotan / orbitS * 360.
+def derajat(t, ms):
+    k = g.kameraTier(t)
+    if not k.orbitS or k.orbitS <= 0:
+        return 0.0
+    return (ms / 1000) / k.orbitS * 360
+
+
+d2 = derajat(2, srv.SPOTLIGHT_MS_T2)
+d3 = derajat(3, srv.SPOTLIGHT_MS_T3)
+print(f"  (tier 2 berputar {d2:.0f} derajat, tier 3 {d3:.0f} derajat)")
+cek("tier 3 berputar lebih jauh dari tier 2", d3 > d2 + 30,
+    f"{d2:.0f} vs {d3:.0f} derajat -- bedanya terlalu kecil untuk "
+    "terbaca sebagai dua tingkat")
+cek("tier 2 berputar, tapi tidak lebih dari setengah", 0 < d2 <= 180,
+    f"{d2:.0f} derajat")
+cek("tier 4 tidak mengorbit (dia pakai jalur tiga sudut)",
+    derajat(4, srv.SPOTLIGHT_MS_T4) == 0)
 
 print()
 if gagal:

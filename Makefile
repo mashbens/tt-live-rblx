@@ -29,7 +29,7 @@ TIKTOK ?= $(shell grep -E '^TIKTOK_USERNAME=' .env 2>/dev/null | cut -d= -f2- | 
 
 BASE_URL := http://127.0.0.1:$(PORT)
 
-.PHONY: help install server dev tunnel listener listener-tf watch watch-tf up mock mock-tier2 mock-tier3 selftest test test-podium test-tier test-sync lint peek clear status clean
+.PHONY: help install server dev tunnel listener listener-tf watch watch-tf up mock mock-tier2 mock-tier3 mock-tier4 selftest test test-podium test-tier test-sync lint peek clear status clean
 
 help:
 	@echo ""
@@ -51,7 +51,8 @@ help:
 	@echo "  TES"
 	@echo "    make mock        simulasi komentar live -- menyentuh ketiga tier"
 	@echo "    make mock-tier2  tier 1 + sedikit tier 2, tanpa sorotan"
-	@echo "    make mock-tier3  banjir 10 koin, menguji raksasa tier 3"
+	@echo "    make mock-tier3  banjir 10 koin, menguji aura VFX tier 3"
+	@echo "    make mock-tier4  banjir 30 koin, menguji raksasa tier 4"
 	@echo "    make selftest    uji saringan dengan beberapa komentar contoh"
 	@echo "    make test-podium uji pembukuan slot podium di my_sscript_lua"
 	@echo "    make test-tier   uji lantai aura + jatah border di my_scrip_lua_v2"
@@ -138,6 +139,12 @@ mock-tier2:
 # raksasa benar-benar kebagian tampil dan tidak menumpuk di antrian.
 mock-tier3:
 	$(PY) mock_comments.py --tier3 $(ARGS)
+
+# Singa saja (30 koin = raksasa tier 4). Dipakai menilai jalur kamera
+# tiga perhentian (serong kiri -> serong kanan -> belakang) tanpa
+# ketiban sorotan tier lain.
+mock-tier4:
+	$(PY) mock_comments.py --tier4 $(ARGS)
 
 selftest:
 	$(PY) tiktok_listener.py --self-test "builderman" "halo bang mantap" "@Roblox" "ngasal_bukan_akun"

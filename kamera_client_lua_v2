@@ -310,9 +310,24 @@ local zoomMulai = -1e9   -- jauh di masa lalu = sedang tidak zoom
 local zoomTahan = 0
 
 -- Lama mundurnya untuk kedatangan ini, detik. Diisi dari pesan server
--- (raksasa mundur lebih cepat dari tier 1/2, lihat ZOOM_KELUAR_GIANT di
--- sana); kalau pesannya tidak membawa angka, pakai setelan umum.
+-- (tiap tier punya angkanya sendiri, lihat KAMERA_TIER di sana); kalau
+-- pesannya tidak membawa angka, pakai setelan umum.
 local zoomKeluar = CFG.zoomKeluar or 1.8
+
+-- Mundur sampai sejauh apa, sebagai pecahan jarak penuh. 1 = sejauh
+-- biasa, 0,75 = berhenti di tiga perempat jalan.
+--
+-- Ini yang membuat adegan berbayar tetap terasa dekat tanpa kameranya
+-- menempel. Cuma berlaku SELAMA adegannya (dikali sinemaMix di gelung),
+-- jadi sesudahnya kamera pulang ke jarak penuh sendiri -- kalau tidak,
+-- satu kedatangan tier 2 akan meninggalkan kamera terlalu dekat untuk
+-- selamanya.
+local zoomMaks = 1
+
+-- Lama satu putaran penuh untuk adegan ini, detik. nil = pakai setelan
+-- umum. Yang menentukan berapa DERAJAT kamera berputar: panjang
+-- sorotan dibagi angka ini.
+local orbitS = nil
 
 -- Berapa frame gelung ini benar-benar jalan. Dipakai laporan di bawah:
 -- "gelungnya tidak pernah jalan" dan "gelungnya jalan tapi hasilnya tidak
@@ -388,7 +403,8 @@ RunService.RenderStepped:Connect(function(dt)
 	-- mengayun seperti biasa, yang berubah cuma jaraknya.
 	local orbitAktif = sinemaOrbit and sinemaMix > 0.001
 	if orbitAktif then
-		local orbitVel = (2 * math.pi) / math.max(CFG.sinemaOrbitS or 14, 0.5)
+		local periode = orbitS or CFG.sinemaOrbitS or 14
+		local orbitVel = (2 * math.pi) / math.max(periode, 0.5)
 		sudutBias += (orbitVel - ayunVel) * sinemaMix * dt
 	end
 
@@ -442,7 +458,17 @@ RunService.RenderStepped:Connect(function(dt)
 	-- termasuk di jarak raksasa yang berkali lipat -- tanpa satu pun
 	-- angka tambahan.
 	local dasar = offsetDasar:Lerp(offsetSinema * sinemaJauh, sinemaMix)
-	local skala = CFG.zoomMasuk + (1 - CFG.zoomMasuk) * zoom
+
+	-- Batas mundur, dicampur mengikuti adegannya.
+	--
+	-- Dikali sinemaMix, bukan dipakai apa adanya: di luar adegan
+	-- nilainya harus kembali 1 (jarak penuh). Tanpa pencampuran ini,
+	-- zoomMaks 0,75 dari satu kedatangan tier 2 akan tetap berlaku
+	-- untuk SEMUA kedatangan sesudahnya -- kamera diam-diam berhenti
+	-- pernah mundur penuh lagi, dan barisan belakang tidak pernah
+	-- terlihat lagi.
+	local maksKini = 1 + ((zoomMaks or 1) - 1) * sinemaMix
+	local skala = CFG.zoomMasuk + (maksKini - CFG.zoomMasuk) * zoom
 
 	-- TINGGINYA tidak ikut dikalikan -- dia justru NAIK saat kameranya
 	-- mundur.
@@ -608,56 +634,16 @@ local GRAD_NAMA = grad(Color3.fromRGB(255, 255, 255),
                        Color3.fromRGB(168, 214, 255))
 local GLOW_NAMA = Color3.fromRGB(150, 200, 255)
 
--- Papan latar di belakang tulisan.
+-- CATATAN: papan latar gelap di belakang tulisan sempat ada di sini dan
+-- SUDAH DIBUANG atas permintaan.
 --
--- Ini yang sebenarnya menyelesaikan "tulisannya tidak kelihatan", dan
--- kenapa warna huruf saja tidak cukup: latar panggung BERUBAH terus
--- (avatar lewat, cahaya bergerak, langitnya sendiri biru), jadi warna
--- huruf apa pun yang dipilih akan tabrakan dengan sesuatu pada suatu
--- saat. Papan gelap di belakangnya membuat kontrasnya tidak lagi
--- bergantung pada apa yang ada di belakang papan itu.
---
--- Gelap tapi TEMBUS: pekat berarti kotak hitam melayang di atas tiap
--- kepala, dan yang tertutup justru panggung yang jadi inti tontonannya.
-local function latarPapan(induk)
-	local latar = Instance.new("Frame")
-	latar.Name                 = "Latar"
-	-- Sedikit lebih kecil dari papannya lalu digeser setengahnya:
-	-- hurufnya mengisi papan sampai tepi, dan latar yang pas persis
-	-- membuat huruf paling luar menyentuh garis pinggirnya.
-	latar.Size                 = UDim2.new(1, -4, 1, -4)
-	latar.Position             = UDim2.new(0, 2, 0, 2)
-	latar.BackgroundColor3     = Color3.fromRGB(10, 14, 30)
-	latar.BackgroundTransparency = 0.32
-	latar.BorderSizePixel      = 0
-	-- Di BELAKANG semua teks. teksGaya memberi teks ZIndex 2 dan
-	-- kembaran glow-nya 1, jadi 0 satu-satunya tempat yang aman.
-	latar.ZIndex               = 0
-	latar.Parent               = induk
-
-	local sudut = Instance.new("UICorner")
-	sudut.CornerRadius = UDim.new(0, 10)
-	sudut.Parent       = latar
-
-	-- Gradien vertikal tipis, bukan warna rata: yang rata terbaca
-	-- sebagai kotak UI yang nempel di dunia, yang bergradien terbaca
-	-- sebagai kaca.
-	local g = Instance.new("UIGradient")
-	g.Color = grad(Color3.fromRGB(28, 38, 70), Color3.fromRGB(8, 10, 22))
-	g.Rotation = 90
-	g.Parent   = latar
-
-	-- Garis pinggir terang tipis. Ini yang memisahkan papannya dari
-	-- latar gelap (malam, bayangan) -- tanpa itu papan gelap di atas
-	-- latar gelap hilang sama sekali dan hurufnya kembali melayang.
-	local tepi = Instance.new("UIStroke")
-	tepi.Color        = Color3.fromRGB(140, 190, 255)
-	tepi.Thickness    = 1
-	tepi.Transparency = 0.55
-	tepi.Parent       = latar
-
-	return latar
-end
+-- Ditulis supaya tidak dipasang lagi tanpa sadar: papan itu membuat
+-- kontras tidak bergantung pada latar, tapi bentuknya kotak melayang di
+-- atas tiap kepala dan itu yang tidak diinginkan. Penggantinya warna
+-- huruf yang jauh lebih terang plus stroke yang ditebalkan -- artinya
+-- keterbacaannya memang kembali bergantung pada apa yang ada di
+-- belakangnya. Kalau nanti masih ada sudut yang tulisannya tenggelam,
+-- yang ditebalkan STROKE-nya, bukan papannya dipasang kembali.
 
 -- Angka: warnanya IKUT nilainya. Penonton hafal polanya setelah
 -- beberapa kedatangan, dan itu yang bikin angka 900 terasa berbeda dari
@@ -852,7 +838,18 @@ local function tampilkanAura(d)
 		-- besarnya.
 		local target = d.persen or 0
 		local roll   = math.max(d.roll or CFG.auraRoll or 0.6, 0.01)
-		local mulai  = os.clock()
+
+		-- Ditunda sama seperti papan kepala, alasannya di sana. Versi
+		-- layar sedang tidak dipakai (AURA_DI_LAYAR false), tapi
+		-- dibiarkan berperilaku beda berarti menyalakannya nanti
+		-- memunculkan bug yang sudah pernah diperbaiki.
+		local tunda = math.max(tonumber(d.tunda) or 0, 0)
+		if tunda > 0 then
+			task.wait(tunda)
+			if gen ~= auraGen then return end
+		end
+
+		local mulai = os.clock()
 
 		while gen == auraGen do
 			local t = (os.clock() - mulai) / roll
@@ -983,7 +980,6 @@ local function auraDiKepala(d)
 	-- kepalanya.
 	if d.namaSaja then
 		gui.Size = UDim2.new(0, CFG.auraKepalaW, 0, CFG.auraKepalaH * 0.34)
-		latarPapan(gui)
 		-- Stroke 1 -> 2: papan raksasa dilihat dari jarak paling jauh di
 		-- seluruh panggung (dia berdiri di belakang barisan), dan di
 		-- jarak itu stroke tipis menyusut sampai hilang.
@@ -1006,7 +1002,6 @@ local function auraDiKepala(d)
 	end
 
 	local jenjang   = tier(d.persen or 0)
-	latarPapan(gui)
 	-- Nama: stroke 1 -> 2 dan tembus 0,05 -> 0. Dua-duanya soal yang
 	-- sama, yaitu nama yang tenggelam di latar biru -- dan yang paling
 	-- rugi dari itu justru penonton yang namanya sedang dipajang.
@@ -1057,7 +1052,26 @@ local function auraDiKepala(d)
 	task.spawn(function()
 		local target = d.persen or 0
 		local roll   = math.max(d.roll or CFG.auraRoll or 0.6, 0.01)
-		local mulai  = os.clock()
+
+		-- Ditahan dulu sebelum angkanya berputar.
+		--
+		-- Papannya sendiri sudah berdiri sejak tadi (berisi "0%"), yang
+		-- ditunda cuma hitungannya. Selama kamera masih merapat papan
+		-- ini di luar frame ATAS, jadi tanpa penundaan bagian yang
+		-- paling ditonton -- angkanya naik lalu mendarat -- habis
+		-- sebelum papannya kelihatan. Angkanya dari server per tier;
+		-- lihat KAMERA_TIER di sana.
+		local tunda = math.max(tonumber(d.tunda) or 0, 0)
+		if tunda > 0 then
+			task.wait(tunda)
+			-- Avatarnya sudah dihapus selagi ditunggu? Berhenti di sini.
+			-- Tanpa cek ini papan yang sudah dilepas tetap dihitung
+			-- sampai selesai, dan setiap kedatangan meninggalkan satu
+			-- gelung yang tidak ada gunanya.
+			if not gui.Parent then return end
+		end
+
+		local mulai = os.clock()
 
 		while gui.Parent do
 			local t = (os.clock() - mulai) / roll
@@ -1375,7 +1389,7 @@ local sfxHitTinggi = buatSfx("AuraHitTinggiSfx", CFG.auraSfxHitTinggi,
 -- kebetulan bangun setelah undian berikutnya mulai.
 local sfxGen = 0
 
-local function bunyiAura(roll, persen)
+local function bunyiAura(roll, persen, tundaS)
 	-- Mana bunyi mendarat yang dipakai undian ini.
 	--
 	-- MENGGANTI, bukan menumpuk: kalau keduanya dibunyikan, yang
@@ -1393,38 +1407,61 @@ local function bunyiAura(roll, persen)
 	sfxGen += 1
 	local gen = sfxGen
 
-	if sfxAura then
-		sfxAura.TimePosition = 0
-		sfxAura:Play()
-	end
-
-	-- Tidak ada yang perlu dikerjakan di akhir putaran: tidak ada bunyi
-	-- mendarat, dan bunyi putarannya memang dibiarkan habis sendiri.
-	if not sfxMendarat and not CFG.auraSfxRoll then return end
-
-	-- Satu task untuk dua hal yang harus terjadi BERSAMAAN: putarannya
-	-- dipotong dan bunyi mendaratnya mulai. Dipisah jadi dua task, dua
-	-- penjadwalan yang berbeda bisa jatuh di frame yang berbeda -- dan
-	-- celah sekecil itu pun terdengar sebagai bunyi yang tidak nyambung.
+	-- Bunyinya ikut ditunda sepanjang penundaan angkanya.
 	--
-	-- Batas bawahnya kecil saja -- undian sependek 0.05 detik memang
-	-- tidak masuk akal, tapi 0 di sini berarti task ini jalan di frame
-	-- yang sama dengan Play dan putarannya tidak sempat berbunyi.
-	task.delay(math.max(roll or 0.6, 0.05), function()
-		-- Sudah ada undian baru yang mulai? Dia yang berhak atas kedua
-		-- Sound ini sekarang; memotong atau membunyikan apa pun di sini
-		-- berarti mengganggu undian orang lain yang sedang berjalan.
+	-- Kalau tidak, bunyi putaran jalan selagi angkanya masih diam di
+	-- "0%" dan hentakan mendaratnya jatuh sebelum angkanya bergerak
+	-- sama sekali -- yang terdengar jadi bunyi milik kedatangan lain.
+	--
+	-- `gen` diambil SEBELUM penundaan, jadi undian yang datang di
+	-- tengah penundaan membatalkan bunyi ini alih-alih menumpuknya.
+	local tunda = math.max(tonumber(tundaS) or 0, 0)
+	local function mulaiBunyi()
 		if gen ~= sfxGen then return end
 
-		if sfxAura and CFG.auraSfxRoll and sfxAura.IsPlaying then
-			sfxAura:Stop()
+		if sfxAura then
+			sfxAura.TimePosition = 0
+			sfxAura:Play()
 		end
 
-		if sfxMendarat then
-			sfxMendarat.TimePosition = 0
-			sfxMendarat:Play()
-		end
-	end)
+		-- Tidak ada yang perlu dikerjakan di akhir putaran: tidak ada
+		-- bunyi mendarat, dan bunyi putarannya memang dibiarkan habis
+		-- sendiri.
+		if not sfxMendarat and not CFG.auraSfxRoll then return end
+
+		-- Satu task untuk dua hal yang harus terjadi BERSAMAAN:
+		-- putarannya dipotong dan bunyi mendaratnya mulai. Dipisah jadi
+		-- dua task, dua penjadwalan yang berbeda bisa jatuh di frame
+		-- yang berbeda -- dan celah sekecil itu pun terdengar sebagai
+		-- bunyi yang tidak nyambung.
+		--
+		-- Batas bawahnya kecil saja -- undian sependek 0.05 detik memang
+		-- tidak masuk akal, tapi 0 di sini berarti task ini jalan di
+		-- frame yang sama dengan Play dan putarannya tidak sempat
+		-- berbunyi.
+		task.delay(math.max(roll or 0.6, 0.05), function()
+			-- Sudah ada undian baru yang mulai? Dia yang berhak atas
+			-- kedua Sound ini sekarang; memotong atau membunyikan apa
+			-- pun di sini berarti mengganggu undian orang lain yang
+			-- sedang berjalan.
+			if gen ~= sfxGen then return end
+
+			if sfxAura and CFG.auraSfxRoll and sfxAura.IsPlaying then
+				sfxAura:Stop()
+			end
+
+			if sfxMendarat then
+				sfxMendarat.TimePosition = 0
+				sfxMendarat:Play()
+			end
+		end)
+	end
+
+	if tunda > 0 then
+		task.delay(tunda, mulaiBunyi)
+	else
+		mulaiBunyi()
+	end
 end
 
 
@@ -1529,6 +1566,8 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 			sinemaJauh   = tonumber(d.jauh) or 1
 			zoomMulai    = os.clock()
 			zoomKeluar   = tonumber(d.zoomKeluar) or CFG.zoomKeluar or 1.8
+			zoomMaks     = tonumber(d.zoomMaks) or 1
+			orbitS       = tonumber(d.orbitS)
 			-- Adegan berbayar juga dimulai dari depan. Untuk yang
 			-- mengorbit itu malah lebih baik: putarannya berangkat dari
 			-- wajah orangnya, bukan dari sudut acak.
@@ -1548,7 +1587,7 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 			-- dari sorotan tetap utuh (kamera tidak bisa direbut
 			-- kedatangan lain), yang berubah cuma kameranya tidak lagi
 			-- menempel terlalu dekat terlalu lama.
-			zoomTahan    = CFG.zoomTahan or 1.0
+			zoomTahan    = tonumber(d.zoomTahan) or CFG.zoomTahan or 1.0
 
 		elseif os.clock() >= sinemaSampai then
 			fokusTarget = d.pos or fokusTarget
@@ -1562,7 +1601,14 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 			sinemaJalur = nil
 			zoomMulai   = os.clock()
 			zoomKeluar  = tonumber(d.zoomKeluar) or CFG.zoomKeluar or 1.8
-			zoomTahan   = CFG.zoomTahan or 1.6
+			zoomTahan   = tonumber(d.zoomTahan) or CFG.zoomTahan or 1.6
+			-- Dikembalikan ke 1 dan nil, bukan dibiarkan: keduanya milik
+			-- adegan yang sudah selesai. zoomMaks yang tertinggal
+			-- membuat kamera berhenti mundur penuh, dan orbitS yang
+			-- tertinggal membuat kedatangan gratisan berikutnya
+			-- berputar dengan kecepatan milik tier berbayar.
+			zoomMaks    = tonumber(d.zoomMaks) or 1
+			orbitS      = tonumber(d.orbitS)
 			pandangLurus()
 
 		-- else: kedatangan biasa DI TENGAH adegan berbayar -- diabaikan.
@@ -1592,7 +1638,7 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 		-- fungsi -- dan bunyinya akan diulang dari nol dua kali dalam
 		-- satu frame.
 		if CFG.auraKepala or CFG.auraLayar then
-			bunyiAura(d.roll or CFG.auraRoll, d.persen)
+			bunyiAura(d.roll or CFG.auraRoll, d.persen, d.tunda)
 		end
 		if CFG.auraKepala then auraDiKepala(d) end
 		if CFG.auraLayar  then tampilkanAura(d) end

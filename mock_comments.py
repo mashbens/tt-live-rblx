@@ -83,6 +83,11 @@ PENONTON = [
 GIFT_KOIN = {
     "rose": 1,
     "rosa": 10,
+    # 30 koin = ambang tier 4 (raksasa) yang paling murah. Ada di daftar
+    # supaya raksasanya bisa diuji dengan kiriman PAS di ambangnya, bukan
+    # cuma lewat galaxy yang 1000 koin -- kalau ambangnya suatu saat
+    # digeser, yang pertama patah justru kiriman yang pas-pasan.
+    "singa": 30,
     "galaxy": 1000,
     "kucing": 0,
 }
@@ -98,11 +103,16 @@ GIFT_KOIN = {
 # Porsinya miring TAJAM ke yang murah, meniru live. Ingat combo ikut
 # dikali: rosa x1 sudah tier 3, dan rose x10 juga -- jadi tier 3 muncul
 # lebih sering daripada porsi rosa-nya sendiri.
-GIFT = (["rose"] * 12) + (["rosa"] * 4) + (["kucing"] * 3)
+GIFT = (["rose"] * 12) + (["rosa"] * 4) + (["singa"] * 1) + (["kucing"] * 3)
 
 # Komposisi untuk --tier3: rosa saja. Dulu masih dicampur rose, tapi untuk
 # menilai panggung tier 3 campuran itu cuma bikin sorotannya jarang.
 GIFT_TIER3 = ["rosa"]
+
+# Komposisi untuk --tier4: singa saja (30 koin), jadi tiap gift jadi
+# raksasa. Dipakai menilai jalur kamera tiga perhentian tanpa ketiban
+# sorotan tier lain.
+GIFT_TIER4 = ["singa"]
 
 # Komposisi untuk --tier2: rose saja, jadi rosa tidak pernah muncul dan
 # sorotan tidak pernah jalan. Dipakai untuk melihat panggung sehari-hari:
@@ -250,8 +260,8 @@ async def main(count: int | None, min_delay: float | None, max_delay: float | No
         # di baris ini.
         per = pipeline.per_tier
         log.info("Per tier: %s",
-                 "  ".join(f"tier {t}={per.get(t, 0)}" for t in (1, 2, 3)))
-        kosong = [t for t in (1, 2, 3) if per.get(t, 0) == 0]
+                 "  ".join(f"tier {t}={per.get(t, 0)}" for t in (1, 2, 3, 4)))
+        kosong = [t for t in (1, 2, 3, 4) if per.get(t, 0) == 0]
         if kosong:
             # Cuma tier 2-4 yang punya mode sendiri; tier 1 datang dari
             # komentar biasa, jadi menyarankan "--tier1" berarti menyuruh
@@ -280,7 +290,9 @@ if __name__ == "__main__":
     parser.add_argument("--tier2", action="store_true",
                         help="Hanya tier 1 dan 2 (rose), tier 2-nya sedikit. Tanpa rosa/sorotan")
     parser.add_argument("--tier3", action="store_true",
-                        help="Banjir rosa (10 koin) -- menguji raksasa tier 3")
+                        help="Banjir rosa (10 koin) -- menguji aura VFX tier 3")
+    parser.add_argument("--tier4", action="store_true",
+                        help="Banjir singa (30 koin) -- menguji raksasa tier 4")
     parser.add_argument("--gift-rate", type=float, default=None,
                         help="Peluang satu kejadian berupa gift (0..1, default 0.125)")
     parser.add_argument("--gift", action="append", metavar="NAMA",
@@ -292,7 +304,8 @@ if __name__ == "__main__":
     # --tier2/--tier3 cuma menggeser dua angka default; --gift-rate dan
     # --gift tetap boleh menimpanya, jadi bisa dipakai bersamaan.
     dipilih = [n for n, v in (("--tier2", args.tier2),
-                              ("--tier3", args.tier3)) if v]
+                              ("--tier3", args.tier3),
+                              ("--tier4", args.tier4)) if v]
     if len(dipilih) > 1:
         parser.error(" dan ".join(dipilih) + " tidak bisa dipakai bersamaan")
 
@@ -300,7 +313,9 @@ if __name__ == "__main__":
     # Jadi tiap kejadian adalah gift (rate 1.0) dan selalu disusul username
     # (follow 1.0) -- kalau tidak, tick yang sudah dilambatkan ke jeda
     # sorotan malah terbuang untuk obrolan biasa.
-    if args.tier3:
+    if args.tier4:
+        bawaan_pool, bawaan_rate = GIFT_TIER4, 1.0
+    elif args.tier3:
         bawaan_pool, bawaan_rate = GIFT_TIER3, 1.0
     elif args.tier2:
         # 0.015, bukan angka bulat yang kelihatan masuk akal seperti 0.1.
@@ -317,7 +332,7 @@ if __name__ == "__main__":
 
     # Berapa sering gift disusul username. Di mock biasa sengaja tidak
     # selalu -- itu kasus "boost hangus" yang perlu ikut teruji.
-    gift_follow = 1.0 if args.tier3 else 0.75
+    gift_follow = 1.0 if (args.tier3 or args.tier4) else 0.75
 
     # Tiap tier punya jedanya sendiri di server, dan memakai jeda yang
     # salah membuat mock-nya menumpuk lagi -- persis masalah yang jeda
