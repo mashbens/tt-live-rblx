@@ -24,6 +24,7 @@ tapi gampang kena rate-limit diam-diam pas live lagi ramai.
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import re
@@ -744,6 +745,18 @@ async def detak(pipeline: Pipeline, jeda: float = 30.0) -> None:
                  pipeline.likes, pipeline.podium_like)
 
 
+def _log_setelan(pipeline: "Pipeline", dry_run: bool) -> None:
+    """Ringkasan setelan saat start. Sama untuk semua sumber event."""
+    log.info("Target antrian: %s%s", PUSH_URL, "  (DRY RUN)" if dry_run else "")
+    log.info("Setelan: cooldown %.0fs | dedupe nama %.0fs | verifikasi Roblox %s | blacklist %s nama",
+             USER_COOLDOWN_S, NAME_DEDUPE_S, "ya" if VERIFY_ROBLOX else "tidak", len(pipeline.blacklist))
+    log.info("Tier dari koin: >=%s = tier 2 (border), >=%s = tier 3 (raksasa)"
+             " | boost menunggu username %.0fs",
+             TIER2_KOIN, TIER3_KOIN, GIFT_BOOST_TTL_S)
+    log.info("Tap-tap: %s tap = tier %s gratis (berulang), haknya menunggu username %.0fs",
+             LIKE_PODIUM, LIKE_TIER, LIKE_PODIUM_TTL_S)
+
+
 async def run_live(username: str, debug: bool, dry_run: bool,
                    show_comments: bool = False) -> None:
     pipeline = Pipeline(dry_run=dry_run, show_comments=show_comments)
@@ -759,14 +772,7 @@ async def run_live(username: str, debug: bool, dry_run: bool,
     else:
         log.info("Jalan tanpa EulerStream API key — rawan rate-limit saat live ramai.")
 
-    log.info("Target antrian: %s%s", PUSH_URL, "  (DRY RUN)" if dry_run else "")
-    log.info("Setelan: cooldown %.0fs | dedupe nama %.0fs | verifikasi Roblox %s | blacklist %s nama",
-             USER_COOLDOWN_S, NAME_DEDUPE_S, "ya" if VERIFY_ROBLOX else "tidak", len(pipeline.blacklist))
-    log.info("Tier dari koin: >=%s = tier 2 (border), >=%s = tier 3 (raksasa)"
-             " | boost menunggu username %.0fs",
-             TIER2_KOIN, TIER3_KOIN, GIFT_BOOST_TTL_S)
-    log.info("Tap-tap: %s tap = tier %s gratis (berulang), haknya menunggu username %.0fs",
-             LIKE_PODIUM, LIKE_TIER, LIKE_PODIUM_TTL_S)
+    _log_setelan(pipeline, dry_run)
 
     detak_task = asyncio.create_task(detak(pipeline))
 
@@ -813,6 +819,132 @@ async def run_live(username: str, debug: bool, dry_run: bool,
                  pipeline.likes, pipeline.podium_like)
 
 
+# --- Sumber event alternatif: TikFinity Desktop ------------------------------
+#
+# Jalur EulerStream bisa mati total di luar kendali kita: pernah kejadian sign
+# server mengarahkan semua klien ke fallback proxy yang menolak upgrade
+# WebSocket, dan tidak ada key atau versi klien yang menolong
+# (isaackogan/TikTokLive#376). TikFinity Desktop connect ke TikTok lewat
+# infrastrukturnya sendiri lalu menyiarkan ulang tiap event ke WebSocket
+# lokal, jadi dipakai sebagai jalur cadangan yang tidak lewat EulerStream.
+#
+# Payload TikFinity memakai gaya TikTok-Live-Connector: camelCase dan datar,
+# beda dari objek TikTokLive. Pemetaannya ditaruh di sini supaya Pipeline
+# tetap tidak tahu-menahu soal dari mana event datang.
+
+TIKFINITY_URL = os.environ.get("TIKFINITY_URL", "ws://127.0.0.1:21213/")
+TIKFINITY_RETRY_S = 5.0
+
+
+def _tf_user(data: dict) -> tuple[str, str]:
+    """Username + nickname penonton dari payload TikFinity."""
+    user = data.get("uniqueId") or data.get("userId") or "unknown"
+    return user, data.get("nickname") or user
+
+
+async def _tf_dispatch(pipeline: Pipeline, raw: str | bytes) -> None:
+    """Petakan satu pesan TikFinity ke Pipeline."""
+    try:
+        msg = json.loads(raw)
+    except (TypeError, ValueError):
+        return
+    if not isinstance(msg, dict):
+        return
+
+    event = msg.get("event")
+    data = msg.get("data") or {}
+
+    if event == "chat":
+        user, nickname = _tf_user(data)
+        pipeline.spawn(user, nickname, data.get("comment") or "")
+
+    elif event == "gift":
+        # Gift streakable (giftType 1, Rose termasuk) memancing event berulang
+        # tiap combo naik, lalu ditutup satu event dengan repeatEnd true.
+        # Hanya yang penutup yang dipakai: satu Rose sekali kirim saja sudah
+        # menghasilkan dua event, jadi tanpa saringan ini satu Rose kebaca
+        # jadi dua boost.
+        if data.get("giftType") == 1 and not data.get("repeatEnd"):
+            return
+        user, nickname = _tf_user(data)
+        await pipeline.handle_gift(user, nickname,
+                                   data.get("giftName") or "gift",
+                                   data.get("repeatCount") or 1,
+                                   # Harga gift dalam koin, dikirim TikTok
+                                   # sendiri — padanan diamond_count di
+                                   # TikTokLive.
+                                   data.get("diamondCount") or 0)
+
+    elif event == "like":
+        user, nickname = _tf_user(data)
+        # `likeCount` = tap dalam pesan ini saja. Jangan pakai
+        # `totalLikeCount` (total ruangan sejak live mulai) — itu bikin
+        # podium meledak di tap pertama yang masuk.
+        await pipeline.handle_like(user, nickname, data.get("likeCount") or 1)
+
+    elif event == "config":
+        # Handshake sekali saat connect. Isinya TIDAK bisa dipakai buat menebak
+        # apakah TikFinity sudah terhubung ke live: `events` terpantau selalu
+        # [] baik saat live tersambung maupun belum. Jadi cuma dicatat.
+        log.debug("Handshake TikFinity: %s", data)
+
+
+async def run_tikfinity(dry_run: bool, show_comments: bool,
+                        url: str = TIKFINITY_URL) -> None:
+    """Baca event dari TikFinity Desktop, bukan dari EulerStream."""
+    try:
+        import websockets
+    except ModuleNotFoundError:
+        log.error("Butuh paket 'websockets'. Pasang dengan: "
+                  "./.venv/bin/pip install websockets")
+        raise SystemExit(1)
+
+    pipeline = Pipeline(dry_run=dry_run, show_comments=show_comments)
+    await pipeline.open()
+
+    log.info("Sumber event: TikFinity Desktop (%s) — tidak lewat EulerStream.", url)
+    _log_setelan(pipeline, dry_run)
+
+    detak_task = asyncio.create_task(detak(pipeline))
+    pernah_tersambung = False
+
+    try:
+        # Sengaja menyambung ulang terus, bukan keluar: TikFinity bisa
+        # direstart atau live-nya pindah di tengah siaran, dan listener yang
+        # mati diam-diam lebih merugikan daripada log yang agak berulang.
+        while True:
+            try:
+                async with websockets.connect(url, open_timeout=10) as ws:
+                    pernah_tersambung = True
+                    log.info("Tersambung ke TikFinity — komentar berupa username "
+                             "Roblox akan diantrikan.")
+                    async for raw in ws:
+                        await _tf_dispatch(pipeline, raw)
+                log.info("TikFinity menutup koneksi. Menyambung ulang %.0fs.",
+                         TIKFINITY_RETRY_S)
+            except (OSError, asyncio.TimeoutError):
+                # Paling sering: aplikasinya belum dibuka. Bukan bug, jadi
+                # jangan dilempar sebagai traceback.
+                log.error("Tidak bisa menghubungi TikFinity di %s. Pastikan "
+                          "aplikasi TikFinity Desktop jalan di PC ini dan "
+                          "Events API-nya aktif. Coba lagi %.0fs.",
+                          url, TIKFINITY_RETRY_S)
+            except Exception:
+                if not pernah_tersambung:
+                    raise
+                log.warning("Koneksi TikFinity terputus. Menyambung ulang %.0fs.",
+                            TIKFINITY_RETRY_S, exc_info=True)
+            await asyncio.sleep(TIKFINITY_RETRY_S)
+    finally:
+        detak_task.cancel()
+        await pipeline.aclose()
+        log.info("Selesai. %s komentar | %s diantrikan | %s ditolak | %s gift | "
+                 "%s boost hangus | %s tap | %s podium dari tap.",
+                 pipeline.seen, pipeline.pushed, pipeline.rejected,
+                 pipeline.gifts, pipeline.boost_hangus,
+                 pipeline.likes, pipeline.podium_like)
+
+
 async def run_self_test(texts: list[str]) -> None:
     """Uji parser + verifikasi + push tanpa perlu ada yang live."""
     pipeline = Pipeline(dry_run=False)
@@ -839,14 +971,27 @@ if __name__ == "__main__":
                         help="Tampilkan SEMUA komentar yang masuk, bukan cuma yang lolos saringan")
     parser.add_argument("--self-test", nargs="+", metavar="KOMENTAR",
                         help="Uji pipeline dengan komentar palsu, tanpa connect ke TikTok")
+    parser.add_argument("--source", choices=("euler", "tikfinity"), default="euler",
+                        help="Sumber event: 'euler' (default, lewat EulerStream) "
+                             "atau 'tikfinity' (WebSocket lokal TikFinity Desktop, "
+                             "tidak butuh EulerStream)")
     args = parser.parse_args()
 
     try:
         if args.self_test:
             asyncio.run(run_self_test(args.self_test))
+        elif args.source == "tikfinity":
+            # Username tidak dipakai: yang menentukan live mana yang dibaca
+            # adalah akun yang sudah di-connect di aplikasi TikFinity.
+            if args.username:
+                log.info("Sumber tikfinity: argumen username (@%s) diabaikan — "
+                         "live yang dibaca ditentukan dari aplikasi TikFinity.",
+                         args.username.lstrip("@"))
+            asyncio.run(run_tikfinity(args.dry_run, args.show_comments))
         elif args.username:
             asyncio.run(run_live(args.username, args.debug, args.dry_run, args.show_comments))
         else:
-            parser.error("butuh <username_tiktok>, atau pakai --self-test")
+            parser.error("butuh <username_tiktok>, atau pakai --self-test "
+                         "atau --source tikfinity")
     except KeyboardInterrupt:
         log.info("Berhenti.")

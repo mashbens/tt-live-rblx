@@ -4,6 +4,9 @@ httpx>=0.27
 # Dipakai tiktok_listener.py buat baca komentar TikTok Live.
 TikTokLive>=6.4.0
 python-dotenv>=1.0.0
+# Jalur cadangan `--source tikfinity`: baca Events API TikFinity Desktop.
+# Sudah ikut terpasang lewat TikTokLive, tapi sekarang dipakai langsung.
+websockets>=12.0
 
 # Lua sungguhan, cuma dipakai `make test-podium` buat menguji
 # pembukuan slot podium di my_sscript_lua tanpa membuka Studio.

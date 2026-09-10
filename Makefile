@@ -25,7 +25,7 @@ TIKTOK ?= $(shell grep -E '^TIKTOK_USERNAME=' .env 2>/dev/null | cut -d= -f2- | 
 
 BASE_URL := http://127.0.0.1:$(PORT)
 
-.PHONY: help install server dev tunnel listener watch up mock mock-tier2 mock-tier3 selftest test test-podium test-tier test-sync lint peek clear status clean
+.PHONY: help install server dev tunnel listener listener-tf watch watch-tf up mock mock-tier2 mock-tier3 selftest test test-podium test-tier test-sync lint peek clear status clean
 
 help:
 	@echo ""
@@ -87,6 +87,16 @@ tunnel:
 
 listener: check-tiktok
 	$(PY) tiktok_listener.py $(TIKTOK) $(ARGS)
+
+# Jalur cadangan: event dibaca dari TikFinity Desktop, tidak lewat EulerStream.
+# Tidak perlu $(TIKTOK) — live yang dibaca ditentukan dari aplikasi TikFinity.
+# Aplikasinya harus jalan di PC ini dulu.
+listener-tf:
+	$(PY) tiktok_listener.py --source tikfinity $(ARGS)
+
+# Versi TikFinity dari `make watch`: lihat semua komentar, tanpa push antrian.
+watch-tf:
+	$(PY) tiktok_listener.py --source tikfinity --show-comments --dry-run
 
 # Numpang live orang lain buat lihat komentarnya lewat tanpa mengotori antrian.
 watch: check-tiktok
