@@ -945,6 +945,59 @@ async def run_tikfinity(dry_run: bool, show_comments: bool,
                  pipeline.likes, pipeline.podium_like)
 
 
+def _tf_endpoint(url: str) -> tuple[str, int]:
+    """Host+port dari URL TikFinity, buat cek cepat tanpa buka WebSocket."""
+    m = re.match(r"wss?://([^/:]+)(?::(\d+))?", url)
+    if not m:
+        return "127.0.0.1", 21213
+    return m.group(1), int(m.group(2) or 21213)
+
+
+async def tikfinity_hidup(url: str = TIKFINITY_URL, timeout: float = 1.5) -> bool:
+    """Apakah Events API TikFinity menyahut sekarang.
+
+    Sengaja cuma buka TCP lalu tutup, bukan handshake WebSocket: yang perlu
+    dijawab hanya "aplikasinya nyala atau tidak", dan itu harus cepat karena
+    dipanggil sebelum listener mulai.
+    """
+    host, port = _tf_endpoint(url)
+    try:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port), timeout=timeout)
+    except (OSError, asyncio.TimeoutError):
+        return False
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except OSError:
+        pass
+    return True
+
+
+async def run_auto(username: str | None, debug: bool, dry_run: bool,
+                   show_comments: bool) -> None:
+    """TikFinity kalau ada, kalau tidak baru EulerStream.
+
+    Urutannya begitu dan bukan sebaliknya: TikFinity jalan di PC sendiri dan
+    tidak bergantung pada signing pihak ketiga yang bisa mati kapan saja,
+    sementara EulerStream pernah mati total tanpa bisa diakali dari sisi kita.
+    """
+    if await tikfinity_hidup():
+        log.info("Sumber otomatis: TikFinity Desktop terdeteksi.")
+        await run_tikfinity(dry_run, show_comments)
+        return
+
+    if not username:
+        log.error("TikFinity tidak jalan, dan tidak ada username TikTok untuk "
+                  "jalur EulerStream. Buka aplikasi TikFinity Desktop, atau "
+                  "jalankan dengan <username_tiktok>.")
+        raise SystemExit(1)
+
+    log.info("Sumber otomatis: TikFinity tidak terdeteksi, pakai EulerStream (@%s).",
+             username.lstrip("@"))
+    await run_live(username, debug, dry_run, show_comments)
+
+
 async def run_self_test(texts: list[str]) -> None:
     """Uji parser + verifikasi + push tanpa perlu ada yang live."""
     pipeline = Pipeline(dry_run=False)
@@ -971,27 +1024,28 @@ if __name__ == "__main__":
                         help="Tampilkan SEMUA komentar yang masuk, bukan cuma yang lolos saringan")
     parser.add_argument("--self-test", nargs="+", metavar="KOMENTAR",
                         help="Uji pipeline dengan komentar palsu, tanpa connect ke TikTok")
-    parser.add_argument("--source", choices=("euler", "tikfinity"), default="euler",
-                        help="Sumber event: 'euler' (default, lewat EulerStream) "
-                             "atau 'tikfinity' (WebSocket lokal TikFinity Desktop, "
-                             "tidak butuh EulerStream)")
+    parser.add_argument("--source", choices=("auto", "euler", "tikfinity"),
+                        default="auto",
+                        help="Sumber event. 'auto' (default): pakai TikFinity "
+                             "Desktop kalau jalan, kalau tidak jatuh ke "
+                             "EulerStream. 'tikfinity': paksa TikFinity. "
+                             "'euler': paksa EulerStream (butuh username)")
     args = parser.parse_args()
 
     try:
         if args.self_test:
             asyncio.run(run_self_test(args.self_test))
         elif args.source == "tikfinity":
-            # Username tidak dipakai: yang menentukan live mana yang dibaca
-            # adalah akun yang sudah di-connect di aplikasi TikFinity.
-            if args.username:
-                log.info("Sumber tikfinity: argumen username (@%s) diabaikan — "
-                         "live yang dibaca ditentukan dari aplikasi TikFinity.",
-                         args.username.lstrip("@"))
+            # Username tidak dipakai: live mana yang dibaca ditentukan oleh
+            # akun yang sudah di-connect di aplikasi TikFinity.
             asyncio.run(run_tikfinity(args.dry_run, args.show_comments))
-        elif args.username:
-            asyncio.run(run_live(args.username, args.debug, args.dry_run, args.show_comments))
+        elif args.source == "euler":
+            if not args.username:
+                parser.error("--source euler butuh <username_tiktok>")
+            asyncio.run(run_live(args.username, args.debug, args.dry_run,
+                                 args.show_comments))
         else:
-            parser.error("butuh <username_tiktok>, atau pakai --self-test "
-                         "atau --source tikfinity")
+            asyncio.run(run_auto(args.username, args.debug, args.dry_run,
+                                 args.show_comments))
     except KeyboardInterrupt:
         log.info("Berhenti.")

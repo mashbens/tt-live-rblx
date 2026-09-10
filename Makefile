@@ -5,6 +5,10 @@
 #     make tunnel      (terminal 2)
 #     make listener    (terminal 3)
 #
+# `make listener` memilih sumbernya sendiri: TikFinity Desktop kalau
+# aplikasinya jalan, kalau tidak baru lewat EulerStream. Paksa salah satu
+# dengan `make listener ARGS=--source=tikfinity` atau `ARGS=--source=euler`.
+#
 # `make up` menjalankan ketiganya sekaligus di satu terminal -- praktis, tapi
 # log ketiganya bercampur. Buat live beneran, tiga terminal lebih enak dibaca.
 
@@ -38,6 +42,8 @@ help:
 	@echo "    make server      server antrian di port $(PORT)"
 	@echo "    make tunnel      ngrok ke $(NGROK_DOMAIN)"
 	@echo "    make listener    baca komentar live  (TIKTOK=namaakun)"
+	@echo "                     sumber otomatis: TikFinity kalau jalan,"
+	@echo "                     kalau tidak jatuh ke EulerStream"
 	@echo ""
 	@echo "  JALAN (satu terminal)"
 	@echo "    make up          ketiganya sekaligus, Ctrl+C mematikan semua"
@@ -53,6 +59,7 @@ help:
 	@echo "    make lint        cari nil global di kedua file Lua"
 	@echo "    make test        lint + ketiga uji sekaligus"
 	@echo "    make watch       listener + tampilkan semua komentar, tanpa isi antrian"
+	@echo "    make watch-tf    sama, tapi paksa lewat TikFinity"
 	@echo ""
 	@echo "  ANTRIAN"
 	@echo "    make peek        lihat isi antrian"
