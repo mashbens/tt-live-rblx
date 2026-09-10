@@ -119,9 +119,15 @@ def tier_dari_koin(koin: int) -> int:
 
 # Sanity guard, bukan aturan main. Gift termahal TikTok ada di kisaran
 # 45.000 koin; apa pun di atas sejuta artinya datanya rusak, bukan orang
-# kaya. Yang MEMBATASI panjang sorotan ada di main.py (KOIN_SPOT_CAP) --
-# dan pembatasan itu sengaja tidak dilakukan di sini, supaya angka yang
-# ditulis di papan tetap angka yang benar-benar dia bayar.
+# kaya.
+#
+# Panjang sorotan TIDAK lagi ikut koin: keempat tier punya durasi datar
+# (SPOTLIGHT_MS_TIER* di main.py), jadi tidak ada yang bisa memanjang
+# liar karena angka besar. Yang dibatasi angka ini cuma kewarasan
+# datanya sendiri.
+#
+# Klamp-nya tetap tidak dipakai untuk mengubah angka yang ditulis di
+# papan: yang tampil harus angka yang benar-benar dia bayar.
 KOIN_WARAS = 1_000_000
 
 # Orang hampir selalu kirim gift DULU, baru ngetik username beberapa detik
