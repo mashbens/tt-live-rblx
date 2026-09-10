@@ -116,6 +116,11 @@ local HttpService  = game:GetService("HttpService")
 local RunService   = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ContentProvider   = game:GetService("ContentProvider")
+-- Jalur kedua pengambilan asset aura VFX, lihat muatAuraVfx. Diambil
+-- lewat GetService, bukan dipanggil sebagai global: InsertService yang
+-- nil cuma memunculkan error di dalam pcall dan aura badannya mati
+-- diam-diam tanpa satu pun petunjuk kenapa.
+local InsertService     = game:GetService("InsertService")
 
 -- ============ PENGATURAN ============
 
@@ -259,6 +264,27 @@ local AURA_SFX_IKUT_ROLL = true
 -- berikutnya -- pollingnya cuma satu detik.
 local AURA_SFX_HIT_ID  = "rbxassetid://73557803481217"
 local AURA_SFX_HIT_VOL = 0.8
+
+-- Bunyi mendarat KHUSUS untuk angka besar, dan yang di atas TIDAK ikut
+-- dibunyikan kalau yang ini kena.
+--
+-- Bukan dua bunyi bertumpuk: yang biasa itu hentakan pendek yang sama
+-- untuk semua orang, jadi kalau keduanya jalan bersamaan yang terdengar
+-- cuma hentakan biasa yang kebetulan lebih ramai -- dan angka 950
+-- kehilangan satu-satunya penanda yang membedakannya dari 200. Yang
+-- besar MENGGANTI, bukan menambah.
+local AURA_SFX_HIT_TINGGI_ID  = "rbxassetid://136357088509992"
+local AURA_SFX_HIT_TINGGI_VOL = 0.9
+
+-- Dari angka berapa sebuah undian dihitung "tinggi".
+--
+-- Satu angka untuk dua hal sekaligus: bunyi mendarat di atas, dan aura
+-- VFX yang menempel di badan (AURA_VFX_MIN_PERSEN). Sengaja satu, bukan
+-- dua yang bisa berbeda -- penonton membaca keduanya sebagai satu
+-- kejadian ("yang bunyinya beda itu yang badannya menyala"), dan dua
+-- ambang yang meleset sedikit malah memecah kejadian itu jadi dua yang
+-- setengah-setengah.
+local AURA_TINGGI_MIN = 900
 
 -- DI MANA auranya ditulis.
 --
@@ -530,6 +556,53 @@ local BEKU_MAKS      = 20
 local AURA_LANTAI_T2 = 300
 local AURA_LANTAI_T3 = 550
 
+-- --- AURA VFX YANG MENEMPEL DI BADAN ---
+--
+-- Beda dari "aura" yang lain di file ini: yang itu ANGKA (0-1000%) di
+-- papan atas kepala, yang ini efek partikel sungguhan yang menempel di
+-- badan avatarnya.
+--
+-- Siapa yang dapat, dua jalan masuk yang berdiri sendiri:
+--   1. TIER >= AURA_VFX_MIN_TIER  -> yang bayar, sekecil apa pun (1 koin)
+--   2. persen >= AURA_VFX_MIN_PERSEN -> yang undiannya besar, walau gratisan
+--
+-- Dua-duanya, bukan salah satu, dan itu memang niatnya: yang bayar
+-- dijamin dapat, dan yang gratisan masih punya jalan untuk dapat juga.
+-- Kalau cuma lewat tier, undian 980% milik penonton gratisan tidak
+-- berbeda tampilannya dari 4% -- dan undian itulah yang jadi bahan
+-- omongan di kolom komentar.
+local AURA_VFX_ENABLED    = true
+local AURA_VFX_ID         = "rbxassetid://10088609715"   -- rimuru aura
+local AURA_VFX_MIN_TIER   = 2
+local AURA_VFX_MIN_PERSEN = AURA_TINGGI_MIN
+
+-- Sampai kapan efeknya menempel.
+--
+-- 0 = SEUMUR AVATARNYA: dia hilang waktu avatarnya dihapus panggung,
+-- tidak sedetik pun sebelum itu. Ini yang dipakai, dan alasannya bukan
+-- kemudahan.
+--
+-- Kalau efeknya dibikin ada masa habisnya, ada rentang waktu di mana
+-- avatar orang yang BARU BAYAR masih berdiri di panggung tapi sudah
+-- kelihatan sama persis seperti yang gratisan. Dari sisi dia, uangnya
+-- sudah keluar dan efeknya dicabut sementara dia masih ditonton -- itu
+-- hasil terburuk dari semua pilihan yang ada di sini.
+--
+-- Umur avatar sendiri sudah dibatasi (DELETE_AFTER), dan yang dapat
+-- efek ini cuma sebagian dari slot yang jumlahnya tetap. Jadi tidak ada
+-- yang bisa menumpuk tanpa batas -- batasnya sudah dijaga di tempat
+-- lain, dan tidak perlu dijaga dua kali.
+--
+-- Angka > 0 = efeknya dilepas setelah sekian detik. Disediakan kalau
+-- ternyata partikelnya terlalu berat waktu panggung penuh.
+local AURA_VFX_LAMA = 0
+
+-- Di bagian badan mana efeknya ditempel, urutan pencarian.
+--
+-- HumanoidRootPart dulu: dia di tengah badan dan tidak ikut animasi
+-- tangan, jadi efeknya tidak ikut terayun waktu avatarnya menari.
+local AURA_VFX_BAGIAN = { "HumanoidRootPart", "Torso", "UpperTorso", "Head" }
+
 -- --- KAMERA SINEMATIK ---
 --
 -- Selama sorotan tier 3 dan 4, kamera berhenti mengayun dan MENGORBIT
@@ -665,12 +738,33 @@ local ZOOM_MASUK = 0.45
 -- jatah papan.
 local ZOOM_TAHAN = 1.0
 
--- Lama mundurnya, detik.
+-- Lama mundurnya, detik. Ini yang dipakai tier 1 dan 2.
 --
--- Dipercepat 2,8 -> 1,8 dengan alasan yang sama. Tahan 1,0 + mundur
--- 1,8 = kamera sudah di jarak penuh pada detik 2,8, tepat sebelum
--- putaran angkanya mendarat di detik 3,0.
-local ZOOM_KELUAR = 1.8
+-- Sempat 2,8 lalu dipercepat jadi 1,8 supaya kamera sudah di jarak
+-- penuh pada detik 2,8, tepat sebelum putaran angkanya mendarat di
+-- detik 3,0. Sekarang diperlambat lagi jadi 3,2 karena mundur secepat
+-- itu terbaca sebagai sentakan, bukan gerakan kamera.
+--
+-- KONSEKUENSINYA, dan ini bukan tebakan: selama kamera masih merapat,
+-- papan aura di atas kepala berada di luar frame ATAS. Dengan tahan 1,0
+-- + mundur 3,2 kamera baru sampai jarak penuh di detik 4,2, sementara
+-- putaran angkanya (AURA_ROLL) mendarat di detik 3,0 -- jadi sebagian
+-- putaran itu lewat sebelum papannya masuk frame.
+--
+-- Kalau ternyata angkanya jadi kurang kebaca, yang diturunkan
+-- ZOOM_TAHAN (1,0 -> 0,5), BUKAN angka ini: yang dikeluhkan mundurnya
+-- yang menyentak, dan menahan lebih singkat memindahkan waktu itu ke
+-- gerakan yang justru diminta lebih lambat.
+local ZOOM_KELUAR = 3.2
+
+-- Lama mundurnya untuk RAKSASA (tier 3), detik.
+--
+-- Dipisah dari angka di atas: raksasa punya jalur kameranya sendiri
+-- (serong kiri -> serong kanan -> belakang, lihat GIANT_JALUR di
+-- client) yang berjalan selama sorotannya. Mundur yang kelamaan
+-- bertabrakan dengan jalur itu -- dua gerakan besar sekaligus, dan
+-- yang terlihat cuma kamera yang tidak bisa diam.
+local ZOOM_KELUAR_GIANT = 1.8
 
 -- Pandang LURUS ke orang yang baru datang.
 --
@@ -1264,6 +1358,153 @@ local function startMusicLoop()
 	end)
 end
 
+-- ============ AURA VFX ============
+--
+-- Kelas yang bisa dipindah SENDIRIAN ke bagian badan dan tetap bekerja.
+--
+-- Sengaja tidak semua isi asset diambil. Beam dan Trail menunjuk ke
+-- Attachment lain lewat properti (Attachment0/Attachment1), dan
+-- referensi itu putus begitu emitternya dicabut dari susunan aslinya --
+-- yang tersisa Beam yang tidak menggambar apa pun. Yang di daftar ini
+-- semuanya berdiri sendiri: cukup punya BasePart sebagai induk.
+--
+-- Praktisnya asset aura hampir seluruhnya ParticleEmitter, jadi yang
+-- hilang sedikit. Kalau nanti auranya terlihat kurang dari aslinya,
+-- di situ sebabnya -- bukan di ukuran atau posisinya.
+local AURA_VFX_KELAS = {
+	ParticleEmitter = true,
+	PointLight      = true,
+	SpotLight       = true,
+	SurfaceLight    = true,
+	Fire            = true,
+	Smoke           = true,
+	Sparkles        = true,
+}
+
+local AURA_VFX_TANDA = "AuraVfx"
+
+-- Diambil SEKALI lalu disimpan.
+--
+-- Bukan penghematan yang dicari-cari: pengambilan asset itu panggilan
+-- jaringan yang bisa makan ratusan milidetik, dan spawnAvatar dipanggil
+-- dari gelung utama yang tidak boleh tertahan. Sekali ambil di
+-- kedatangan pertama, sesudahnya cuma Clone yang gratis.
+local auraVfxAsli  = nil
+local auraVfxGagal = false
+
+local function muatAuraVfx()
+	if auraVfxAsli then return auraVfxAsli end
+	-- Sudah pernah gagal? Jangan dicoba lagi tiap kedatangan -- kalau
+	-- asset-nya memang tidak bisa diambil, mencobanya seratus kali cuma
+	-- menahan gelung utama seratus kali dengan hasil yang sama.
+	if auraVfxGagal then return nil end
+
+	local wadah = nil
+
+	-- Dua jalan, karena keduanya gagal di keadaan yang berbeda:
+	-- GetObjects jalan di Studio tapi ditolak di server yang sudah
+	-- terbit, InsertService:LoadAsset sebaliknya butuh asset-nya
+	-- dimiliki atau gratis. Yang mana pun yang berhasil, dipakai.
+	local ok, hasil = pcall(function()
+		return game:GetObjects(AURA_VFX_ID)
+	end)
+	if ok and typeof(hasil) == "table" and hasil[1] then
+		wadah = hasil[1]
+	else
+		local ok2, hasil2 = pcall(function()
+			return InsertService:LoadAsset(tonumber(AURA_VFX_ID:match("%d+")))
+		end)
+		if ok2 and hasil2 then wadah = hasil2 end
+	end
+
+	if not wadah then
+		auraVfxGagal = true
+		warn(("[aura-vfx] gagal mengambil %s -- aura badan dimatikan. " ..
+			"Cek asset-nya publik atau dimiliki akun ini."):format(AURA_VFX_ID))
+		return nil
+	end
+
+	-- Kumpulkan emitternya jadi satu wadah datar. Susunan aslinya tidak
+	-- dipakai lagi: yang dipasang ke avatar emitter satu-satu, bukan
+	-- modelnya.
+	local kotak = Instance.new("Folder")
+	local jumlah = 0
+	for _, d in ipairs(wadah:GetDescendants()) do
+		if AURA_VFX_KELAS[d.ClassName] then
+			local k = d:Clone()
+			k.Parent = kotak
+			jumlah += 1
+		end
+	end
+	pcall(function() wadah:Destroy() end)
+
+	if jumlah == 0 then
+		auraVfxGagal = true
+		warn(("[aura-vfx] %s berhasil diambil tapi tidak ada emitter di " ..
+			"dalamnya (dicari: ParticleEmitter/Light/Fire/Smoke/Sparkles)."):
+			format(AURA_VFX_ID))
+		return nil
+	end
+
+	auraVfxAsli = kotak
+	print(("[aura-vfx] %s siap -- %d emitter."):format(AURA_VFX_ID, jumlah))
+	return auraVfxAsli
+end
+
+-- Siapa yang dapat aura di badan. Dua jalan masuk, lihat AURA_VFX_ID.
+local function layakAuraVfx(tier, persen)
+	if not AURA_VFX_ENABLED then return false end
+	if tier and tier >= AURA_VFX_MIN_TIER then return true end
+	if persen and persen >= AURA_VFX_MIN_PERSEN then return true end
+	return false
+end
+
+local function pasangAuraVfx(model, tier, persen)
+	if not layakAuraVfx(tier, persen) then return false end
+	local asli = muatAuraVfx()
+	if not asli then return false end
+
+	-- Bagian badan yang tidak ikut terayun animasi tangan, lihat
+	-- AURA_VFX_BAGIAN.
+	local bagian = nil
+	for _, nama in ipairs(AURA_VFX_BAGIAN) do
+		local b = model:FindFirstChild(nama)
+		if b and b:IsA("BasePart") then bagian = b break end
+	end
+	-- Masih tidak ketemu? Ambil BasePart apa pun. Rig R6 dan R15 punya
+	-- nama bagian yang berbeda, dan daftar di atas belum tentu menutup
+	-- rig yang belum pernah lewat sini.
+	if not bagian then
+		bagian = model:FindFirstChildWhichIsA("BasePart", true)
+	end
+	if not bagian then return false end
+
+	local dipasang = 0
+	for _, e in ipairs(asli:GetChildren()) do
+		local k = e:Clone()
+		-- Ditandai supaya bisa dicari lagi waktu mau dilepas. Nama
+		-- aslinya dibuang: dua emitter dari asset yang sama sering
+		-- bernama sama persis, dan yang dicari nanti tandanya.
+		k.Name   = AURA_VFX_TANDA
+		k.Parent = bagian
+		dipasang += 1
+	end
+	if dipasang == 0 then return false end
+
+	-- Ada masa habisnya? Lihat AURA_VFX_LAMA -- default 0 = ikut umur
+	-- avatarnya, jadi cabang ini tidak jalan.
+	if AURA_VFX_LAMA > 0 then
+		task.delay(AURA_VFX_LAMA, function()
+			if not bagian.Parent then return end
+			for _, d in ipairs(bagian:GetChildren()) do
+				if d.Name == AURA_VFX_TANDA then d:Destroy() end
+			end
+		end)
+	end
+
+	return true
+end
+
 -- ============ AURA ============
 
 local function hitungAura(tier)
@@ -1497,13 +1738,20 @@ end
 -- menahan dekat, yang lain mengelilingi. `jauh` mengalikan jarak
 -- kameranya -- dipakai raksasa, yang tidak muat di frame pada jarak
 -- biasa.
-local function fokusKamera(pos, lamaS, orbit, jauh)
+local function fokusKamera(pos, lamaS, orbit, jauh, zoomKeluar, jalur)
 	V2Event:FireAllClients("fokus", {
 		pos      = pos,
 		sinema   = (lamaS and lamaS > 0) and true or nil,
 		lama     = lamaS,
 		orbit    = orbit and true or nil,
 		jauh     = (jauh and jauh > 1) and jauh or nil,
+		-- Lama mundurnya, per kedatangan. Dikirim dari sini supaya
+		-- raksasa bisa mundur lebih cepat dari tier 1/2 tanpa client
+		-- perlu tahu tier sama sekali -- lihat ZOOM_KELUAR_GIANT.
+		zoomKeluar = zoomKeluar,
+		-- Jalur kamera bernama. Cuma raksasa yang memakainya sekarang
+		-- ("giant" = serong kiri -> serong kanan -> belakang).
+		jalur    = jalur,
 	})
 end
 
@@ -1815,9 +2063,35 @@ local function spawnAvatar(entry, slot)
 		fokusPos = Vector3.new(GIANT_X, FLOOR_Y + tp * 1.15, GIANT_Z)
 		jauh     = math.max(1, skala * GIANT_KAMERA_JAUH)
 	end
-	fokusKamera(fokusPos, lamaS, orbit, jauh)
+	-- Raksasa memakai JALUR bernama, bukan orbit.
+	--
+	-- Orbit itu satu putaran rata mengelilingi orangnya; jalur ini
+	-- berhenti di tiga sudut yang dipilih (serong kiri, serong kanan,
+	-- lalu belakang). Bedanya bukan selera: putaran rata membuat setiap
+	-- sudut sama pentingnya, sementara badan sebesar raksasa justru
+	-- paling terbaca dari sudut yang KONTRAS -- dan berhenti di tiga
+	-- sudut memberi tiga kali "lihat ini" alih-alih satu gerakan yang
+	-- lewat begitu saja.
+	--
+	-- orbit dimatikan untuk dia: kalau dua-duanya menyala, orbit dan
+	-- jalur sama-sama menulis sudut kamera tiap frame dan yang terlihat
+	-- cuma getaran.
+	local jalur = raksasa and "giant" or nil
+	local orbitKamera = (not raksasa) and orbit or false
+	local zoomKeluar = raksasa and ZOOM_KELUAR_GIANT or ZOOM_KELUAR
+	fokusKamera(fokusPos, lamaS, orbitKamera, jauh, zoomKeluar, jalur)
 
 	local persen = hitungAura(tier)
+
+	-- Aura di BADAN, beda dari papan angka di bawah ini. Dipasang di
+	-- sini, sesudah persen diundi: salah satu jalan masuknya lewat
+	-- angka itu (undian besar milik penonton gratisan), jadi tidak bisa
+	-- dipasang sebelum angkanya ada.
+	if pasangAuraVfx(model, tier, persen) then
+		print(("[aura-vfx] %s dapat aura badan (tier %s, %d%%)")
+			:format(username, tostring(tier), persen))
+	end
+
 	tampilkanAura(model, entry.displayName or username, persen, slot)
 
 	local dari = entry.tiktokUser and (" <- " .. entry.tiktokUser) or ""
@@ -1934,6 +2208,11 @@ V2Config.OnServerInvoke = function(pemain)
 		auraSfxLoop = AURA_SFX_LOOP,
 		auraSfxHit    = AURA_SFX_HIT_ID,
 		auraSfxHitVol = AURA_SFX_HIT_VOL,
+		-- Bunyi mendarat khusus angka besar. MENGGANTI yang di atas,
+		-- tidak menambah -- lihat AURA_SFX_HIT_TINGGI_ID.
+		auraSfxHitTinggi    = AURA_SFX_HIT_TINGGI_ID,
+		auraSfxHitTinggiVol = AURA_SFX_HIT_TINGGI_VOL,
+		auraTinggiMin       = AURA_TINGGI_MIN,
 		auraY    = AURA_Y,
 		auraH    = AURA_H,
 

@@ -69,6 +69,8 @@ local CADANGAN = {
 	auraSfx = "", auraSfxVol = 0.7, auraSfxRoll = true,
 	auraSfxSpeed = 1, auraSfxLoop = false,
 	auraSfxHit = "", auraSfxHitVol = 0.8,
+	auraSfxHitTinggi = "", auraSfxHitTinggiVol = 0.9,
+	auraTinggiMin = 900,
 	sinema = true, sinemaOrbitS = 14, sinemaBack = -12, sinemaUp = 5.5,
 	zoom = true, zoomMasuk = 0.45, zoomTahan = 1.0, zoomKeluar = 1.8,
 	spawnLurus = true,
@@ -176,6 +178,21 @@ local sinemaOrbit = false
 -- tulang keringnya.
 local sinemaJauh = 1
 
+-- Jalur kamera bernama untuk adegan yang sedang jalan, atau nil kalau
+-- adegan ini tidak memakai jalur. Sekarang cuma "giant" yang ada.
+--
+-- Dipisah dari sinemaOrbit dan bukan jadi nilai ketiga di dalamnya:
+-- orbit itu KECEPATAN sudut (berputar terus), jalur itu DAFTAR SUDUT
+-- yang disinggahi. Keduanya menulis sudut kamera dengan cara yang tidak
+-- bisa dicampur, dan menyatukannya jadi satu variabel berarti tiap
+-- pembacaan harus tahu mana yang sedang berlaku.
+local sinemaJalur = nil
+
+-- Lama adegan yang sedang jalan, detik. Dibutuhkan jalur untuk tahu
+-- sudah sampai mana dia: sinemaSampai cuma menyimpan KAPAN berakhirnya,
+-- dan tanpa lamanya tidak ada cara menghitung "baru 30% jalan".
+local sinemaLama = 0
+
 -- 0 = ayunan biasa, 1 = orbit penuh. Dipindah halus, tidak dijentikkan:
 -- kamera yang mendadak merapat sembilan studs di satu frame terbaca
 -- sebagai potongan, dan seluruh v2 dibangun tanpa satu pun potongan.
@@ -226,6 +243,47 @@ end
 -- Tidak ada frame yang meloncat karena yang berubah cuma satu angka
 -- yang memang sudah dijumlahkan ke sudutnya tiap frame -- mesin yang
 -- sama yang dipakai orbit.
+-- --- JALUR KAMERA RAKSASA ---
+--
+-- Sudut, radian. 0 = tepat di depan orangnya, positif = memutar ke
+-- kanan, math.pi = tepat di belakang.
+--
+-- Tiga sudut, bukan putaran rata: badan sebesar raksasa paling terbaca
+-- dari sudut yang KONTRAS, dan berhenti di tiga tempat memberi tiga
+-- kali "lihat ini" alih-alih satu gerakan yang lewat begitu saja.
+--
+-- Tidak dimulai dari 0 (depan) walaupun kameranya memang sedang di sana
+-- waktu adegan mulai. Perpindahan dari depan ke serong kiri sudah
+-- ditangani sinemaMix yang naik pelan (~0,9 detik), jadi kameranya
+-- meluncur ke serong kiri, tidak meloncat -- dan detik pertama adegan
+-- tidak habis untuk sudut yang sama dengan sebelumnya.
+local GIANT_JALUR = {
+	-0.75,      -- serong kiri  (~43 derajat)
+	 0.75,      -- serong kanan (~43 derajat)
+	 math.pi,   -- belakang
+}
+
+-- Sudut jalur pada kemajuan u (0 = mulai, 1 = selesai).
+--
+-- Smoothstep di tiap segmen, bukan lurus: dengan begitu kameranya
+-- MELAMBAT saat menghampiri tiap sudut lalu berangkat lagi pelan --
+-- itulah yang membuat ketiganya terbaca sebagai tiga perhentian.
+-- Interpolasi lurus melewatinya dengan kecepatan tetap, dan yang
+-- terlihat cuma satu sapuan panjang tanpa perhentian sama sekali.
+local function jalurSudut(u)
+	local n = #GIANT_JALUR - 1
+	if n < 1 then return GIANT_JALUR[1] or 0 end
+
+	local x = math.clamp(u, 0, 1) * n
+	-- Segmen terakhir harus tetap terpakai saat u == 1: tanpa min ini,
+	-- floor(1*n)+1 menunjuk satu titik di luar tabel dan sudutnya jadi
+	-- nil tepat di frame terakhir adegan.
+	local i = math.min(math.floor(x) + 1, n)
+	local f = x - (i - 1)
+	local e = f * f * (3 - 2 * f)
+	return GIANT_JALUR[i] + (GIANT_JALUR[i + 1] - GIANT_JALUR[i]) * e
+end
+
 local function pandangLurus()
 	if not CFG.spawnLurus then return end
 	local ayun = ayunPada(os.clock())
@@ -250,6 +308,11 @@ local zoomMulai = -1e9   -- jauh di masa lalu = sedang tidak zoom
 -- sorotannya sendiri -- jadi kamera menahan dekat di orang yang bayar
 -- selama dia masih jadi sorotan, bukan cuma 1,6 detik pertama.
 local zoomTahan = 0
+
+-- Lama mundurnya untuk kedatangan ini, detik. Diisi dari pesan server
+-- (raksasa mundur lebih cepat dari tier 1/2, lihat ZOOM_KELUAR_GIANT di
+-- sana); kalau pesannya tidak membawa angka, pakai setelan umum.
+local zoomKeluar = CFG.zoomKeluar or 1.8
 
 -- Berapa frame gelung ini benar-benar jalan. Dipakai laporan di bawah:
 -- "gelungnya tidak pernah jalan" dan "gelungnya jalan tapi hasilnya tidak
@@ -301,10 +364,14 @@ RunService.RenderStepped:Connect(function(dt)
 	local zoom = 1
 	if CFG.zoom then
 		local zt = t - zoomMulai - zoomTahan
+		-- Batas bawah, bukan angka apa adanya: zoomKeluar 0 membuat
+		-- pembagian di bawah jadi nan, dan kameranya lenyap ke tempat
+		-- yang tidak ada.
+		local keluar = math.max(zoomKeluar or CFG.zoomKeluar or 1.8, 0.05)
 		if zt <= 0 then
 			zoom = 0
-		elseif zt < CFG.zoomKeluar then
-			local u = zt / CFG.zoomKeluar
+		elseif zt < keluar then
+			local u = zt / keluar
 			-- Cubic out: mundurnya cepat di awal lalu melambat, jadi
 			-- gerakannya berhenti dengan lembut dan bukan dengan rem.
 			zoom = 1 - (1 - u) * (1 - u) * (1 - u)
@@ -325,6 +392,26 @@ RunService.RenderStepped:Connect(function(dt)
 		sudutBias += (orbitVel - ayunVel) * sinemaMix * dt
 	end
 
+	-- Jalur bernama (raksasa). Menulis sudutBias LANGSUNG, bukan
+	-- menambahnya seperti orbit di atas: yang dituju sudut tertentu,
+	-- bukan kecepatan tertentu.
+	--
+	-- Ayunan dikurangi supaya sudut akhirnya (ayun + sudutBias) benar-
+	-- benar sama dengan sudut jalurnya. Kalau tidak, ayunan kiri-kanan
+	-- yang jalan terus-menerus ikut menggeser ketiga perhentian itu, dan
+	-- "serong kiri" jatuh di mana saja tergantung kebetulan ayunannya
+	-- sedang di fase mana.
+	--
+	-- Dikali sinemaMix supaya masuknya mulus: di awal adegan mix naik
+	-- dari 0 (~0,9 detik), jadi kamera MELUNCUR dari sudut sebelumnya ke
+	-- serong kiri alih-alih meloncat ke sana.
+	local jalurAktif = sinemaJalur ~= nil and sinemaMix > 0.001
+	if jalurAktif then
+		local sisa = sinemaSampai - t
+		local u    = 1 - (sisa / math.max(sinemaLama, 0.01))
+		sudutBias  = (jalurSudut(u) - ayun) * sinemaMix
+	end
+
 	-- Dilipat ke [-pi, pi] supaya peluruhan di bawah mengambil jalan
 	-- terdekat. Tanpa ini, orbit tiga putaran meninggalkan selisih 18
 	-- radian dan kameranya "memutar balik" tiga kali sebelum tenang --
@@ -342,7 +429,7 @@ RunService.RenderStepped:Connect(function(dt)
 	-- berjalan. Hasilnya sudut = ayun(sekarang) - ayun(saat datang),
 	-- yang bisa mencapai DUA KALI lebar ayunan -- justru lebih menyerong
 	-- daripada kalau tidak dibetulkan sama sekali.
-	if not orbitAktif and sudutBias ~= 0 then
+	if not orbitAktif and not jalurAktif and sudutBias ~= 0 then
 		sudutBias = sudutBias * math.exp(-dt / SINEMA_PULIH)
 		if math.abs(sudutBias) < 0.001 then sudutBias = 0 end
 	end
@@ -505,10 +592,72 @@ end
 
 -- Nama: neon biru -> ungu. Dipakai untuk SEMUA nama, sengaja sama --
 -- yang boleh berbeda antar avatar cuma angkanya.
-local GRAD_NAMA = grad(Color3.fromRGB(125, 226, 255),
-                       Color3.fromRGB(150, 170, 255),
-                       Color3.fromRGB(196, 130, 255))
-local GLOW_NAMA = Color3.fromRGB(110, 150, 255)
+-- Sengaja TERANG, bukan neon biru-ungu seperti sebelumnya.
+--
+-- Versi lama (125,226,255 -> 150,170,255 -> 196,130,255) itu biru ke
+-- ungu, dan panggungnya berlatar biru: hurufnya punya warna yang
+-- hampir sama dengan apa pun yang ada di belakangnya, jadi yang
+-- membedakan tinggal stroke tipis di pinggirnya. Dari jarak kamera
+-- penuh itu tidak cukup -- namanya terbaca sebagai bercak, bukan teks.
+--
+-- Yang menggantikannya tetap dingin (biar satu keluarga dengan
+-- panggungnya) tapi jauh lebih terang: putih ke biru es. Terangnya
+-- itu yang mengangkatnya dari latar, bukan warnanya.
+local GRAD_NAMA = grad(Color3.fromRGB(255, 255, 255),
+                       Color3.fromRGB(226, 243, 255),
+                       Color3.fromRGB(168, 214, 255))
+local GLOW_NAMA = Color3.fromRGB(150, 200, 255)
+
+-- Papan latar di belakang tulisan.
+--
+-- Ini yang sebenarnya menyelesaikan "tulisannya tidak kelihatan", dan
+-- kenapa warna huruf saja tidak cukup: latar panggung BERUBAH terus
+-- (avatar lewat, cahaya bergerak, langitnya sendiri biru), jadi warna
+-- huruf apa pun yang dipilih akan tabrakan dengan sesuatu pada suatu
+-- saat. Papan gelap di belakangnya membuat kontrasnya tidak lagi
+-- bergantung pada apa yang ada di belakang papan itu.
+--
+-- Gelap tapi TEMBUS: pekat berarti kotak hitam melayang di atas tiap
+-- kepala, dan yang tertutup justru panggung yang jadi inti tontonannya.
+local function latarPapan(induk)
+	local latar = Instance.new("Frame")
+	latar.Name                 = "Latar"
+	-- Sedikit lebih kecil dari papannya lalu digeser setengahnya:
+	-- hurufnya mengisi papan sampai tepi, dan latar yang pas persis
+	-- membuat huruf paling luar menyentuh garis pinggirnya.
+	latar.Size                 = UDim2.new(1, -4, 1, -4)
+	latar.Position             = UDim2.new(0, 2, 0, 2)
+	latar.BackgroundColor3     = Color3.fromRGB(10, 14, 30)
+	latar.BackgroundTransparency = 0.32
+	latar.BorderSizePixel      = 0
+	-- Di BELAKANG semua teks. teksGaya memberi teks ZIndex 2 dan
+	-- kembaran glow-nya 1, jadi 0 satu-satunya tempat yang aman.
+	latar.ZIndex               = 0
+	latar.Parent               = induk
+
+	local sudut = Instance.new("UICorner")
+	sudut.CornerRadius = UDim.new(0, 10)
+	sudut.Parent       = latar
+
+	-- Gradien vertikal tipis, bukan warna rata: yang rata terbaca
+	-- sebagai kotak UI yang nempel di dunia, yang bergradien terbaca
+	-- sebagai kaca.
+	local g = Instance.new("UIGradient")
+	g.Color = grad(Color3.fromRGB(28, 38, 70), Color3.fromRGB(8, 10, 22))
+	g.Rotation = 90
+	g.Parent   = latar
+
+	-- Garis pinggir terang tipis. Ini yang memisahkan papannya dari
+	-- latar gelap (malam, bayangan) -- tanpa itu papan gelap di atas
+	-- latar gelap hilang sama sekali dan hurufnya kembali melayang.
+	local tepi = Instance.new("UIStroke")
+	tepi.Color        = Color3.fromRGB(140, 190, 255)
+	tepi.Thickness    = 1
+	tepi.Transparency = 0.55
+	tepi.Parent       = latar
+
+	return latar
+end
 
 -- Angka: warnanya IKUT nilainya. Penonton hafal polanya setelah
 -- beberapa kedatangan, dan itu yang bikin angka 900 terasa berbeda dari
@@ -834,8 +983,12 @@ local function auraDiKepala(d)
 	-- kepalanya.
 	if d.namaSaja then
 		gui.Size = UDim2.new(0, CFG.auraKepalaW, 0, CFG.auraKepalaH * 0.34)
+		latarPapan(gui)
+		-- Stroke 1 -> 2: papan raksasa dilihat dari jarak paling jauh di
+		-- seluruh panggung (dia berdiri di belakang barisan), dan di
+		-- jarak itu stroke tipis menyusut sampai hilang.
 		local lbl = teksGaya(gui, "Nama", 0.00, 1.00, FONT_NAMA,
-			GRAD_NAMA, nil, 1, 0.05)
+			GRAD_NAMA, GLOW_NAMA, 2, 0)
 		setTeks(lbl, d.nama or "?")
 
 		-- Pembukuan barisnya tetap dijalankan, tidak di-return di sini.
@@ -853,16 +1006,27 @@ local function auraDiKepala(d)
 	end
 
 	local jenjang   = tier(d.persen or 0)
+	latarPapan(gui)
+	-- Nama: stroke 1 -> 2 dan tembus 0,05 -> 0. Dua-duanya soal yang
+	-- sama, yaitu nama yang tenggelam di latar biru -- dan yang paling
+	-- rugi dari itu justru penonton yang namanya sedang dipajang.
 	local lblNama   = teksGaya(gui, "Nama", 0.00, 0.26, FONT_NAMA,
-		GRAD_NAMA, nil, 1, 0.05)
+		GRAD_NAMA, nil, 2, 0)
 	local lblPersen = teksGaya(gui, "Persen", 0.26, 0.46, FONT_ANGKA,
 		jenjang.warna, jenjang.glow, 1.5, 0)
-	-- Kata "AURA" paling redup dari ketiganya: dia sama di semua avatar,
-	-- jadi tidak membawa satu pun informasi -- tugasnya cuma memberi
-	-- nama pada angka di atasnya.
+	-- Kata "AURA" tetap yang paling tenang dari ketiganya -- dia sama di
+	-- semua avatar, jadi tidak membawa satu pun informasi dan tugasnya
+	-- cuma memberi nama pada angka di atasnya.
+	--
+	-- Tapi "tenang" dan "tidak terbaca" itu dua hal berbeda, dan yang
+	-- sebelumnya jatuh ke yang kedua: abu-abu 196-150 dengan tembus 0,3
+	-- di atas latar biru praktis lenyap. Sekarang warnanya diangkat ke
+	-- hampir putih dan tembusnya 0,3 -> 0,12; urutan perhatiannya tetap
+	-- terjaga lewat UKURAN dan glow, bukan lewat membuatnya nyaris
+	-- hilang.
 	local lblAura   = teksGaya(gui, "Aura", 0.72, 0.24, FONT_KATA,
-		grad(Color3.fromRGB(196, 203, 218), Color3.fromRGB(150, 158, 178)),
-		nil, 1, 0.3)
+		grad(Color3.fromRGB(238, 244, 255), Color3.fromRGB(190, 202, 226)),
+		nil, 1.5, 0.12)
 
 	setTeks(lblNama, d.nama or "?")
 	setTeks(lblAura, "A U R A")
@@ -1198,13 +1362,33 @@ end
 -- cuma bisa memainkan satu di antaranya.
 local sfxHit = buatSfx("AuraHitSfx", CFG.auraSfxHit, CFG.auraSfxHitVol or 0.8)
 
+-- Bunyi mendarat untuk angka BESAR. Sound ketiga yang berdiri sendiri,
+-- alasannya sama dengan yang di atas: dia dan sfxHit tidak pernah
+-- berbunyi bersamaan, tapi yang menentukan mana yang dipakai baru
+-- diketahui saat undiannya sudah jalan -- dan menukar SoundId di tengah
+-- jalan pada Sound yang sedang dimuat kadang menghasilkan hening.
+local sfxHitTinggi = buatSfx("AuraHitTinggiSfx", CFG.auraSfxHitTinggi,
+	CFG.auraSfxHitTinggiVol or 0.9)
+
 -- Nomor bunyi yang sedang jalan, sejajar dengan auraGen di atas: yang
 -- menghentikan bunyi harus yang menyalakannya, bukan task lama yang
 -- kebetulan bangun setelah undian berikutnya mulai.
 local sfxGen = 0
 
-local function bunyiAura(roll)
-	if not sfxAura and not sfxHit then return end
+local function bunyiAura(roll, persen)
+	-- Mana bunyi mendarat yang dipakai undian ini.
+	--
+	-- MENGGANTI, bukan menumpuk: kalau keduanya dibunyikan, yang
+	-- terdengar cuma hentakan biasa yang kebetulan lebih ramai, dan
+	-- angka 950 kehilangan satu-satunya penanda yang membedakannya dari
+	-- 200. Kalau bunyi khususnya tidak ada (id kosong / gagal dimuat),
+	-- jatuh kembali ke yang biasa -- lebih baik ada hentakan daripada
+	-- angka besar yang mendarat tanpa suara.
+	local ambang = tonumber(CFG.auraTinggiMin) or 900
+	local tinggi = sfxHitTinggi and (tonumber(persen) or 0) >= ambang
+	local sfxMendarat = tinggi and sfxHitTinggi or sfxHit
+
+	if not sfxAura and not sfxMendarat then return end
 
 	sfxGen += 1
 	local gen = sfxGen
@@ -1216,7 +1400,7 @@ local function bunyiAura(roll)
 
 	-- Tidak ada yang perlu dikerjakan di akhir putaran: tidak ada bunyi
 	-- mendarat, dan bunyi putarannya memang dibiarkan habis sendiri.
-	if not sfxHit and not CFG.auraSfxRoll then return end
+	if not sfxMendarat and not CFG.auraSfxRoll then return end
 
 	-- Satu task untuk dua hal yang harus terjadi BERSAMAAN: putarannya
 	-- dipotong dan bunyi mendaratnya mulai. Dipisah jadi dua task, dua
@@ -1236,9 +1420,9 @@ local function bunyiAura(roll)
 			sfxAura:Stop()
 		end
 
-		if sfxHit then
-			sfxHit.TimePosition = 0
-			sfxHit:Play()
+		if sfxMendarat then
+			sfxMendarat.TimePosition = 0
+			sfxMendarat:Play()
 		end
 	end)
 end
@@ -1339,13 +1523,21 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 			-- pulang ke ayunan sedetik sebelum orangnya mendarat.
 			fokusTarget  = d.pos or fokusTarget
 			sinemaSampai = os.clock() + d.lama
+			sinemaLama   = d.lama
 			sinemaOrbit  = (d.orbit == true)
+			sinemaJalur  = d.jalur
 			sinemaJauh   = tonumber(d.jauh) or 1
 			zoomMulai    = os.clock()
+			zoomKeluar   = tonumber(d.zoomKeluar) or CFG.zoomKeluar or 1.8
 			-- Adegan berbayar juga dimulai dari depan. Untuk yang
 			-- mengorbit itu malah lebih baik: putarannya berangkat dari
 			-- wajah orangnya, bukan dari sudut acak.
-			pandangLurus()
+			--
+			-- Yang berjalur DILEWATI: jalurnya menulis sudut kamera tiap
+			-- frame, jadi meluruskan pandangan di sini cuma berlaku
+			-- selama satu frame lalu ditimpa -- dan bias yang ditulisnya
+			-- justru bikin frame pertama adegan meloncat.
+			if not sinemaJalur then pandangLurus() end
 			-- Ditahan sama lamanya dengan kedatangan gratisan.
 			--
 			-- Dulu yang bayar ditahan dekat SELAMA SOROTANNYA (5-6
@@ -1361,7 +1553,15 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 		elseif os.clock() >= sinemaSampai then
 			fokusTarget = d.pos or fokusTarget
 			sinemaJauh  = 1
+			-- Dibersihkan, bukan dibiarkan: jalur milik adegan yang
+			-- BARU SAJA selesai, dan kalau penandanya ditinggalkan
+			-- menyala, kedatangan gratisan berikutnya ikut dikemudikan
+			-- jalur raksasa dengan kemajuan u yang sudah lewat 1 --
+			-- kameranya terpaku di sudut belakang dan tidak pernah
+			-- kembali mengayun.
+			sinemaJalur = nil
 			zoomMulai   = os.clock()
+			zoomKeluar  = tonumber(d.zoomKeluar) or CFG.zoomKeluar or 1.8
 			zoomTahan   = CFG.zoomTahan or 1.6
 			pandangLurus()
 
@@ -1392,7 +1592,7 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 		-- fungsi -- dan bunyinya akan diulang dari nol dua kali dalam
 		-- satu frame.
 		if CFG.auraKepala or CFG.auraLayar then
-			bunyiAura(d.roll or CFG.auraRoll)
+			bunyiAura(d.roll or CFG.auraRoll, d.persen)
 		end
 		if CFG.auraKepala then auraDiKepala(d) end
 		if CFG.auraLayar  then tampilkanAura(d) end
