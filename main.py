@@ -106,42 +106,54 @@ TIER_EFFECTS = {
         "scale": _env_float("TIER2_SCALE", 1.0),
         "effects": ["border"],
         "nameStyle": "gold",
-        # Sekarang IKUT mengorbit, dan itu berubah dari sebelumnya.
+        # ORBIT DIMATIKAN untuk semua tier, dan ini kolomnya.
         #
-        # Dulu tier 2 sengaja tidak mengorbit supaya bedanya dengan tier 3
-        # ada di JENIS gerakan, bukan cuma di lamanya. Alasan itu masih
-        # benar, cuma pembedanya dipindah: yang membedakan sekarang
-        # BERAPA BANYAK putarannya (tier 2 seperempat, tier 3 setengah,
-        # diatur SINEMA_ORBIT_S per tier di Lua) plus aura VFX yang cuma
-        # dipunyai tier 3. Dua tingkat masih terbaca sebagai dua tingkat;
-        # yang hilang cuma "berputar atau tidak" sebagai penandanya.
+        # Sempat True waktu tier 2 dan 3 dibedakan lewat seberapa jauh
+        # kameranya berputar. Masalahnya orbit membawa kamera ke SAMPING
+        # lalu ke BELAKANG avatarnya, dan dari belakang yang terlihat cuma
+        # punggung -- wajah, papan aura, dan border semuanya menghadap ke
+        # arah lain. Panggung ini ditonton dari depan.
+        #
+        # Penggantinya busur depan (KAMERA_TIER di Lua): kamera dikurung
+        # di kerucut +/-16 derajat untuk tier 2 dan +/-26 untuk tier 3,
+        # jadi dua tingkat masih terbaca tanpa satu pun sudut yang
+        # kehilangan wajahnya.
+        #
+        # Kolomnya dibiarkan ada, bukan dihapus: Lua masih membacanya,
+        # jadi orbit bisa dinyalakan lagi dari sini tanpa menyentuh
+        # Studio.
         "spotlight": True,
-        "orbit": True,
+        "orbit": False,
     },
     3: {
         # BADAN NORMAL sekarang. Raksasanya pindah ke tier 4.
         "scale": _env_float("TIER3_SCALE", 1.0),
         # Yang membedakan tier 3 dari tier 2 aura VFX acak di badannya
-        # (satu dari tiga asset, dipilih di Lua) plus putaran kamera yang
-        # penuh. Daftar ini keterangan, bukan perintah -- Lua bercabang
-        # dari `tier` -- tapi dua sisi yang bercerita beda adalah cara
-        # paling gampang menyesatkan orang yang membacanya nanti.
+        # (satu dari tiga asset, dipilih di Lua) plus busur kamera yang
+        # lebih lebar dan lebih lama. Daftar ini keterangan, bukan
+        # perintah -- Lua bercabang dari `tier` -- tapi dua sisi yang
+        # bercerita beda adalah cara paling gampang menyesatkan orang
+        # yang membacanya nanti.
         "effects": ["border", "aura-vfx"],
         "nameStyle": "gold",
         "spotlight": True,
-        "orbit": True,
+        # Lihat catatan orbit di tier 2.
+        "orbit": False,
     },
     4: {
         # Dibaca Lua sebagai skala raksasa. Di sini, bukan di Lua,
         # supaya bisa digeser lewat .env tanpa menyentuh Studio.
-        "scale": _env_float("TIER4_SCALE", 3.0),
+        "scale": _env_float("TIER4_SCALE", 4.0),
         # Cuma "giant" -- TANPA border, cakram, maupun aura. Yang membuat
         # tier 4 terbaca ukuran badannya, dan apa pun yang ditempel di
         # kakinya cuma menyaingi satu-satunya hal yang jadi intinya.
         "effects": ["giant"],
         "nameStyle": "gold",
         "spotlight": True,
-        "orbit": True,
+        # Lihat catatan orbit di tier 2. Untuk raksasa alasannya bahkan
+        # lebih kuat: dia yang paling besar, jadi dia yang paling lama
+        # memperlihatkan punggung kalau kameranya memutar ke belakang.
+        "orbit": False,
     },
 }
 

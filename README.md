@@ -166,12 +166,17 @@ Ambangnya `TIER2_KOIN` (1), `TIER3_KOIN` (10), dan `TIER4_KOIN` (30) di `.env`.
 > | | Tier 1 | Tier 2 (≥1 koin) | Tier 3 (≥10 koin) | Tier 4 (≥30 koin) |
 > |---|---|---|---|---|
 > | Antrian | normal | potong ke depan | potong ke depan | potong ke depan |
-> | Ukuran | 1,0× | 1,0× | 1,0× | **3,0× (raksasa)** |
+> | Ukuran | 1,0× | 1,0× | 1,0× | **4,0× (raksasa)** |
 > | Border | — | biru es | oranye bara | — |
 > | Aura VFX di badan | — | — | **1 dari 3, diacak** | — (polos) |
 > | Sorotan | — | 4 detik | 7 detik | 9 detik |
-> | Putaran kamera | — | 90° | 180° | jalur 3 sudut |
+> | Busur kamera | — | ±16° | ±26° | ±20° |
+> | Naik-turun kamera | — | 1,5 stud | 2,5 stud | **5 stud** |
 > | Membekukan panggung | — | — | — | **ya** |
+>
+> Kameranya **selalu di depan** — tidak ada tier yang memutar ke samping
+> badan, apalagi ke belakang. Gerakan adegannya cuma zoom masuk-keluar,
+> sapuan kiri-kanan di dalam kerucut depan, dan naik-turun.
 >
 > Undian aura ≥900% milik penonton gratisan cuma mengganti **bunyi**
 > mendaratnya, bukan memberi efek — kalau tidak, aura berhenti menjadi

@@ -178,17 +178,24 @@ local sinemaOrbit = false
 -- tulang keringnya.
 local sinemaJauh = 1
 
--- Jalur kamera bernama untuk adegan yang sedang jalan, atau nil kalau
--- adegan ini tidak memakai jalur. Sekarang cuma "giant" yang ada.
+-- Busur depan adegan yang sedang jalan, dari server (KAMERA_TIER).
 --
--- Dipisah dari sinemaOrbit dan bukan jadi nilai ketiga di dalamnya:
--- orbit itu KECEPATAN sudut (berputar terus), jalur itu DAFTAR SUDUT
--- yang disinggahi. Keduanya menulis sudut kamera dengan cara yang tidak
--- bisa dicampur, dan menyatukannya jadi satu variabel berarti tiap
--- pembacaan harus tahu mana yang sedang berlaku.
-local sinemaJalur = nil
+--   arcRad    amplitudo simpangan ke samping, RADIAN. 0 = tidak
+--             menyapu. Ini batas keras: kamera tidak pernah lebih jauh
+--             dari ini dari depan.
+--   arcPutar  berapa kali menyapu kiri-kanan-pulang selama adegan.
+--   naikAmp   seberapa jauh kamera naik lalu turun lagi, STUD.
+--
+-- Dipisah dari sinemaOrbit dan bukan jadi nilai di dalamnya: orbit itu
+-- KECEPATAN sudut (berputar terus, tanpa batas), busur itu POSISI sudut
+-- yang dikurung. Keduanya menulis sudut kamera dengan cara yang tidak
+-- bisa dicampur, dan menyatukannya berarti tiap pembacaan harus tahu
+-- mana yang sedang berlaku.
+local arcRad   = 0
+local arcPutar = 1
+local naikAmp  = 0
 
--- Lama adegan yang sedang jalan, detik. Dibutuhkan jalur untuk tahu
+-- Lama adegan yang sedang jalan, detik. Dibutuhkan busur untuk tahu
 -- sudah sampai mana dia: sinemaSampai cuma menyimpan KAPAN berakhirnya,
 -- dan tanpa lamanya tidak ada cara menghitung "baru 30% jalan".
 local sinemaLama = 0
@@ -243,45 +250,34 @@ end
 -- Tidak ada frame yang meloncat karena yang berubah cuma satu angka
 -- yang memang sudah dijumlahkan ke sudutnya tiap frame -- mesin yang
 -- sama yang dipakai orbit.
--- --- JALUR KAMERA RAKSASA ---
+-- --- BUSUR DEPAN ---
 --
--- Sudut, radian. 0 = tepat di depan orangnya, positif = memutar ke
--- kanan, math.pi = tepat di belakang.
+-- Sudut kamera selama adegan berbayar, radian. 0 = tepat di depan
+-- orangnya, positif = bergeser ke kanan.
 --
--- Tiga sudut, bukan putaran rata: badan sebesar raksasa paling terbaca
--- dari sudut yang KONTRAS, dan berhenti di tiga tempat memberi tiga
--- kali "lihat ini" alih-alih satu gerakan yang lewat begitu saja.
+-- CATATAN: di sini dulu ada GIANT_JALUR -- tiga sudut yang disinggahi
+-- raksasa: serong kiri, serong kanan, lalu BELAKANG. Sudah dibuang, dan
+-- ditulis supaya tidak dipasang lagi tanpa sadar.
 --
--- Tidak dimulai dari 0 (depan) walaupun kameranya memang sedang di sana
--- waktu adegan mulai. Perpindahan dari depan ke serong kiri sudah
--- ditangani sinemaMix yang naik pelan (~0,9 detik), jadi kameranya
--- meluncur ke serong kiri, tidak meloncat -- dan detik pertama adegan
--- tidak habis untuk sudut yang sama dengan sebelumnya.
-local GIANT_JALUR = {
-	-0.75,      -- serong kiri  (~43 derajat)
-	 0.75,      -- serong kanan (~43 derajat)
-	 math.pi,   -- belakang
-}
-
--- Sudut jalur pada kemajuan u (0 = mulai, 1 = selesai).
+-- Dari belakang yang terlihat cuma punggung: wajah, papan aura, dan
+-- border semuanya menghadap ke arah lain, dan itu berlaku untuk semua
+-- tier -- bukan cuma raksasa. Panggung ini ditonton dari depan.
 --
--- Smoothstep di tiap segmen, bukan lurus: dengan begitu kameranya
--- MELAMBAT saat menghampiri tiap sudut lalu berangkat lagi pelan --
--- itulah yang membuat ketiganya terbaca sebagai tiga perhentian.
--- Interpolasi lurus melewatinya dengan kecepatan tetap, dan yang
--- terlihat cuma satu sapuan panjang tanpa perhentian sama sekali.
-local function jalurSudut(u)
-	local n = #GIANT_JALUR - 1
-	if n < 1 then return GIANT_JALUR[1] or 0 end
-
-	local x = math.clamp(u, 0, 1) * n
-	-- Segmen terakhir harus tetap terpakai saat u == 1: tanpa min ini,
-	-- floor(1*n)+1 menunjuk satu titik di luar tabel dan sudutnya jadi
-	-- nil tepat di frame terakhir adegan.
-	local i = math.min(math.floor(x) + 1, n)
-	local f = x - (i - 1)
-	local e = f * f * (3 - 2 * f)
-	return GIANT_JALUR[i] + (GIANT_JALUR[i + 1] - GIANT_JALUR[i]) * e
+-- Penggantinya satu sapuan sinus yang dikurung: kamera berangkat dari
+-- depan, menyapu ke kanan, lewat depan lagi, ke kiri, lalu pulang ke
+-- depan. Amplitudonya (arcDeg dari server) BATAS KERAS -- tidak ada
+-- nilai u yang bisa membawanya lebih jauh dari itu.
+local function busurSudut(u, amp, putaran)
+	if not amp or amp <= 0 then return 0 end
+	-- sin, bukan smoothstep antar titik: sin sudah melambat sendiri di
+	-- kedua ujung sapuannya, dan yang penting di sini gerakan yang tidak
+	-- pernah berhenti mendadak -- bukan perhentian yang terbaca seperti
+	-- pada jalur tiga sudut dulu.
+	--
+	-- Selalu 0 di u=0. Di u=1 dia juga 0 untuk putaran yang kelipatan
+	-- 0,5 (1,0 dan 1,5 yang dipakai sekarang), jadi adegannya berangkat
+	-- dan pulang dari sudut yang sama: depan.
+	return amp * math.sin(2 * math.pi * math.clamp(u, 0, 1) * (putaran or 1))
 end
 
 local function pandangLurus()
@@ -323,11 +319,6 @@ local zoomKeluar = CFG.zoomKeluar or 1.8
 -- satu kedatangan tier 2 akan meninggalkan kamera terlalu dekat untuk
 -- selamanya.
 local zoomMaks = 1
-
--- Lama satu putaran penuh untuk adegan ini, detik. nil = pakai setelan
--- umum. Yang menentukan berapa DERAJAT kamera berputar: panjang
--- sorotan dibagi angka ini.
-local orbitS = nil
 
 -- Berapa frame gelung ini benar-benar jalan. Dipakai laporan di bawah:
 -- "gelungnya tidak pernah jalan" dan "gelungnya jalan tapi hasilnya tidak
@@ -403,29 +394,43 @@ RunService.RenderStepped:Connect(function(dt)
 	-- mengayun seperti biasa, yang berubah cuma jaraknya.
 	local orbitAktif = sinemaOrbit and sinemaMix > 0.001
 	if orbitAktif then
-		local periode = orbitS or CFG.sinemaOrbitS or 14
-		local orbitVel = (2 * math.pi) / math.max(periode, 0.5)
+		-- Orbit sedang TIDAK dipakai: main.py mengirim orbit=false untuk
+		-- semua tier, jadi cabang ini tidak pernah jalan. Mesinnya
+		-- dibiarkan utuh supaya orbit bisa dinyalakan lagi dari sana
+		-- tanpa menyentuh file ini -- dan periodenya kembali ke setelan
+		-- umum, bukan angka per kedatangan yang tidak lagi dikirim.
+		local orbitVel = (2 * math.pi) / math.max(CFG.sinemaOrbitS or 14, 0.5)
 		sudutBias += (orbitVel - ayunVel) * sinemaMix * dt
 	end
 
-	-- Jalur bernama (raksasa). Menulis sudutBias LANGSUNG, bukan
-	-- menambahnya seperti orbit di atas: yang dituju sudut tertentu,
-	-- bukan kecepatan tertentu.
+	-- Kemajuan adegan yang sedang jalan, 0..1. Dipakai dua hal di bawah
+	-- (busur menyamping dan gerakan naik-turun), jadi dihitung sekali.
+	--
+	-- Tetap dihitung selagi sinemaMix meluruh sesudah adegannya habis;
+	-- di situ u sudah dijepit ke 1, dan kedua gerakan bernilai NOL di
+	-- u=1 -- jadi kameranya pulang ke depan dan ke tinggi biasa sendiri.
+	local adeganAktif = sinemaMix > 0.001 and sinemaLama > 0
+	local u = 0
+	if adeganAktif then
+		u = math.clamp(1 - (sinemaSampai - t) / math.max(sinemaLama, 0.01), 0, 1)
+	end
+
+	-- Busur DEPAN. Menulis sudutBias LANGSUNG, bukan menambahnya seperti
+	-- orbit di atas: yang dituju sudut tertentu, bukan kecepatan
+	-- tertentu -- dan itu yang membuat batas +/-arcRad benar-benar batas.
 	--
 	-- Ayunan dikurangi supaya sudut akhirnya (ayun + sudutBias) benar-
-	-- benar sama dengan sudut jalurnya. Kalau tidak, ayunan kiri-kanan
-	-- yang jalan terus-menerus ikut menggeser ketiga perhentian itu, dan
-	-- "serong kiri" jatuh di mana saja tergantung kebetulan ayunannya
-	-- sedang di fase mana.
+	-- benar sama dengan sudut busurnya. Kalau tidak, ayunan kiri-kanan
+	-- yang jalan terus-menerus ikut menggeser busurnya, dan simpangannya
+	-- bisa melewati batas tergantung kebetulan ayunan sedang di fase
+	-- mana.
 	--
-	-- Dikali sinemaMix supaya masuknya mulus: di awal adegan mix naik
-	-- dari 0 (~0,9 detik), jadi kamera MELUNCUR dari sudut sebelumnya ke
-	-- serong kiri alih-alih meloncat ke sana.
-	local jalurAktif = sinemaJalur ~= nil and sinemaMix > 0.001
-	if jalurAktif then
-		local sisa = sinemaSampai - t
-		local u    = 1 - (sisa / math.max(sinemaLama, 0.01))
-		sudutBias  = (jalurSudut(u) - ayun) * sinemaMix
+	-- Dikali sinemaMix supaya masuk dan keluarnya mulus: di awal adegan
+	-- mix naik dari 0 (~0,9 detik), jadi kamera MELUNCUR ke busurnya
+	-- alih-alih meloncat.
+	local busurAktif = adeganAktif and arcRad > 0
+	if busurAktif then
+		sudutBias = (busurSudut(u, arcRad, arcPutar) - ayun) * sinemaMix
 	end
 
 	-- Dilipat ke [-pi, pi] supaya peluruhan di bawah mengambil jalan
@@ -445,7 +450,7 @@ RunService.RenderStepped:Connect(function(dt)
 	-- berjalan. Hasilnya sudut = ayun(sekarang) - ayun(saat datang),
 	-- yang bisa mencapai DUA KALI lebar ayunan -- justru lebih menyerong
 	-- daripada kalau tidak dibetulkan sama sekali.
-	if not orbitAktif and not jalurAktif and sudutBias ~= 0 then
+	if not orbitAktif and not busurAktif and sudutBias ~= 0 then
 		sudutBias = sudutBias * math.exp(-dt / SINEMA_PULIH)
 		if math.abs(sudutBias) < 0.001 then sudutBias = 0 end
 	end
@@ -497,8 +502,28 @@ RunService.RenderStepped:Connect(function(dt)
 	-- sudah mundur -- di situ yang penting kerumunannya, bukan satu
 	-- badan yang utuh.
 	local naik = ((CFG.upJauh or CFG.up) - CFG.up) * zoom
+
+	-- Naik-turun khusus adegan berbayar, stud.
+	--
+	-- Puncaknya di TENGAH adegan lalu pulang ke nol di akhir: sin(pi*u)
+	-- bernilai 0 di u=0 dan u=1, jadi kameranya berangkat dan pulang
+	-- dari tinggi yang sama dan tidak meninggalkan pergeseran apa pun
+	-- untuk kedatangan berikutnya.
+	--
+	-- Ini pengganti gerakan yang dulu dikerjakan orbit. Untuk raksasa
+	-- justru lebih tepat: badan setinggi empat orang dibaca dari kaki ke
+	-- kepala, dan kamera yang naik-turun memperlihatkan itu -- sementara
+	-- kamera yang memutar ke samping cuma memperlihatkan punggungnya.
+	--
+	-- Dikali sinemaMix dengan alasan yang sama seperti busurnya: masuk
+	-- dan keluar adegan harus meluncur, bukan meloncat.
+	local naikAdegan = 0
+	if adeganAktif and naikAmp ~= 0 then
+		naikAdegan = naikAmp * math.sin(math.pi * u) * sinemaMix
+	end
+
 	dasar = Vector3.new(dasar.X * skala,
-		dasar.Y * skala + naik,
+		dasar.Y * skala + naik + naikAdegan,
 		dasar.Z * skala)
 
 	local offset = CFrame.Angles(0, sudut, 0):VectorToWorldSpace(dasar)
@@ -1562,21 +1587,23 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 			sinemaSampai = os.clock() + d.lama
 			sinemaLama   = d.lama
 			sinemaOrbit  = (d.orbit == true)
-			sinemaJalur  = d.jalur
 			sinemaJauh   = tonumber(d.jauh) or 1
 			zoomMulai    = os.clock()
 			zoomKeluar   = tonumber(d.zoomKeluar) or CFG.zoomKeluar or 1.8
 			zoomMaks     = tonumber(d.zoomMaks) or 1
-			orbitS       = tonumber(d.orbitS)
-			-- Adegan berbayar juga dimulai dari depan. Untuk yang
-			-- mengorbit itu malah lebih baik: putarannya berangkat dari
-			-- wajah orangnya, bukan dari sudut acak.
+			-- Busur depan. Derajat di server, radian di sini -- diubah
+			-- di satu tempat saja supaya sisa file tidak perlu tahu
+			-- satuannya.
+			arcRad       = math.rad(tonumber(d.arcDeg) or 0)
+			arcPutar     = tonumber(d.arcPutar) or 1
+			naikAmp      = tonumber(d.naikAmp) or 0
+			-- Adegan berbayar juga dimulai dari depan, dan busurnya
+			-- memang berangkat dari 0 (depan) -- jadi keduanya sepakat.
 			--
-			-- Yang berjalur DILEWATI: jalurnya menulis sudut kamera tiap
-			-- frame, jadi meluruskan pandangan di sini cuma berlaku
-			-- selama satu frame lalu ditimpa -- dan bias yang ditulisnya
-			-- justru bikin frame pertama adegan meloncat.
-			if not sinemaJalur then pandangLurus() end
+			-- Tetap dipanggil walau busurnya menimpa sudutBias tiap
+			-- frame: kalau arcDeg-nya 0 (tier yang tidak menyapu), ini
+			-- satu-satunya yang meluruskan pandangan ke orangnya.
+			pandangLurus()
 			-- Ditahan sama lamanya dengan kedatangan gratisan.
 			--
 			-- Dulu yang bayar ditahan dekat SELAMA SOROTANNYA (5-6
@@ -1592,23 +1619,21 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 		elseif os.clock() >= sinemaSampai then
 			fokusTarget = d.pos or fokusTarget
 			sinemaJauh  = 1
-			-- Dibersihkan, bukan dibiarkan: jalur milik adegan yang
-			-- BARU SAJA selesai, dan kalau penandanya ditinggalkan
-			-- menyala, kedatangan gratisan berikutnya ikut dikemudikan
-			-- jalur raksasa dengan kemajuan u yang sudah lewat 1 --
-			-- kameranya terpaku di sudut belakang dan tidak pernah
-			-- kembali mengayun.
-			sinemaJalur = nil
 			zoomMulai   = os.clock()
 			zoomKeluar  = tonumber(d.zoomKeluar) or CFG.zoomKeluar or 1.8
 			zoomTahan   = tonumber(d.zoomTahan) or CFG.zoomTahan or 1.6
-			-- Dikembalikan ke 1 dan nil, bukan dibiarkan: keduanya milik
-			-- adegan yang sudah selesai. zoomMaks yang tertinggal
-			-- membuat kamera berhenti mundur penuh, dan orbitS yang
-			-- tertinggal membuat kedatangan gratisan berikutnya
-			-- berputar dengan kecepatan milik tier berbayar.
+			-- Dikembalikan ke nilai diamnya, bukan dibiarkan: semuanya
+			-- milik adegan yang sudah selesai.
+			--
+			-- zoomMaks yang tertinggal membuat kamera berhenti mundur
+			-- penuh, dan busur yang tertinggal membuat kedatangan
+			-- gratisan berikutnya ikut menyapu dengan lebar milik tier
+			-- berbayar -- tier 1 seharusnya cuma dapat ayunan panggung
+			-- yang biasa.
 			zoomMaks    = tonumber(d.zoomMaks) or 1
-			orbitS      = tonumber(d.orbitS)
+			arcRad      = math.rad(tonumber(d.arcDeg) or 0)
+			arcPutar    = tonumber(d.arcPutar) or 1
+			naikAmp     = tonumber(d.naikAmp) or 0
 			pandangLurus()
 
 		-- else: kedatangan biasa DI TENGAH adegan berbayar -- diabaikan.

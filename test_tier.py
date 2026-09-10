@@ -21,12 +21,19 @@ from lupa import LuaRuntime
 src = io.open("my_scrip_lua_v2", encoding="utf-8").read().split("\n")
 
 
-def ambil(nama):
-    """Ambil teks satu `local function <nama>` sampai `end` di kolom 0."""
-    awal = next(i for i, l in enumerate(src)
+def ambil(nama, berkas=None):
+    """Ambil teks satu `local function <nama>` sampai `end` di kolom 0.
+
+    `berkas` untuk mengambil dari file lain (kamera_client_lua_v2):
+    sebagian fungsi yang perlu diuji hidup di sisi client, dan
+    menyalinnya ke sini berarti yang diuji salinan yang bisa basi.
+    """
+    baris = src if berkas is None else \
+        io.open(berkas, encoding="utf-8").read().split("\n")
+    awal = next(i for i, l in enumerate(baris)
                 if l.startswith(f"local function {nama}("))
-    akhir = next(i for i in range(awal + 1, len(src)) if src[i] == "end")
-    teks = "\n".join(src[awal:akhir + 1])
+    akhir = next(i for i in range(awal + 1, len(baris)) if baris[i] == "end")
+    teks = "\n".join(baris[awal:akhir + 1])
     # Lua biasa tidak punya operator gabungan Luau. Ini SATU-SATUNYA
     # perubahan terhadap kode aslinya, dan cuma sintaks.
     return re.sub(r"(\S+) \+= (\S+)", r"\1 = \1 + \2", teks)
@@ -201,10 +208,14 @@ print("\n6. Kamera per tier")
 #      tunda + AURA_ROLL melebihi panjang sorotan, angkanya mendarat
 #      setelah kamera pergi -- momen yang dibayar orangnya jatuh di luar
 #      sorotannya sendiri, dan itu tidak memunculkan error apa pun.
-#   2. Tier 3 harus berputar lebih jauh dari tier 2. Itu satu-satunya
-#      pembeda gerakan di antara keduanya sekarang; kalau orbitS
-#      kebetulan disetel sama, dua tier berhenti terbaca sebagai dua
-#      tingkat dan yang tersisa cuma auranya.
+#   2. Busur kamera tidak boleh keluar dari KERUCUT DEPAN. Begitu
+#      simpangannya mendekati 90 derajat, kamera berada di samping badan
+#      dan wajah, papan aura, serta border semuanya menghadap ke arah
+#      lain. Ini yang dulu terjadi lewat orbit dan jalur tiga sudut.
+#   3. Busur tier 3 harus lebih lebar dari tier 2. Itu pembeda gerakan
+#      di antara keduanya sekarang; kalau lebarnya kebetulan disetel
+#      sama, dua tier berhenti terbaca sebagai dua tingkat dan yang
+#      tersisa cuma auranya.
 #
 # Durasi sorotannya diambil dari main.py, bukan ditulis ulang: dua sisi
 # yang menyimpan angka yang sama secara terpisah adalah cara paling
@@ -226,7 +237,8 @@ lua.execute(ambil("kameraTier").replace("local function", "function", 1))
 for t in (1, 2, 3, 4):
     k = g.kameraTier(t)
     cek(f"tier {t} punya semua angka kamera",
-        None not in (k.tahan, k.keluar, k.maks, k.orbitS, k.tunda))
+        None not in (k.tahan, k.keluar, k.maks, k.arcDeg, k.arcPutar,
+                     k.naikAmp, k.tunda))
     cek(f"tier {t} mundurnya tidak melebihi jarak penuh",
         0 < k.maks <= 1.0, f"maks {k.maks}")
 
@@ -247,24 +259,76 @@ for t, ms in ((2, srv.SPOTLIGHT_MS_T2), (3, srv.SPOTLIGHT_MS_T3)):
 cek("tier 4 tidak menunda apa-apa (papannya cuma nama)",
     g.kameraTier(4).tunda == 0)
 
-# Derajat putaran = panjang sorotan / orbitS * 360.
-def derajat(t, ms):
+# --- Busur harus tetap di kerucut DEPAN ---
+#
+# 45 derajat batas yang dipakai di sini, bukan 90. Di 90 kamera tepat di
+# samping badan; jauh sebelum itu wajah dan papan aura sudah mulai
+# menyerong. Setengahnya memberi jarak yang cukup, dan tidak ada tier
+# yang butuh lebih lebar dari itu untuk terasa hidup.
+BATAS_DEPAN = 45.0
+
+# Dijalankan lewat fungsi Lua yang SAMA dengan yang dipakai client, jadi
+# yang diuji simpangan yang benar-benar terjadi -- bukan angka arcDeg
+# yang kebetulan tertulis di tabel.
+#
+# math.clamp itu Luau (ada di Roblox), tidak ada di Lua standar. Di-shim
+# supaya fungsi aslinya bisa dijalankan apa adanya tanpa disunting.
+lua.execute("""
+if not math.clamp then
+    math.clamp = function(v, lo, hi)
+        if v < lo then return lo elseif v > hi then return hi else return v end
+    end
+end
+""")
+lua.execute(ambil("busurSudut", "kamera_client_lua_v2")
+            .replace("local function", "function", 1))
+
+import math as _m
+
+
+def puncak(t):
+    """Simpangan TERJAUH dari depan yang benar-benar dicapai, derajat."""
     k = g.kameraTier(t)
-    if not k.orbitS or k.orbitS <= 0:
-        return 0.0
-    return (ms / 1000) / k.orbitS * 360
+    amp = _m.radians(k.arcDeg)
+    return max(abs(_m.degrees(g.busurSudut(i / 400, amp, k.arcPutar)))
+               for i in range(401))
 
 
-d2 = derajat(2, srv.SPOTLIGHT_MS_T2)
-d3 = derajat(3, srv.SPOTLIGHT_MS_T3)
-print(f"  (tier 2 berputar {d2:.0f} derajat, tier 3 {d3:.0f} derajat)")
-cek("tier 3 berputar lebih jauh dari tier 2", d3 > d2 + 30,
-    f"{d2:.0f} vs {d3:.0f} derajat -- bedanya terlalu kecil untuk "
+for t in (2, 3, 4):
+    p = puncak(t)
+    cek(f"tier {t} tidak pernah keluar kerucut depan "
+        f"(puncak {p:.0f} <= {BATAS_DEPAN:.0f} derajat)",
+        p <= BATAS_DEPAN + 1e-9,
+        f"puncaknya {p:.0f} derajat -- di situ kamera sudah menyerong "
+        "ke samping badan dan wajahnya menghadap ke arah lain")
+
+# Berangkat DAN pulang dari depan: kalau tidak, adegan berikutnya mulai
+# dari sudut sisa milik adegan sebelumnya.
+for t in (2, 3, 4):
+    k = g.kameraTier(t)
+    amp = _m.radians(k.arcDeg)
+    cek(f"tier {t} mulai dan selesai di depan",
+        abs(g.busurSudut(0, amp, k.arcPutar)) < 1e-9
+        and abs(g.busurSudut(1, amp, k.arcPutar)) < 1e-6,
+        f"mulai {_m.degrees(g.busurSudut(0, amp, k.arcPutar)):.1f}, "
+        f"selesai {_m.degrees(g.busurSudut(1, amp, k.arcPutar)):.1f} derajat")
+
+a2, a3 = g.kameraTier(2).arcDeg, g.kameraTier(3).arcDeg
+print(f"  (busur tier 2 +/-{a2:.0f} derajat, tier 3 +/-{a3:.0f} derajat)")
+cek("busur tier 3 lebih lebar dari tier 2", a3 >= a2 + 8,
+    f"{a2:.0f} vs {a3:.0f} derajat -- bedanya terlalu kecil untuk "
     "terbaca sebagai dua tingkat")
-cek("tier 2 berputar, tapi tidak lebih dari setengah", 0 < d2 <= 180,
-    f"{d2:.0f} derajat")
-cek("tier 4 tidak mengorbit (dia pakai jalur tiga sudut)",
-    derajat(4, srv.SPOTLIGHT_MS_T4) == 0)
+
+# Naik-turun juga harus pulang ke nol, dengan alasan yang sama.
+for t in (2, 3, 4):
+    k = g.kameraTier(t)
+    cek(f"tier {t} naik-turunnya pulang ke tinggi semula",
+        abs(k.naikAmp * _m.sin(_m.pi * 1.0)) < 1e-9)
+
+cek("raksasa naik-turunnya paling jauh",
+    g.kameraTier(4).naikAmp > g.kameraTier(3).naikAmp,
+    "badan 4x dibaca dari kaki ke kepala -- dia yang paling butuh "
+    "gerakan vertikal")
 
 print("\n7. Raksasa: satu jawaban, dipakai dua tempat")
 #

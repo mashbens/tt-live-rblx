@@ -35,7 +35,7 @@
 	                             Border biru es + cakram cahaya di
 	                             lantai. Sorotan PENDEK 4 detik: kamera
 	                             merapat, mundur sampai 75% jarak, dan
-	                             berputar seperempat (90 derajat).
+	                             menyapu busur depan +/-16 derajat.
 	                             Sengaja pendek -- yang menentukan di
 	                             tier ini berapa BANYAK yang kebagian,
 	                             bukan seberapa megah satu sorotan.
@@ -44,11 +44,12 @@
 	                             dapat efek partikel yang menempel di
 	                             badan -- satu dari tiga, DIACAK tiap
 	                             kedatangan (hijau / merah / rimuru).
-	                             Border oranye bara. Sorotan 7 detik dan
-	                             berputar SETENGAH (180 derajat), jadi
-	                             sisi belakangnya ikut terlihat.
-	                             Lantai aura 550%.
-	  tier 4  gift >= 30 koin    UKURAN, dan CUMA itu. Raksasa berdiri
+	                             Border oranye bara. Sorotan 7 detik,
+	                             busurnya lebih lebar (+/-26 derajat) dan
+	                             menyapu 1,5 kali, jadi kedua sisi
+	                             wajahnya ikut terlihat -- tetap dari
+	                             DEPAN. Lantai aura 550%.
+	  tier 4  gift >= 30 koin    UKURAN, dan CUMA itu. Raksasa 4x berdiri
 	                             di belakang barisan, tidak ikut menari,
 	                             cuma melambai. Tanpa border, tanpa
 	                             cakram, TANPA AURA -- dia polos, dan itu
@@ -57,9 +58,9 @@
 	                             SATU pada satu waktu; yang baru
 	                             mengganti yang lama. Satu-satunya yang
 	                             boleh MEMBEKUKAN panggung. Kameranya
-	                             tidak mengorbit tapi menyinggahi tiga
-	                             sudut: serong kiri -> serong kanan ->
-	                             belakang. Lantai aura 650%.
+	                             naik-turun paling jauh (5 stud) --
+	                             badan setinggi empat orang dibaca dari
+	                             kaki ke kepala. Lantai aura 650%.
 
 	Tangganya dibangun dari hal yang JENISNYA berbeda -- perhatian, lalu
 	aura, lalu ukuran -- bukan dari "efek yang makin banyak". Penonton
@@ -67,10 +68,19 @@
 	("yang itu jadi raksasa"), dan kalimat itu harus ada lebih dulu
 	daripada efeknya.
 
-	Tier 2 dan 3 sama-sama berputar, dan itu memang berubah dari
-	sebelumnya (dulu cuma tier 3 ke atas). Yang membedakan keduanya
-	sekarang SEBERAPA JAUH putarannya plus aura -- lihat KAMERA_TIER
-	untuk perhitungan derajatnya.
+	KAMERANYA SELALU DI DEPAN. Tidak ada tier yang kameranya memutar ke
+	samping badan, apalagi ke belakang.
+
+	Orbit penuh dan jalur tiga sudut milik raksasa (serong kiri -> serong
+	kanan -> belakang) sempat ada dan sudah dibuang: dari belakang yang
+	terlihat cuma punggung, dan wajah, papan aura, serta border semuanya
+	menghadap ke arah lain. Gerakan adegan sekarang cuma zoom
+	masuk-keluar, sapuan kiri-kanan di dalam kerucut depan, dan
+	naik-turun.
+
+	Yang membedakan tier 2 dari tier 3 lebar busurnya (16 vs 26 derajat)
+	dan berapa kali dia menyapu, plus aura yang cuma dipunyai tier 3 --
+	lihat KAMERA_TIER.
 
 	Panggung BERHENTI selama adegan tier 3: tidak ada yang di-spawn
 	sampai raksasanya selesai berdiri.
@@ -160,7 +170,7 @@ local FLOOR_Y       = 0
 
 -- Kapasitas panggung. Setelah penuh, panggung dikosongkan dan avatar
 -- berikutnya mulai lagi dari slot 1. 0 = tidak pernah dikosongkan.
-local DELETE_AFTER  = 60
+local DELETE_AFTER  = 80
 local RESET_DELAY   = 2
 
 -- Sembunyikan avatar PENONTON supaya tidak ikut berdiri di tengah frame.
@@ -840,13 +850,12 @@ local ZOOM_TAHAN = 1.0
 -- gerakan yang justru diminta lebih lambat.
 local ZOOM_KELUAR = 3.2
 
--- Lama mundurnya untuk RAKSASA (tier 3), detik.
+-- Lama mundurnya untuk RAKSASA (tier 4), detik.
 --
--- Dipisah dari angka di atas: raksasa punya jalur kameranya sendiri
--- (serong kiri -> serong kanan -> belakang, lihat GIANT_JALUR di
--- client) yang berjalan selama sorotannya. Mundur yang kelamaan
--- bertabrakan dengan jalur itu -- dua gerakan besar sekaligus, dan
--- yang terlihat cuma kamera yang tidak bisa diam.
+-- Dipisah dari angka di atas: raksasa punya gerakan naik-turun yang
+-- paling besar dari semua tier (naikAmp di KAMERA_TIER), dan mundur
+-- yang kelamaan bertabrakan dengan itu -- dua gerakan besar sekaligus,
+-- dan yang terlihat cuma kamera yang tidak bisa diam.
 local ZOOM_KELUAR_GIANT = 1.8
 
 -- --- PARAMETER KAMERA PER TIER ---
@@ -862,34 +871,58 @@ local ZOOM_KELUAR_GIANT = 1.8
 --           1.00 = sejauh biasa. Di bawah 1 = berhenti lebih dekat --
 --           ini yang bikin adegan berbayar tetap terasa "dekat" tanpa
 --           kameranya menempel.
---   orbitS  lama SATU PUTARAN PENUH, detik. Yang menentukan berapa
---           derajat kamera berputar selama adegan panjangnya sorotan
---           dibagi angka ini. 0 = tidak mengorbit.
+--   arcDeg  seberapa jauh kamera menyimpang KE SAMPING dari depan,
+--           derajat. Ini batas keras: kamera bergerak di dalam kerucut
+--           depan sebesar +/- angka ini dan tidak pernah lebih.
+--   arcPutar berapa kali dia menyapu kiri-kanan-pulang selama adegan.
+--   naikAmp seberapa jauh kamera naik lalu turun lagi selama adegan,
+--           stud. Puncaknya di tengah adegan, pulang ke nol di akhir.
 --   tunda   berapa lama putaran angka aura ditahan sebelum mulai,
 --           detik. Lihat penjelasan panjang di bawah tabel.
 --
--- Perhitungan putarannya, supaya tidak jadi angka ajaib:
---   tier 2  sorotan 4,0s / orbitS 16s = seperempat putaran  (90 derajat)
---   tier 3  sorotan 7,0s / orbitS 14s = setengah putaran    (180 derajat)
--- Itu yang membedakan keduanya sekarang -- keduanya berputar, tapi tier
--- 3 berputar DUA KALI lebih jauh dan sempat memperlihatkan sisi
--- belakang avatarnya.
+-- ORBIT SUDAH TIDAK DIPAKAI, begitu juga jalur tiga sudut milik raksasa
+-- (serong kiri -> serong kanan -> belakang) yang sempat ada di sini.
+--
+-- Keduanya membawa kamera ke SAMPING lalu ke BELAKANG avatarnya, dan
+-- dari sana yang terlihat cuma punggung: wajah, papan aura, dan border
+-- semuanya menghadap ke arah lain. Panggung ini dibangun untuk ditonton
+-- dari depan, jadi gerakan adegannya sekarang dikurung di kerucut depan
+-- -- zoom masuk-keluar, geser kiri-kanan, naik-turun, dan itu saja.
+--
+-- Batas terlebar +/-26 derajat, dipilih supaya tidak pernah mendekati
+-- samping (90 derajat). Di 26 derajat wajah dan papan auranya masih
+-- menghadap kamera sepenuhnya.
+--
+-- Yang membedakan tier 2 dan 3 sekarang LEBAR busurnya dan berapa kali
+-- dia menyapu, bukan lagi seberapa jauh dia berputar:
+--   tier 2  +/-16 derajat, satu sapuan  -> tenang, cukup untuk 4 detik
+--   tier 3  +/-26 derajat, 1,5 sapuan   -> jelas lebih hidup, dan
+--                                          sempat memperlihatkan kedua
+--                                          sisi wajahnya
 local KAMERA_TIER = {
 	-- Tier 1 tidak punya adegan: dia cuma dapat zoom masuk-keluar biasa
-	-- dan mundur sampai jarak penuh.
-	[1] = { tahan = 1.0, keluar = ZOOM_KELUAR,       maks = 1.00, orbitS = 0,  tunda = 1.2 },
+	-- dan mundur sampai jarak penuh. Busurnya 0 -- ayunan panggung yang
+	-- biasa sudah menggerakkan gambarnya.
+	[1] = { tahan = 1.0, keluar = ZOOM_KELUAR,       maks = 1.00,
+	        arcDeg = 0,  arcPutar = 0,   naikAmp = 0,   tunda = 1.2 },
 	-- tunda 0,9 dan bukan 1,2: sorotan tier 2 cuma 4,0 detik, dan
 	-- putaran angkanya makan AURA_ROLL (3,0 detik). 1,2 + 3,0 = 4,2
 	-- berarti angkanya MENDARAT SETELAH kamera pergi -- momen yang
 	-- dibayar orangnya jatuh di luar sorotannya sendiri. 0,9 + 3,0 =
 	-- 3,9 masih masuk. Dijaga uji di test_tier.py.
-	[2] = { tahan = 0.5, keluar = 1.5,               maks = 0.75, orbitS = 16, tunda = 0.9 },
-	[3] = { tahan = 0.8, keluar = 2.0,               maks = 0.70, orbitS = 14, tunda = 1.8 },
-	-- Raksasa mundur sampai JARAK PENUH walau yang lain tidak: badan 3x
-	-- tidak muat di 70%, dan yang dia jual justru ukurannya. Dia juga
-	-- tidak mengorbit -- jalur tiga perhentiannya yang mengemudikan
-	-- sudut (lihat GIANT_JALUR di client).
-	[4] = { tahan = 0.8, keluar = ZOOM_KELUAR_GIANT, maks = 1.00, orbitS = 0,  tunda = 0 },
+	[2] = { tahan = 0.5, keluar = 1.5,               maks = 0.75,
+	        arcDeg = 16, arcPutar = 1.0, naikAmp = 1.5, tunda = 0.9 },
+	[3] = { tahan = 0.8, keluar = 2.0,               maks = 0.70,
+	        arcDeg = 26, arcPutar = 1.5, naikAmp = 2.5, tunda = 1.8 },
+	-- Raksasa mundur sampai JARAK PENUH walau yang lain tidak: badan 4x
+	-- tidak muat di 70%, dan yang dia jual justru ukurannya.
+	--
+	-- naikAmp-nya paling besar, dan itu justru gerakan yang paling masuk
+	-- akal untuk dia: badan setinggi empat orang dibaca dari kaki ke
+	-- kepala, jadi kamera yang naik-turun memperlihatkan ukurannya jauh
+	-- lebih baik daripada kamera yang bergeser ke samping.
+	[4] = { tahan = 0.8, keluar = ZOOM_KELUAR_GIANT, maks = 1.00,
+	        arcDeg = 20, arcPutar = 1.0, naikAmp = 5.0, tunda = 0 },
 }
 
 -- KENAPA putaran angka aura DITUNDA.
@@ -1837,12 +1870,26 @@ local function pasangBorder(model, slot, tier, kakiY, skala)
 		h.OutlineTransparency = BORDER_GARIS_ALPHA
 		h.FillColor           = warna
 		h.FillTransparency    = BORDER_ISI
-		-- AlwaysOnTop, bukan Occluded: kerumunan tumbuh ke arah kamera,
-		-- jadi yang bayar lima menit lalu berdiri di belakang badan
-		-- orang-orang yang datang sesudahnya. Border yang bisa
-		-- terhalang berarti dia membayar untuk sesuatu yang hilang
-		-- justru saat panggungnya ramai.
-		h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		-- Occluded (terhalang badan) sebagai KEADAAN DIAM, dan itu
+		-- kebalikan dari sebelumnya.
+		--
+		-- Dulu semua border AlwaysOnTop, alasannya: kerumunan tumbuh ke
+		-- arah kamera, jadi yang bayar lima menit lalu berdiri di
+		-- belakang orang-orang baru, dan border yang bisa terhalang
+		-- berarti dia membayar untuk sesuatu yang hilang saat panggung
+		-- ramai. Alasan itu masih benar.
+		--
+		-- Tapi akibatnya: SEMUA border tembus badan sepanjang waktu.
+		-- Waktu tier 3 disorot, garis-garis milik barisan di depannya
+		-- ikut menumpuk di frame -- persis di tujuh detik yang paling
+		-- ditonton, dan justru mengotori adegan orang yang baru bayar.
+		--
+		-- Jadi hak "tembus badan" dipindah: bukan milik semua border
+		-- sepanjang waktu, tapi milik border orang yang SEDANG DISOROT
+		-- selama sorotannya (dipasang di spawnAvatar). Waktu dia sudah
+		-- terkubur di kerumunan, dia bukan fokus lagi -- dan di situ
+		-- border yang terhalang tidak merugikan siapa pun.
+		h.DepthMode = Enum.HighlightDepthMode.Occluded
 		h.Parent    = model
 		rec.garis   = h
 
@@ -1928,7 +1975,7 @@ end
 -- per kedatangan, jadi client tidak perlu tahu tier sama sekali -- dia
 -- cuma menjalankan angka yang diberikan. Itu yang membuat menambah tier
 -- kelima nanti tidak menyentuh file client sama sekali.
-local function fokusKamera(pos, lamaS, orbit, jauh, k, jalur)
+local function fokusKamera(pos, lamaS, orbit, jauh, k)
 	V2Event:FireAllClients("fokus", {
 		pos      = pos,
 		sinema   = (lamaS and lamaS > 0) and true or nil,
@@ -1940,11 +1987,14 @@ local function fokusKamera(pos, lamaS, orbit, jauh, k, jalur)
 		-- Mundur sampai sejauh apa, pecahan jarak penuh. Lihat `maks`
 		-- di KAMERA_TIER.
 		zoomMaks   = k.maks,
-		-- Lama satu putaran penuh, detik. 0/nil = tidak mengorbit.
-		orbitS     = (k.orbitS and k.orbitS > 0) and k.orbitS or nil,
-		-- Jalur kamera bernama. Cuma raksasa yang memakainya sekarang
-		-- ("giant" = serong kiri -> serong kanan -> belakang).
-		jalur    = jalur,
+		-- Busur DEPAN: seberapa jauh menyimpang ke samping (derajat),
+		-- berapa kali menyapu, dan seberapa jauh naik-turun (stud).
+		--
+		-- Kamera tidak pernah keluar dari kerucut depan ini -- lihat
+		-- KAMERA_TIER untuk alasannya.
+		arcDeg     = (k.arcDeg and k.arcDeg > 0) and k.arcDeg or nil,
+		arcPutar   = k.arcPutar,
+		naikAmp    = (k.naikAmp and k.naikAmp ~= 0) and k.naikAmp or nil,
 	})
 end
 
@@ -2080,7 +2130,7 @@ local function spawnAvatar(entry, slot)
 	-- ~64.000 kali dan pegas penahannya tidak sanggup lagi: badannya
 	-- melorot menembus lantai beberapa detik setelah mendarat.
 	--
-	-- Angka cadangan 3 di bawah cuma dipakai kalau server tidak
+	-- Angka cadangan 4 di bawah cuma dipakai kalau server tidak
 	-- mengirim `scale` sama sekali (versi lama). Disamakan dengan
 	-- TIER4_SCALE di .env supaya keduanya tidak pernah bercerita beda.
 	--
@@ -2091,7 +2141,7 @@ local function spawnAvatar(entry, slot)
 	local raksasa = adalahRaksasa(tier)
 	local skala   = 1
 	if raksasa then
-		skala = math.clamp(tonumber(entry.scale) or 3, 1, GIANT_SKALA_MAKS)
+		skala = math.clamp(tonumber(entry.scale) or 4, 1, GIANT_SKALA_MAKS)
 	end
 
 	-- Dipotong di sini, bukan di gelung utama, supaya kamera dan
@@ -2243,7 +2293,24 @@ local function spawnAvatar(entry, slot)
 	-- terbaca ukuran badannya, dan lingkaran di kakinya cuma menyaingi
 	-- itu.
 	if not raksasa then
-		pasangBorder(model, slot, tier, FLOOR_Y, skala)
+		local rec = pasangBorder(model, slot, tier, FLOOR_Y, skala)
+
+		-- Yang sedang disorot boleh menembus badan, selama sorotannya.
+		--
+		-- Ini pengecualian dari Occluded di pasangBorder, dan
+		-- alasannya ada di sana. Dibalikkan sesudah adegannya supaya
+		-- dia tidak ikut mengotori adegan orang berikutnya.
+		if rec and rec.garis and lamaS and lamaS > 0 then
+			local garis = rec.garis
+			garis.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			task.delay(lamaS, function()
+				-- Border-nya bisa sudah dilepas (jatah Highlight penuh,
+				-- atau umurnya habis) selagi ditunggu.
+				if garis.Parent then
+					garis.DepthMode = Enum.HighlightDepthMode.Occluded
+				end
+			end)
+		end
 	end
 
 
@@ -2261,23 +2328,17 @@ local function spawnAvatar(entry, slot)
 		fokusPos = Vector3.new(GIANT_X, FLOOR_Y + tp * 1.15, GIANT_Z)
 		jauh     = math.max(1, skala * GIANT_KAMERA_JAUH)
 	end
-	-- Raksasa memakai JALUR bernama, bukan orbit.
+	-- Orbit dimatikan untuk SEMUA tier sekarang. Penandanya dari
+	-- /api/next sengaja tetap dibaca, jadi dia bisa dinyalakan kembali
+	-- dari main.py tanpa menyentuh file ini.
 	--
-	-- Orbit itu satu putaran rata mengelilingi orangnya; jalur ini
-	-- berhenti di tiga sudut yang dipilih (serong kiri, serong kanan,
-	-- lalu belakang). Bedanya bukan selera: putaran rata membuat setiap
-	-- sudut sama pentingnya, sementara badan sebesar raksasa justru
-	-- paling terbaca dari sudut yang KONTRAS -- dan berhenti di tiga
-	-- sudut memberi tiga kali "lihat ini" alih-alih satu gerakan yang
-	-- lewat begitu saja.
-	--
-	-- orbit dimatikan untuk dia: kalau dua-duanya menyala, orbit dan
-	-- jalur sama-sama menulis sudut kamera tiap frame dan yang terlihat
-	-- cuma getaran.
-	local jalur = raksasa and "giant" or nil
+	-- Alasannya ada di atas KAMERA_TIER: orbit membawa kamera ke samping
+	-- lalu ke belakang, dan dari belakang yang terlihat cuma punggung --
+	-- wajah, papan aura, dan border semuanya menghadap ke arah lain.
+	-- Gerakan adegannya sekarang busur depan.
 	local orbitKamera = (not raksasa) and orbit or false
 	local kam = kameraTier(tier)
-	fokusKamera(fokusPos, lamaS, orbitKamera, jauh, kam, jalur)
+	fokusKamera(fokusPos, lamaS, orbitKamera, jauh, kam)
 
 	local persen = hitungAura(tier)
 
@@ -2785,15 +2846,17 @@ if TIER_ENABLED then
 		:format(AURA_LANTAI_T2, AURA_LANTAI_T3, AURA_LANTAI_T4))
 	-- Kamera per tier ikut dicetak: kalau nanti "tier 3 terasa sama
 	-- seperti tier 2", baris ini yang menjawabnya tanpa perlu membuka
-	-- file -- dan yang paling sering jadi sebabnya justru orbitS yang
-	-- kebetulan disetel sama.
+	-- file -- dan yang paling sering jadi sebabnya justru busur yang
+	-- kebetulan disetel sama lebarnya.
 	for _, t in ipairs({ 2, 3, 4 }) do
 		local k = kameraTier(t)
 		print(("Kamera tier %d: tahan %.1fs, mundur %.1fs sampai %d%% jarak, " ..
-			"putaran %s, tunda angka %.1fs")
+			"busur depan %s, naik-turun %.1f stud, tunda angka %.1fs")
 			:format(t, k.tahan, k.keluar, math.floor(k.maks * 100 + 0.5),
-				(k.orbitS and k.orbitS > 0)
-					and ("1x per %.0fs"):format(k.orbitS) or "tidak",
+				(k.arcDeg and k.arcDeg > 0)
+					and ("+/-%d derajat x%.1f sapuan"):format(k.arcDeg, k.arcPutar)
+					or "tidak menyapu",
+				k.naikAmp or 0,
 				k.tunda))
 	end
 	print(("Aura VFX: %s, tepat tier %d, %d pilihan diacak")
