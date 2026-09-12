@@ -1520,6 +1520,25 @@ local function turunkanMutu(alasan)
 		:format(alasan))
 end
 
+-- Sudah boleh mengerjakan hal berat di client?
+--
+-- Selama pengukuran FPS di bawah masih berjalan, jawabannya TIDAK -- dan
+-- itu bukan kehati-hatian berlebihan, itu memperbaiki bug yang sudah
+-- terjadi.
+--
+-- Pengukurannya menentukan mutu visual untuk SELURUH sesi, sekali, dan
+-- tidak bisa dibatalkan. ContentProvider:PreloadAsync yang dipanggil
+-- siapkanAvatar tiap kedatangan membuat frame tersendat -- kalau dia
+-- jalan tepat di jendela pengukuran, angka yang terbaca bukan kemampuan
+-- perangkatnya, tapi kesibukan yang KITA sendiri bikin. Hasilnya
+-- DepthOfField dan SunRays dimatikan, Bloom dipotong separuh, dan
+-- panggungnya terlihat jauh lebih datar sepanjang siaran.
+--
+-- Jadi selama jendela itu avatar muncul apa adanya (bertahap, seperti
+-- sebelum ada siapkanAvatar). Delapan detik popping di awal jauh lebih
+-- murah daripada kehilangan DOF dan bloom selama satu jam.
+local bolehBerat = not CFG.visualAuto
+
 if CFG.visualAuto then
 	task.spawn(function()
 		-- Layar sentuh tanpa keyboard = HP/tablet. Tidak diukur dulu:
@@ -1531,6 +1550,9 @@ if CFG.visualAuto then
 		if UserInputService.TouchEnabled
 			and not UserInputService.KeyboardEnabled then
 			turunkanMutu("layar sentuh")
+			-- Keputusannya sudah jatuh tanpa mengukur, jadi tidak ada
+			-- jendela yang perlu dilindungi lagi.
+			bolehBerat = true
 			return
 		end
 
@@ -1545,6 +1567,7 @@ if CFG.visualAuto then
 		-- sebenarnya akan dilihat penonton.
 		if RunService:IsStudio() then
 			print("[visual] Studio -- pengukuran FPS dilewati, mutu penuh")
+			bolehBerat = true
 			return
 		end
 
@@ -1564,7 +1587,14 @@ if CFG.visualAuto then
 		local lama = os.clock() - mulai
 		sambung:Disconnect()
 
+		-- Dibuka SEBELUM keputusannya, bukan sesudah: angkanya sudah
+		-- terkumpul di baris di atas, jadi apa pun yang terjadi sekarang
+		-- tidak bisa lagi mempengaruhinya.
+		bolehBerat = true
+
 		local fps = frame / math.max(lama, 0.01)
+		print(("[visual] FPS terukur %.0f (ambang %.0f)")
+			:format(fps, CFG.visualFpsMin or 32))
 		if fps < (CFG.visualFpsMin or 32) then
 			turunkanMutu(("%.0f fps"):format(fps))
 		end
@@ -1605,6 +1635,10 @@ local KELAS_MATIKAN = {
 
 local function siapkanAvatar(m)
 	if not CFG.spawnSiap then return end
+	-- Jendela pengukuran FPS masih jalan -- lihat bolehBerat. Avatarnya
+	-- muncul apa adanya dulu; mutu visual seluruh sesi lebih mahal
+	-- daripada popping beberapa detik pertama.
+	if not bolehBerat then return end
 	local maks = math.max(tonumber(CFG.spawnSiapMaks) or 0.6, 0)
 	if maks <= 0 then return end
 
@@ -1697,6 +1731,11 @@ end
 -- mengganggu sama sekali.
 local function siapkanCakram(p)
 	if not CFG.spawnSiap then return end
+	-- Ikut menunggu jendela yang sama seperti siapkanAvatar: kalau cuma
+	-- salah satunya ditahan, cakramnya disembunyikan tapi avatarnya
+	-- tidak -- dan yang terlihat justru orang berdiri tanpa lingkaran
+	-- cahaya yang seharusnya menyertainya.
+	if not bolehBerat then return end
 	local maks = math.max(tonumber(CFG.spawnSiapMaks) or 0.6, 0)
 	if maks <= 0 then return end
 
