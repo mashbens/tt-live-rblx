@@ -663,11 +663,93 @@ local AURA_VFX_TIER    = 3
 -- orang yang sama-sama kirim 10 koin tampil berbeda, dan itu memberi
 -- alasan untuk mengirim lagi ("kali ini dapat yang merah"). Satu asset
 -- yang selalu sama berhenti diperhatikan setelah beberapa kedatangan.
+-- `redam` = seberapa jauh efeknya DIKECILKAN supaya avatarnya tetap
+-- terbaca. Tanpa ini dua dari tiga aura menutupi badan orangnya, dan
+-- yang ditonton jadi partikelnya, bukan orang yang membayar.
+--
+-- Semua knob-nya PENGALI atau TAMBAHAN terhadap nilai asli asset-nya,
+-- bukan angka mutlak: aura yang dibuat orang lain punya skala yang
+-- berbeda-beda, dan angka mutlak yang cocok untuk satu asset akan
+-- mematikan asset yang lain.
+--
+--   rate     pengali banyaknya partikel per detik. 0,45 = 45% dari asli
+--   tembus   TAMBAHAN transparansi, 0..1. 0,35 = 35% lebih tembus
+--            pandang daripada aslinya
+--   ukuran   pengali ukuran partikel
+--   zOffset  digeser sejauh ini di sumbu kedalaman kamera. NEGATIF =
+--            partikelnya digambar DI BELAKANG badan. Ini knob yang
+--            paling ampuh untuk "avatarnya ketutupan" -- yang lain cuma
+--            menipiskan, yang ini benar-benar memindahkan partikelnya
+--            ke belakang orangnya.
+--   terang   pengali Brightness untuk lampu yang ikut di dalam asset.
+--            Lampu yang terlalu terang memutihkan wajah avatarnya.
+--
+-- Angka di bawah TITIK AWAL, bukan hasil pengukuran -- saya tidak bisa
+-- melihat asset-nya dari sini. Kalau masih ketutupan, turunkan `rate`
+-- dan naikkan `tembus`; kalau jadi terlalu tipis, kebalikannya.
+--
+-- Hijau tidak diredam sama sekali: dia yang tidak dikeluhkan.
 local AURA_VFX_IDS = {
 	{ nama = "green",  id = "rbxassetid://129577777879366" },
-	{ nama = "red",    id = "rbxassetid://12010147091" },
-	{ nama = "rimuru", id = "rbxassetid://10088609715" },
+	{ nama = "red",    id = "rbxassetid://12010147091",
+	  redam = { rate = 0.45, tembus = 0.35, ukuran = 0.80,
+	            zOffset = -1.2, terang = 0.55 } },
+	{ nama = "rimuru", id = "rbxassetid://10088609715",
+	  redam = { rate = 0.50, tembus = 0.30, ukuran = 0.85,
+	            zOffset = -1.0, terang = 0.60 } },
 }
+
+-- Naikkan seluruh titik sebuah NumberSequence ke arah 1 (makin tembus).
+--
+-- Dikerjakan per titik, bukan dengan satu angka datar: bentuk
+-- transparansi sepanjang umur partikel (muncul -> pudar) itu yang bikin
+-- efeknya tidak terlihat seperti balok, dan menimpanya dengan satu nilai
+-- akan membuang bentuk itu.
+local function tembuskanSeq(seq, tambah)
+	if not tambah or tambah <= 0 then return seq end
+	local titik = {}
+	for _, k in ipairs(seq.Keypoints) do
+		local v = math.clamp(k.Value + (1 - k.Value) * tambah, 0, 1)
+		-- Envelope tidak boleh melewati jarak nilai ke tepi 0/1, dan
+		-- nilainya barusan digeser mendekat ke 1 -- jadi dia harus ikut
+		-- dijepit, kalau tidak Roblox menolak seluruh sequence-nya.
+		local env = math.min(k.Envelope, v, 1 - v)
+		table.insert(titik, NumberSequenceKeypoint.new(k.Time, v, env))
+	end
+	return NumberSequence.new(titik)
+end
+
+local function skalaSeq(seq, f)
+	if not f or f == 1 then return seq end
+	local titik = {}
+	for _, k in ipairs(seq.Keypoints) do
+		table.insert(titik,
+			NumberSequenceKeypoint.new(k.Time, k.Value * f, k.Envelope * f))
+	end
+	return NumberSequence.new(titik)
+end
+
+-- Diterapkan SEKALI pada salinan induk waktu asset dimuat, bukan tiap
+-- kedatangan: hasilnya sama persis, dan yang per-kedatangan tinggal
+-- Clone yang gratis.
+local function redamEfek(e, r)
+	if not r then return end
+
+	if e:IsA("ParticleEmitter") then
+		-- pcall per properti, bukan satu pcall untuk semuanya: emitter
+		-- dari asset orang lain kadang punya properti yang dikunci, dan
+		-- satu yang gagal tidak boleh membatalkan peredaman yang lain.
+		pcall(function() if r.rate then e.Rate = e.Rate * r.rate end end)
+		pcall(function() e.Transparency = tembuskanSeq(e.Transparency, r.tembus) end)
+		pcall(function() e.Size = skalaSeq(e.Size, r.ukuran) end)
+		pcall(function() if r.zOffset then e.ZOffset = e.ZOffset + r.zOffset end end)
+	elseif e:IsA("Light") then
+		pcall(function() if r.terang then e.Brightness = e.Brightness * r.terang end end)
+	elseif e:IsA("Fire") or e:IsA("Smoke") then
+		pcall(function() if r.ukuran then e.Size = e.Size * r.ukuran end end)
+		pcall(function() if r.tembus then e.Opacity = e.Opacity * (1 - r.tembus) end end)
+	end
+end
 
 -- Sampai kapan efeknya menempel.
 --
@@ -1578,7 +1660,7 @@ local AURA_VFX_TANDA = "AuraVfx"
 local auraVfxAsli  = {}   -- [id] = Folder berisi emitter
 local auraVfxGagal = {}   -- [id] = true kalau sudah pernah gagal
 
-local function muatAuraVfx(id)
+local function muatAuraVfx(id, redam)
 	if auraVfxAsli[id] then return auraVfxAsli[id] end
 	-- Sudah pernah gagal? Jangan dicoba lagi tiap kedatangan -- kalau
 	-- asset-nya memang tidak bisa diambil, mencobanya seratus kali cuma
@@ -1618,6 +1700,10 @@ local function muatAuraVfx(id)
 	for _, d in ipairs(wadah:GetDescendants()) do
 		if AURA_VFX_KELAS[d.ClassName] then
 			local k = d:Clone()
+			-- Diredam di sini, pada salinan INDUK yang disimpan cache.
+			-- Jadi tiap kedatangan cuma meng-clone yang sudah diredam,
+			-- dan biayanya nol saat live.
+			redamEfek(k, redam)
 			k.Parent = kotak
 			jumlah += 1
 		end
@@ -1633,7 +1719,11 @@ local function muatAuraVfx(id)
 	end
 
 	auraVfxAsli[id] = kotak
-	print(("[aura-vfx] %s siap -- %d emitter."):format(id, jumlah))
+	print(("[aura-vfx] %s siap -- %d emitter, %s."):format(id, jumlah,
+		redam and ("diredam rate x%.2f, +%.2f tembus, ukuran x%.2f, zOffset %+.1f")
+			:format(redam.rate or 1, redam.tembus or 0,
+				redam.ukuran or 1, redam.zOffset or 0)
+			or "tanpa peredaman"))
 	return kotak
 end
 
@@ -1656,7 +1746,7 @@ local function pilihAuraVfx()
 	local mulai = math.random(1, n)
 	for i = 0, n - 1 do
 		local pilihan = AURA_VFX_IDS[((mulai - 1 + i) % n) + 1]
-		local asli = muatAuraVfx(pilihan.id)
+		local asli = muatAuraVfx(pilihan.id, pilihan.redam)
 		if asli then return asli, pilihan.nama end
 	end
 	return nil, nil
