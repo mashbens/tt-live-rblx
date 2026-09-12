@@ -71,6 +71,9 @@ local CADANGAN = {
 	auraSfxHit = "", auraSfxHitVol = 0.8,
 	auraSfxHitTinggi = "", auraSfxHitTinggiVol = 0.9,
 	auraTinggiMin = 900,
+	-- Kosong = tidak ada bunyi kedatangan. Cadangan ini cuma dipakai
+	-- kalau V2Config gagal ditarik; daftar aslinya ada di SFX_TIER.
+	sfxTier = {},
 	sinema = true, sinemaOrbitS = 14, sinemaBack = -12, sinemaUp = 5.5,
 	zoom = true, zoomMasuk = 0.45, zoomTahan = 1.0, zoomKeluar = 1.8,
 	spawnLurus = true,
@@ -1410,6 +1413,90 @@ local sfxHit = buatSfx("AuraHitSfx", CFG.auraSfxHit, CFG.auraSfxHitVol or 0.8)
 local sfxHitTinggi = buatSfx("AuraHitTinggiSfx", CFG.auraSfxHitTinggi,
 	CFG.auraSfxHitTinggiVol or 0.9)
 
+-- --- BUNYI KEDATANGAN PER TIER ---
+--
+-- Satu Sound per tier, dibuat sekali di awal. Daftar kandidatnya dari
+-- server (SFX_TIER); yang dipakai yang PERTAMA benar-benar berhasil
+-- dimuat.
+--
+-- Kenapa harus dicoba satu per satu, bukan dipakai begitu saja: Sound
+-- dengan SoundId yang tidak ada TIDAK melempar error. Dia cuma diam --
+-- Play() jalan, tidak ada yang terdengar, tidak ada yang bisa dibaca di
+-- Output. Satu-satunya cara tahu dia benar-benar ada memuatnya lalu
+-- memeriksa IsLoaded.
+local sfxTier = {}
+
+local function muatSfxTier()
+	local daftar = CFG.sfxTier
+	if type(daftar) ~= "table" then return end
+
+	for tier, setelan in pairs(daftar) do
+		local kandidat = setelan and setelan.kandidat
+		if type(kandidat) == "table" then
+			local dipakai = nil
+
+			for _, id in ipairs(kandidat) do
+				local s = Instance.new("Sound")
+				s.Name          = ("SfxTier%s"):format(tostring(tier))
+				s.SoundId       = id
+				s.Volume        = tonumber(setelan.vol) or 0.6
+				s.PlaybackSpeed = math.max(tonumber(setelan.nada) or 1, 0.1)
+				-- SoundService, jadi dia tidak punya posisi di dunia:
+				-- sama kerasnya di mana pun kamera berada. Alasan
+				-- lengkapnya sama dengan bunyi aura di atas.
+				s.Parent        = SoundService
+
+				local ok = pcall(function()
+					ContentProvider:PreloadAsync({ s })
+				end)
+
+				-- IsLoaded, bukan cuma "PreloadAsync tidak error":
+				-- preload yang selesai tanpa error masih bisa
+				-- meninggalkan Sound kosong kalau asetnya memang tidak
+				-- ada.
+				if ok and s.IsLoaded then
+					dipakai = id
+					-- Dinormalkan ke ANGKA. Tabel yang lewat
+					-- RemoteFunction tidak dijamin mempertahankan
+					-- bentuk kuncinya, dan kunci "3" yang dicari dengan
+					-- angka 3 tidak akan ketemu -- tanpa error, cuma
+					-- hening. Disimpan sebagai angka di sini, dicari
+					-- dua-duanya di bunyiTier.
+					sfxTier[tonumber(tier) or tier] = s
+					break
+				end
+
+				s:Destroy()
+			end
+
+			if dipakai then
+				print(("[sfx] tier %s -- %s (volume %.2f, nada %.2f)")
+					:format(tostring(tier), dipakai,
+						tonumber(setelan.vol) or 0.6,
+						tonumber(setelan.nada) or 1))
+			else
+				warn(("[sfx] tier %s TIDAK dapat bunyi -- %d kandidat " ..
+					"dicoba, tidak satu pun berhasil dimuat.")
+					:format(tostring(tier), #kandidat))
+			end
+		end
+	end
+end
+
+task.spawn(muatSfxTier)
+
+local function bunyiTier(tier)
+	if not tier then return end
+	-- Dicari sebagai angka DAN sebagai teks, alasannya di muatSfxTier.
+	local s = sfxTier[tier] or sfxTier[tostring(tier)]
+	if not s then return end
+	-- Diulang dari nol, bukan dibiarkan menumpuk: dua kedatangan
+	-- berbayar yang berdekatan harus terdengar sebagai dua kedatangan,
+	-- bukan sebagai satu bunyi yang pecah.
+	s.TimePosition = 0
+	s:Play()
+end
+
 -- Nomor bunyi yang sedang jalan, sejajar dengan auraGen di atas: yang
 -- menghentikan bunyi harus yang menyalakannya, bukan task lama yang
 -- kebetulan bangun setelah undian berikutnya mulai.
@@ -1810,6 +1897,15 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 			arcRad       = math.rad(tonumber(d.arcDeg) or 0)
 			arcPutar     = tonumber(d.arcPutar) or 1
 			naikAmp      = tonumber(d.naikAmp) or 0
+
+			-- Dibunyikan di sini, di cabang BERBAYAR saja.
+			--
+			-- Cabang gratisan di bawah tidak memanggilnya, dan itu
+			-- disengaja: tier 1 datang tiap detik saat live ramai, dan
+			-- bunyi kedatangan untuk tiap satu dari mereka akan jadi
+			-- derau yang terus-menerus -- lalu yang berbayar kehilangan
+			-- satu-satunya penanda telinganya.
+			bunyiTier(tonumber(d.tier))
 			-- Adegan berbayar juga dimulai dari depan, dan busurnya
 			-- memang berangkat dari 0 (depan) -- jadi keduanya sepakat.
 			--

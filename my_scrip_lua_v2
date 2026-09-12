@@ -310,6 +310,70 @@ local AURA_SFX_HIT_VOL = 0.8
 local AURA_SFX_HIT_TINGGI_ID  = "rbxassetid://136357088509992"
 local AURA_SFX_HIT_TINGGI_VOL = 0.9
 
+-- --- BUNYI KEDATANGAN TIER BERBAYAR ---
+--
+-- Dibunyikan sekali, tepat saat orangnya berdiri. Beda dari bunyi aura
+-- di atas: yang itu menempel pada UNDIAN ANGKA (berputar lalu mendarat),
+-- yang ini menandai KEDATANGANNYA -- dan keduanya memang terdengar
+-- bersusun, karena memang dua kejadian yang berbeda.
+--
+-- KENAPA rbxasset://, BUKAN rbxassetid://.
+--
+-- `rbxasset://` itu berkas yang IKUT TERPASANG bersama Roblox: tidak
+-- lewat katalog, tidak bisa dihapus pemiliknya, tidak kena moderasi,
+-- dan tidak butuh izin apa pun. Dia jalan di Studio maupun di game yang
+-- sudah terbit, hari ini dan tahun depan.
+--
+-- `rbxassetid://` sebaliknya menunjuk ke katalog: kalau id-nya salah,
+-- di-private, atau ditarik, yang terjadi BUKAN error -- cuma hening.
+-- Itu jenis kegagalan yang paling mahal dilacak, dan tidak ada cara
+-- memverifikasi sebuah id tanpa membuka Studio.
+--
+-- Jadi kalau mau ganti dengan bunyi katalog pilihanmu sendiri, taruh
+-- id-nya di DEPAN daftar kandidat. Yang di belakangnya tetap jadi
+-- jaring pengaman: client mencoba satu per satu dari atas dan memakai
+-- yang PERTAMA benar-benar berhasil dimuat, lalu mencetak yang mana.
+--
+-- NADA DAN VOLUME-nya sengaja beda jauh antar tier. Itu bukan hiasan:
+-- kalau ternyata ketiganya jatuh ke berkas cadangan yang sama, ketiga
+-- tier masih terdengar berbeda -- yang mahal terdengar lebih berat dan
+-- lebih rendah, yang murah lebih tinggi dan lebih ringan.
+local SFX_TIER = {
+	-- Tier 2: pendek, terang, tidak menuntut perhatian lama. Dia datang
+	-- paling sering, jadi bunyi yang berat akan melelahkan telinga
+	-- dalam sepuluh menit.
+	[2] = {
+		vol = 0.5, nada = 1.3,
+		kandidat = {
+			"rbxasset://sounds/electronicpingshort.wav",
+			"rbxasset://sounds/clickfast.wav",
+			"rbxasset://sounds/switch3.wav",
+		},
+	},
+	-- Tier 3: lebih berisi dan sedikit lebih rendah -- sepadan dengan
+	-- aura yang menyala di badannya.
+	[3] = {
+		vol = 0.7, nada = 1.0,
+		kandidat = {
+			"rbxasset://sounds/bass.wav",
+			"rbxasset://sounds/impact_water.mp3",
+			"rbxasset://sounds/electronicpingshort.wav",
+		},
+	},
+	-- Tier 4: paling berat dan paling rendah. Nada 0,6 menurunkan
+	-- berkas yang sama hampir satu oktaf -- itu yang membuat raksasa
+	-- terdengar seperti sesuatu yang BESAR mendarat, bukan seperti
+	-- notifikasi yang kebetulan lebih keras.
+	[4] = {
+		vol = 0.9, nada = 0.6,
+		kandidat = {
+			"rbxasset://sounds/action_jump_land.mp3",
+			"rbxasset://sounds/bass.wav",
+			"rbxasset://sounds/impact_water.mp3",
+		},
+	},
+}
+
 -- Dari angka berapa sebuah undian dihitung "tinggi".
 --
 -- Sekarang cuma menentukan BUNYI MENDARAT, tidak lagi ikut menentukan
@@ -2093,11 +2157,16 @@ end
 -- per kedatangan, jadi client tidak perlu tahu tier sama sekali -- dia
 -- cuma menjalankan angka yang diberikan. Itu yang membuat menambah tier
 -- kelima nanti tidak menyentuh file client sama sekali.
-local function fokusKamera(pos, lamaS, orbit, jauh, k)
+local function fokusKamera(pos, lamaS, orbit, jauh, k, tier)
 	V2Event:FireAllClients("fokus", {
 		pos      = pos,
 		sinema   = (lamaS and lamaS > 0) and true or nil,
 		lama     = lamaS,
+		-- Dipakai client cuma untuk memilih bunyi kedatangannya (lihat
+		-- SFX_TIER). Bentuk gerakan kameranya TIDAK dibaca dari angka
+		-- ini -- semuanya sudah dikirim sebagai angka jadi di bawah,
+		-- supaya client tetap tidak perlu tahu arti tier.
+		tier     = tier,
 		orbit    = orbit and true or nil,
 		jauh     = (jauh and jauh > 1) and jauh or nil,
 		zoomTahan  = k.tahan,
@@ -2456,7 +2525,7 @@ local function spawnAvatar(entry, slot)
 	-- Gerakan adegannya sekarang busur depan.
 	local orbitKamera = (not raksasa) and orbit or false
 	local kam = kameraTier(tier)
-	fokusKamera(fokusPos, lamaS, orbitKamera, jauh, kam)
+	fokusKamera(fokusPos, lamaS, orbitKamera, jauh, kam, tier)
 
 	local persen = hitungAura(tier)
 
@@ -2593,6 +2662,11 @@ V2Config.OnServerInvoke = function(pemain)
 		-- tidak menambah -- lihat AURA_SFX_HIT_TINGGI_ID.
 		auraSfxHitTinggi    = AURA_SFX_HIT_TINGGI_ID,
 		auraSfxHitTinggiVol = AURA_SFX_HIT_TINGGI_VOL,
+		-- Bunyi kedatangan per tier. Dikirim sebagai tabel utuh, bukan
+		-- dipecah jadi sfxTier2/sfxTier3/...: menambah tier kelima nanti
+		-- cukup menambah satu baris di SFX_TIER, tanpa menyentuh baris
+		-- ini maupun file client.
+		sfxTier = SFX_TIER,
 		auraTinggiMin       = AURA_TINGGI_MIN,
 		auraY    = AURA_Y,
 		auraH    = AURA_H,
