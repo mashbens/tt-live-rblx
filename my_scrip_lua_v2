@@ -1041,6 +1041,34 @@ end
 -- orbit untuk mengambil alih ayunan tanpa satu pun frame yang lompat.
 local SPAWN_LURUS = true
 
+-- --- MUNCUL UTUH, BUKAN BERTAHAP ---
+--
+-- Masalahnya: avatar datang POLOS dulu, beberapa detik kemudian
+-- rambutnya muncul, lalu bajunya. Terlihat seperti avatarnya rusak.
+--
+-- Sebabnya bukan di kode ini. CreateHumanoidModelFromDescription
+-- membuat rig-nya seketika, tapi isinya cuma RUJUKAN -- MeshId rambut,
+-- TextureId baju. File-nya sendiri baru diunduh dari CDN Roblox oleh
+-- TIAP PENONTON, saat modelnya sudah kelihatan di layar mereka. Jadi
+-- urutan yang terlihat itu urutan kedatangan file-nya.
+--
+-- Karena unduhannya terjadi di client, obatnya juga harus di client:
+-- dia menyembunyikan avatar yang baru datang, menunggu asetnya siap
+-- (ContentProvider:PreloadAsync), lalu memunculkannya utuh.
+--
+-- BATAS WAKTUNYA SENGAJA PENDEK. Ini pertukaran langsung: makin lama
+-- menunggu makin kecil peluang masih ada yang belum siap, tapi
+-- avatarnya juga makin telat muncul -- dan sorotan tier 2 cuma 4 detik.
+-- 0,6 detik menangkap sebagian besar aset yang sudah ada di cache atau
+-- dekat, tanpa memakan porsi sorotan yang terasa.
+--
+-- Yang lewat dari batas ini tetap dimunculkan, apa adanya. Menunggu
+-- sampai benar-benar siap berarti satu aset yang gagal diunduh bikin
+-- avatarnya TIDAK PERNAH muncul -- jauh lebih buruk daripada popping.
+local SPAWN_SIAP      = true
+local SPAWN_SIAP_MAKS = 0.6
+local SPAWN_SIAP_FADE = 0.12
+
 -- ============ MUSIK + TARIAN ============
 --
 -- Satu baris = satu lagu DAN tarian pasangannya. Begitu lagunya ganti,
@@ -2591,6 +2619,10 @@ V2Config.OnServerInvoke = function(pemain)
 		zoomTahan  = ZOOM_TAHAN,
 		zoomKeluar = ZOOM_KELUAR,
 		spawnLurus = SPAWN_LURUS,
+
+		spawnSiap     = SPAWN_SIAP,
+		spawnSiapMaks = SPAWN_SIAP_MAKS,
+		spawnSiapFade = SPAWN_SIAP_FADE,
 
 		debug    = DEBUG_HUD,
 

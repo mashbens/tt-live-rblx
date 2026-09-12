@@ -74,6 +74,7 @@ local CADANGAN = {
 	sinema = true, sinemaOrbitS = 14, sinemaBack = -12, sinemaUp = 5.5,
 	zoom = true, zoomMasuk = 0.45, zoomTahan = 1.0, zoomKeluar = 1.8,
 	spawnLurus = true,
+	spawnSiap = true, spawnSiapMaks = 0.6, spawnSiapFade = 0.12,
 	resyncEvery = 3, driftLimit = 0.04,
 	syncKp = 0.6, syncSpeedMaks = 0.15, syncSnap = 0.35,
 	visualAuto = true, visualFpsMin = 32, visualBloom = 0.45,
@@ -1569,6 +1570,179 @@ if CFG.visualAuto then
 		end
 	end)
 end
+
+-- ============ MUNCUL UTUH, BUKAN BERTAHAP ============
+--
+-- Avatar datang POLOS dulu, beberapa detik kemudian rambutnya muncul,
+-- lalu bajunya. Sebabnya bukan di kode server: rig-nya memang dibuat
+-- seketika, tapi isinya cuma RUJUKAN (MeshId rambut, TextureId baju) --
+-- dan file-nya baru diunduh dari CDN Roblox oleh TIAP PENONTON, saat
+-- modelnya sudah kelihatan di layar mereka.
+--
+-- Karena unduhannya terjadi di sini, obatnya juga di sini: avatar yang
+-- baru datang disembunyikan, asetnya ditunggu, lalu dimunculkan utuh.
+--
+-- Yang disembunyikan lewat LocalTransparencyModifier, BUKAN Transparency:
+-- properti itu milik client dan tidak direplikasi, jadi menyetelnya
+-- tidak menyentuh apa yang dilihat penonton lain. Transparency akan
+-- dikirim balik ke server dan mengubah avatar untuk semua orang.
+local disembunyikan = setmetatable({}, { __mode = "k" })
+
+-- Yang punya properti Enabled dan HARUS ikut dimatikan selama badannya
+-- belum kelihatan.
+--
+-- Bukan cuma badan yang perlu disembunyikan: server memasang border,
+-- papan nama, dan aura VFX SESUDAH modelnya masuk workspace. Kalau
+-- ketiganya dibiarkan menyala, yang terlihat selama gerbangnya tertutup
+-- justru partikel dan garis yang mengambang tanpa orangnya -- lebih
+-- aneh daripada popping yang mau dihilangkan.
+local KELAS_MATIKAN = {
+	BillboardGui = true, SurfaceGui = true,
+	ParticleEmitter = true, Fire = true, Smoke = true, Sparkles = true,
+	PointLight = true, SpotLight = true, SurfaceLight = true,
+	Highlight = true, Beam = true, Trail = true,
+}
+
+local function siapkanAvatar(m)
+	if not CFG.spawnSiap then return end
+	local maks = math.max(tonumber(CFG.spawnSiapMaks) or 0.6, 0)
+	if maks <= 0 then return end
+
+	local sudah = false
+
+	local function sembunyikanSatu(d)
+		if d:IsA("BasePart") then
+			d.LocalTransparencyModifier = 1
+		elseif KELAS_MATIKAN[d.ClassName] and d.Enabled then
+			-- Dicatat mana yang KITA matikan, supaya yang memang sudah
+			-- mati sejak awal tidak ikut dinyalakan waktu dibuka.
+			d.Enabled = false
+			disembunyikan[d] = true
+		end
+	end
+
+	for _, d in ipairs(m:GetDescendants()) do sembunyikanSatu(d) end
+
+	-- Yang datang BELAKANGAN (aksesori, rambut) ikut disembunyikan
+	-- sampai gerbangnya dibuka. Tanpa ini justru merekalah yang muncul
+	-- satu per satu -- persis yang mau dihilangkan.
+	local sambung = m.DescendantAdded:Connect(function(d)
+		if not sudah then sembunyikanSatu(d) end
+	end)
+
+	local function munculkan()
+		if sudah then return end
+		sudah = true
+		sambung:Disconnect()
+
+		local bagian = {}
+		for _, d in ipairs(m:GetDescendants()) do
+			if d:IsA("BasePart") then
+				table.insert(bagian, d)
+			elseif disembunyikan[d] then
+				d.Enabled = true
+				disembunyikan[d] = nil
+			end
+		end
+
+		local fade = math.max(tonumber(CFG.spawnSiapFade) or 0.12, 0)
+		if fade <= 0 then
+			for _, d in ipairs(bagian) do d.LocalTransparencyModifier = 0 end
+			return
+		end
+
+		-- Ditulis tangan, bukan TweenService: LocalTransparencyModifier
+		-- properti client yang tidak direplikasi, dan tween terhadapnya
+		-- tidak bisa diandalkan.
+		task.spawn(function()
+			local t0 = os.clock()
+			while m.Parent do
+				local u = (os.clock() - t0) / fade
+				if u >= 1 then break end
+				for _, d in ipairs(bagian) do
+					if d.Parent then d.LocalTransparencyModifier = 1 - u end
+				end
+				RunService.RenderStepped:Wait()
+			end
+			for _, d in ipairs(bagian) do
+				if d.Parent then d.LocalTransparencyModifier = 0 end
+			end
+		end)
+	end
+
+	-- Batas keras, dipasang SEBELUM PreloadAsync dan bukan sesudah.
+	--
+	-- PreloadAsync memblokir sampai selesai, dan aset yang gagal diunduh
+	-- bisa menahannya lama. Kalau batas ini dipasang setelahnya, dia
+	-- tidak pernah sempat jalan -- dan avatarnya tidak pernah muncul.
+	-- Yang lewat batas tetap dimunculkan, apa adanya.
+	task.delay(maks, munculkan)
+
+	task.spawn(function()
+		pcall(function() ContentProvider:PreloadAsync({ m }) end)
+		munculkan()
+	end)
+end
+
+-- Cakram lantai milik border di-parent ke workspace, BUKAN ke modelnya
+-- (supaya dia tidak ikut terbawa bounding box avatarnya), jadi dia lolos
+-- dari penyembunyian di atas -- dan yang terlihat jadi lingkaran cahaya
+-- menyala di lantai tanpa siapa pun berdiri di atasnya.
+--
+-- Ditunda dengan timer sendiri, bukan disambungkan ke avatar tertentu:
+-- keduanya dibuat dalam satu panggilan spawnAvatar yang sama, jadi
+-- timernya berangkat pada saat yang praktis sama. Kalau badannya
+-- kebetulan siap lebih cepat, yang terjadi cuma cakramnya menyusul
+-- sebentar kemudian di bawah avatar yang sudah berdiri -- dan itu tidak
+-- mengganggu sama sekali.
+local function siapkanCakram(p)
+	if not CFG.spawnSiap then return end
+	local maks = math.max(tonumber(CFG.spawnSiapMaks) or 0.6, 0)
+	if maks <= 0 then return end
+
+	p.LocalTransparencyModifier = 1
+	for _, d in ipairs(p:GetDescendants()) do
+		if KELAS_MATIKAN[d.ClassName] and d.Enabled then
+			d.Enabled = false
+			disembunyikan[d] = true
+		end
+	end
+
+	task.delay(maks, function()
+		if not p.Parent then return end
+		-- 0 = tanpa perubahan lokal, jadi Transparency milik cakramnya
+		-- sendiri (BORDER_CAKRAM_ALPHA) yang kembali berlaku. Tidak ada
+		-- yang perlu disimpan dan dikembalikan.
+		p.LocalTransparencyModifier = 0
+		for _, d in ipairs(p:GetDescendants()) do
+			if disembunyikan[d] then
+				d.Enabled = true
+				disembunyikan[d] = nil
+			end
+		end
+	end)
+end
+
+workspace.ChildAdded:Connect(function(anak)
+	if anak:IsA("BasePart") and anak.Name == "CakramTier" then
+		siapkanCakram(anak)
+		return
+	end
+	if not anak:IsA("Model") then return end
+
+	-- Karakter PENONTON punya Humanoid juga, dan menyembunyikannya
+	-- berarti dia memandang dirinya sendiri lenyap setengah detik tiap
+	-- kali respawn.
+	--
+	-- Dua penjaga, bukan satu: GetPlayerFromCharacter belum tentu sudah
+	-- tersambung tepat di frame ChildAdded, dan karakter pemain selalu
+	-- bernama sama dengan pemainnya -- jadi yang kedua menangkap kasus
+	-- yang lolos dari yang pertama.
+	if Players:GetPlayerFromCharacter(anak) then return end
+	if Players:FindFirstChild(anak.Name) then return end
+
+	siapkanAvatar(anak)
+end)
 
 -- ============ SAMBUNGAN ============
 
