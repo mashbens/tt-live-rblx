@@ -6,7 +6,7 @@ Jalankan:
     uvicorn test:app --reload --port 8000
 
 Lalu di terminal lain:
-    ngrok http 8000
+    make tunnel   (SSH ke VM, https://rblx.buanaglobalcipta.com)
 
 Perubahan dari versi sebelumnya:
 - /api/next sekarang ikut mengembalikan displayName.
@@ -175,25 +175,29 @@ TIER4_KOIN = int(_env_float("TIER4_KOIN", 30))
 # murah bisa menyamai lama sorotan tier 3 tanpa pernah naik podium -- dan
 # 10 koin jadi kehilangan alasannya. Yang membedakan tier 3 sekarang dua
 # hal sekaligus: podium, dan sorotan yang bisa memanjang.
-SPOTLIGHT_MS_T2 = int(_env_float("SPOTLIGHT_MS_TIER2", 5000))
+SPOTLIGHT_MS_T2 = int(_env_float("SPOTLIGHT_MS_TIER2", 3000))
 
-# Lama sorotan tier 3 (raksasa). Juga DATAR, dan alasannya berbeda dari
-# tier 2: raksasa itu pose diam. Dia melambai sekali lalu berdiri saja,
-# jadi sorotan yang memanjang cuma memperlihatkan hal yang sama lebih
-# lama.
+# Lama sorotan tier 3 (badan normal + aura VFX). Juga DATAR.
 #
-# Enam detik, bukan lima: badan 10x butuh waktu lebih lama untuk dibaca
-# mata -- kamera harus sempat menyapu dari kaki ke kepala.
-SPOTLIGHT_MS_T3 = int(_env_float("SPOTLIGHT_MS_TIER3", 7000))
+# Lima detik, turun dari tujuh. Yang dulu butuh tujuh itu putaran kamera
+# 180 derajat, dan orbit sudah dibuang. Gantinya kamera BERDENYUT --
+# masuk, mundur, masuk lagi, sambil menyapu kiri-kanan dan naik-turun
+# (denyut* dan naikPutar di KAMERA_TIER, sisi Lua). Gerakan berdenyut
+# justru rusak kalau diregangkan: lima detik yang padat terbaca lebih
+# mahal daripada tujuh detik yang melambat.
+SPOTLIGHT_MS_T3 = int(_env_float("SPOTLIGHT_MS_TIER3", 5000))
 
 # Lama sorotan tier 4 (raksasa). Juga DATAR, dan alasannya sama: raksasa
 # itu pose diam -- dia melambai sekali lalu berdiri saja.
 #
-# Sembilan detik karena jalur kameranya punya TIGA perhentian (serong
-# kiri -> serong kanan -> belakang). Dibagi tiga, tiap sudut dapat 3
-# detik; di bawah itu perhentiannya berhenti terbaca sebagai perhentian
-# dan yang terlihat cuma satu sapuan panjang.
-SPOTLIGHT_MS_T4 = int(_env_float("SPOTLIGHT_MS_TIER4", 9000))
+# Tujuh detik, turun dari sembilan. Angka sembilan dulu dipilih untuk
+# jalur tiga perhentian (serong kiri -> serong kanan -> belakang) yang
+# sudah dibuang. Yang tersisa satu busur depan plus naik-turun dari kaki
+# ke kepala, dan itu selesai jauh sebelum detik kesembilan.
+#
+# Tetap yang TERPANJANG dari semua tier, dan itu disengaja: badan 4x
+# butuh waktu paling lama untuk dibaca mata.
+SPOTLIGHT_MS_T4 = int(_env_float("SPOTLIGHT_MS_TIER4", 7000))
 
 # Sanity guard untuk angka yang masuk lewat /api/push. Sama dengan
 # KOIN_WARAS di tiktok_listener.py.
@@ -201,11 +205,16 @@ KOIN_WARAS        = 1_000_000
 
 
 def _cek_sorotan_vs_jeda() -> None:
-    """Peringatkan kalau sorotan bisa lebih lama dari jedanya.
+    """Peringatkan kalau sorotan sebuah tier lebih lama dari jedanya sendiri.
 
-    Kalau itu terjadi, sorotan berikutnya mulai selagi yang sekarang masih
-    jalan -- dan Studio membuang yang kedua. Orang yang membayar tidak dapat
-    sorotan sama sekali.
+    Ini BUKAN lagi penjaga tumpang tindih -- yang menjaga itu sekarang
+    SPOTLIGHT_NAPAS_S di _ambil_entri, dan dia menahan sorotan berikutnya
+    sampai yang sekarang benar-benar habis, apa pun isi jedanya.
+
+    Yang tersisa di sini peringatan setelan: jeda yang lebih pendek dari
+    sorotannya sendiri tidak berarti apa-apa lagi (dia selalu kalah oleh
+    napas di atas), jadi angka yang tertulis di .env berhenti bercerita
+    jujur tentang seberapa sering tier itu muncul.
 
     Ketiga tier sekarang panjangnya DATAR, jadi ini tinggal tiga
     perbandingan. Dulu tier tertinggi memanjang ikut koin dan cek-nya harus
@@ -220,8 +229,9 @@ def _cek_sorotan_vs_jeda() -> None:
         if lama >= jeda * 1000:
             print(
                 f"[peringatan] sorotan tier {tier} {lama/1000:.1f}s >= "
-                f"{nama} {jeda:.0f}s -- yang kedua akan dibuang Studio. "
-                f"Naikkan jedanya."
+                f"{nama} {jeda:.0f}s -- jedanya tidak terpakai; yang "
+                f"berlaku napas {lama/1000 + SPOTLIGHT_NAPAS_S:.1f}s. "
+                f"Naikkan jedanya kalau angka itu yang kamu maksud."
             )
 
 
@@ -234,10 +244,10 @@ def durasi_sorotan(tier: int = 3) -> int:
       tier 2  sorotan datar dan PENDEK, tiket masuk paling murah --
               yang menentukan berapa banyak yang kebagian, bukan seberapa
               megah satu sorotan
-      tier 3  putaran kamera penuh + aura VFX, butuh waktu lebih supaya
-              dua-duanya sempat terlihat
-      tier 4  raksasa itu pose diam -- panjangnya ditentukan jalur kamera
-              tiga perhentian, bukan oleh badannya
+      tier 3  kamera berdenyut (masuk-mundur-masuk) + aura VFX, butuh
+              waktu lebih dari tier 2 supaya dua-duanya sempat terlihat
+      tier 4  raksasa itu pose diam -- panjangnya ditentukan berapa lama
+              badan 4x perlu untuk dibaca mata, bukan oleh gerakannya
 
     Yang membedakan kiriman besar bukan lamanya, tapi BENTUKNYA: 1 koin
     dapat perhatian, 10 koin dapat aura, 30 koin jadi raksasa.
@@ -268,6 +278,27 @@ SPOTLIGHT_GAP_T3_S = _env_float("SPOTLIGHT_GAP_TIER3_S", 9.0)
 # berikutnya dan yang bayar 30 koin tidak dapat apa-apa.
 SPOTLIGHT_GAP_T4_S = _env_float("SPOTLIGHT_GAP_TIER4_S", 11.0)
 
+# Napas SESUDAH sorotan sebelumnya benar-benar habis, detik.
+#
+# Ini yang menutup lubang yang dulu bikin sorotan saling tindih: jeda di
+# atas dipilih dari tier yang MAU disorot, bukan dari yang SEDANG
+# disorot. Tier 4 (sorotan 9 detik) diikuti tier 3 cuma menunggu jeda
+# tier 3 (9 detik) -- jadi tier 3 mulai persis waktu tier 4 belum habis,
+# kameranya direbut di tengah adegan, dan salah satu dari keduanya
+# kehilangan sorotannya. Yang terlihat di siaran: "tier 3 datang tapi
+# tidak disorot".
+#
+# Sekarang syaratnya dua-duanya (lihat _ambil_entri): jeda milik tier
+# yang masuk, DAN sorotan yang sedang jalan harus sudah selesai plus
+# angka ini.
+#
+# Kenapa 1,5 dan bukan sekadar 0,5 napas: cap waktunya dipasang saat
+# entri DIAMBIL Studio, sementara adegannya baru mulai setelah avatarnya
+# selesai dimuat (2-3 detik). Angka ini yang menanggung selisih itu --
+# turunkan kalau sorotan terasa terlalu jarang, naikkan kalau masih ada
+# yang tertindih.
+SPOTLIGHT_NAPAS_S = _env_float("SPOTLIGHT_NAPAS_S", 1.5)
+
 
 def _jeda_sorotan(tier: int) -> float:
     """Jeda minimal yang harus dilewati sebelum tier ini boleh disorot."""
@@ -279,6 +310,12 @@ def _jeda_sorotan(tier: int) -> float:
 
 # Kapan sorotan terakhir disajikan. None = belum pernah.
 last_spotlight_at: float | None = None
+
+# Berapa lama sorotan yang terakhir disajikan itu, detik. Dipakai
+# _ambil_entri untuk tahu kapan dia habis -- tanpa ini yang berikutnya
+# cuma bisa menebak lewat jedanya sendiri, dan tebakan itu yang dulu
+# salah untuk pasangan tier 4 -> tier 3.
+last_spotlight_lama_s: float = 0.0
 
 # Cache displayName supaya tidak bolak-balik memanggil API Roblox
 # untuk username yang sama. Roblox punya rate limit.
@@ -352,7 +389,7 @@ def lookup_display_name(username: str) -> str:
 
 @app.get("/")
 def health():
-    """Endpoint tes paling dasar untuk memastikan jalur ngrok tembus."""
+    """Endpoint tes paling dasar untuk memastikan jalur tunnel tembus."""
     return {"test": "ok"}
 
 
@@ -431,16 +468,17 @@ def push(req: PushRequest):
 def _ambil_entri() -> dict | None:
     """Pilih entri yang disajikan berikutnya, dengan menjaga jarak antar sorotan.
 
-    Entri tier 3 memicu sorotan yang menghentikan panggung beberapa detik.
-    Kalau sorotan sebelumnya baru saja jalan, entri itu DITAHAN di tempatnya
-    dan entri biasa yang disajikan lebih dulu -- jadi sorotan tersebar sendiri
-    tanpa ada yang diturunkan tiernya.
+    Entri tier 2/3/4 memicu sorotan yang memakai kamera beberapa detik.
+    Selama sorotan sebelumnya BELUM HABIS -- atau jedanya belum lewat --
+    entri itu DITAHAN di tempatnya dan entri biasa yang disajikan lebih dulu,
+    jadi sorotan tersebar sendiri tanpa ada yang diturunkan tiernya dan tanpa
+    dua adegan bertumpuk.
 
     Kalau isi antrian kebetulan sorotan semua dan jedanya belum lewat,
     kembalikan None: Studio menunggu satu-dua polling lagi, lebih baik daripada
     dua sorotan menempel.
     """
-    global last_spotlight_at
+    global last_spotlight_at, last_spotlight_lama_s
 
     if not queue:
         return None
@@ -455,13 +493,27 @@ def _ambil_entri() -> dict | None:
         # Yang di depan bukan sorotan: tidak ada yang perlu dijeda.
         return queue.popleft()
 
-    jeda = _jeda_sorotan(depan["tier"])
+    # DUA syarat, bukan satu.
+    #
+    # Yang pertama jeda milik tier yang mau masuk -- itu yang mengatur
+    # seberapa sering sorotan boleh terjadi. Yang kedua: sorotan yang
+    # SEDANG jalan harus sudah habis dulu. Tanpa yang kedua, tier 3
+    # (jeda 9 detik) boleh masuk di detik ke-9 sorotan tier 4 yang
+    # panjangnya juga 9 detik -- dua adegan bertumpuk, kamera direbut di
+    # tengah jalan, dan yang satu kehilangan sorotannya.
+    #
+    # max(), bukan dijumlah: untuk pasangan yang jedanya memang sudah
+    # lebih panjang dari sorotan sebelumnya, tidak ada yang berubah sama
+    # sekali dari perilaku lama.
+    jeda = max(_jeda_sorotan(depan["tier"]),
+               last_spotlight_lama_s + SPOTLIGHT_NAPAS_S)
     boleh_sorot = last_spotlight_at is None or (now - last_spotlight_at) >= jeda
 
     if boleh_sorot:
         entry = queue.popleft()
         if TIER_EFFECTS[entry["tier"]]["spotlight"]:
             last_spotlight_at = now
+            last_spotlight_lama_s = durasi_sorotan(entry["tier"]) / 1000
         return entry
 
     # Sorotan sedang dijeda: cari entri pertama yang bukan sorotan.
@@ -528,6 +580,10 @@ def settings():
         "spotlightGapTier2S": SPOTLIGHT_GAP_T2_S,
         "spotlightGapTier3S": SPOTLIGHT_GAP_T3_S,
         "spotlightGapTier4S": SPOTLIGHT_GAP_T4_S,
+        # Napas wajib sesudah sorotan sebelumnya habis. mock_comments
+        # memakai jeda di atas untuk mengatur lajunya, dan sejak ada
+        # angka ini jeda itu bukan lagi satu-satunya yang menentukan.
+        "spotlightNapasS": SPOTLIGHT_NAPAS_S,
         "spotlightMsTier2": SPOTLIGHT_MS_T2,
         "spotlightMsTier3": SPOTLIGHT_MS_T3,
         "koinTier2": TIER2_KOIN,

@@ -39,7 +39,7 @@
 
     Cara pakai:
     1. Nyalakan Allow HTTP Requests (File > Game Settings > Security)
-    2. Jalankan FastAPI + ngrok
+    2. Jalankan FastAPI + tunnel (make server / make tunnel)
     3. Ganti URL dan DANCE_ID di bawah
     4. Pastikan KameraClient sudah ada di StarterPlayerScripts
     5. Tekan Play
@@ -54,7 +54,7 @@ local RunService   = game:GetService("RunService")
 
 -- ============ PENGATURAN ============
 
-local URL           = "https://deluxe-sash-retired.ngrok-free.dev"
+local URL           = "https://rblx.buanaglobalcipta.com"
 
 -- Jeda antar tanya ke server, detik.
 --

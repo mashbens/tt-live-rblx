@@ -199,6 +199,44 @@ local arcRad   = 0
 local arcPutar = 1
 local naikAmp  = 0
 
+-- Berapa GUNDUKAN naik-turun selama adegan. 1 = naik lalu pulang (satu
+-- gundukan). 2 = naik, pulang, turun di bawah tinggi biasa, pulang lagi
+-- -- itu yang dipakai tier 3, dan yang membuat gerakannya memakai
+-- keempat arah, bukan cuma kiri-kanan.
+--
+-- Selalu bilangan bulat dari server: sin(pi*u*n) cuma pulang ke nol di
+-- u=1 kalau n bulat, dan adegan yang berakhir di tinggi yang bukan
+-- tinggi biasa mewariskan pergeseran itu ke kedatangan berikutnya.
+local naikPutar = 1
+
+-- --- DENYUT ZOOM ---
+--
+-- Rapatan KEDUA di paruh akhir adegan, jadi bentuk jaraknya masuk ->
+-- mundur -> masuk lagi -> mundur. Milik tier 3; untuk tier lain
+-- denyutDalam-nya 0 dan seluruh bagian ini tidak pernah jalan.
+--
+--   denyutDalam  seberapa dalam rapatannya, pecahan jarak saat itu
+--   denyutMulai  kapan mulai, pecahan lama adegan (0.42 = sesudah zoom
+--                dasarnya selesai mundur)
+--   denyutUlang  berapa kali merapat di dalam jendela itu
+--
+-- Yang diubah CUMA jaraknya. Bidikannya tetap di avatarnya -- kamera
+-- selalu dibangun dengan CFrame.new(posisi, fokusKini) di ujung gelung,
+-- jadi tidak ada satu pun gerakan di file ini yang bisa melepas
+-- bidikan itu.
+local denyutDalam = 0
+local denyutMulai = 0.5
+local denyutUlang = 1
+
+-- Batas terdekat yang boleh dicapai denyut, pecahan jarak penuh.
+--
+-- Bukan kehati-hatian berlebihan: denyutDalam 0,40 di atas maks 0,70
+-- sudah menghasilkan 0,42 -- lebih dekat daripada jarak masuk biasa
+-- (ZOOM_MASUK 0,45), dan itu angka yang sempat tertulis di server. Satu angka yang dinaikkan tanpa sadar di sisi
+-- server cukup untuk membawa kamera ke DALAM badan avatarnya, dan dari
+-- sana yang terlihat cuma satu bidang warna.
+local DENYUT_MIN = 0.30
+
 -- Lama adegan yang sedang jalan, detik. Dibutuhkan busur untuk tahu
 -- sudah sampai mana dia: sinemaSampai cuma menyimpan KAPAN berakhirnya,
 -- dan tanpa lamanya tidak ada cara menghitung "baru 30% jalan".
@@ -479,6 +517,29 @@ RunService.RenderStepped:Connect(function(dt)
 	local maksKini = 1 + ((zoomMaks or 1) - 1) * sinemaMix
 	local skala = CFG.zoomMasuk + (maksKini - CFG.zoomMasuk) * zoom
 
+	-- DENYUT: merapat sekali lagi di paruh akhir adegan.
+	--
+	-- Dikerjakan di sini, pada `skala`, dan bukan dengan menulis ulang
+	-- zoomMulai: zoom dasarnya fungsi waktu-sejak-datang yang cuma tahu
+	-- satu gerakan (masuk lalu mundur). Memaksanya berdenyut lewat
+	-- zoomMulai berarti "kedatangan" yang palsu -- dan itu ikut
+	-- mengulang penundaan `tahan` dan menyeret hal lain yang membaca
+	-- angka yang sama.
+	--
+	-- abs(sin), bukan sin: untuk denyutUlang > 1 separuh gelombangnya
+	-- negatif, dan yang negatif MENJAUHKAN kamera. Yang diminta rapatan
+	-- yang berulang, bukan rapat-jauh-rapat-jauh.
+	--
+	-- Dikali sinemaMix dengan alasan yang sama seperti busur dan
+	-- naik-turun: masuk dan keluar adegan harus meluncur.
+	if adeganAktif and denyutDalam > 0 then
+		local sisa = math.max(1 - denyutMulai, 0.001)
+		local v    = math.clamp((u - denyutMulai) / sisa, 0, 1)
+		local dalam = math.abs(math.sin(math.pi * v * (denyutUlang or 1)))
+		skala = math.max(skala * (1 - denyutDalam * dalam * sinemaMix),
+			DENYUT_MIN)
+	end
+
 	-- TINGGINYA tidak ikut dikalikan -- dia justru NAIK saat kameranya
 	-- mundur.
 	--
@@ -523,7 +584,15 @@ RunService.RenderStepped:Connect(function(dt)
 	-- dan keluar adegan harus meluncur, bukan meloncat.
 	local naikAdegan = 0
 	if adeganAktif and naikAmp ~= 0 then
-		naikAdegan = naikAmp * math.sin(math.pi * u) * sinemaMix
+		-- naikPutar gundukan, bukan selalu satu. Dengan 2, paruh kedua
+		-- gelombangnya NEGATIF -- kamera turun di bawah tinggi biasa,
+		-- dan itu memang yang diminta: tier 3 bergerak ke atas DAN ke
+		-- bawah, bukan cuma naik lalu pulang.
+		--
+		-- Tidak di-abs seperti denyut di atas: di sini yang negatif ada
+		-- gunanya. Pulang ke nol di u=1 selama naikPutar bulat.
+		naikAdegan = naikAmp
+			* math.sin(math.pi * u * (naikPutar or 1)) * sinemaMix
 	end
 
 	dasar = Vector3.new(dasar.X * skala,
@@ -1502,6 +1571,44 @@ end
 -- kebetulan bangun setelah undian berikutnya mulai.
 local sfxGen = 0
 
+-- Hentakan mendarat yang SUDAH dijanjikan tapi belum sempat berbunyi.
+--
+-- Ini yang dulu hilang. Undiannya tiga detik (AURA_ROLL) sementara
+-- kedatangan baru bisa masuk tiap satu detik, jadi waktu panggungnya
+-- ramai tiap undian selalu keburu diganti undian berikutnya -- dan
+-- penjaga `gen` di task penundaannya membuang hentakannya diam-diam.
+-- Akibatnya justru terbalik dari yang dimaui: makin ramai siarannya,
+-- makin tidak pernah terdengar satu pun bunyi mendarat.
+--
+-- Sekarang tidak ada yang dibuang. Yang belum mendarat DITUNTASKAN
+-- lebih dulu -- hentakannya berbunyi tepat sebelum putaran berikutnya
+-- mulai, jadi urutan yang terdengar tetap "undian -> mendarat -> undian
+-- berikutnya", cuma undian yang ketiban jadi lebih pendek dari tiga
+-- detik penuh.
+--
+-- Isinya { gen = nomor undiannya, sfx = Sound mendarat yang dipilih }.
+local hitTertunda = nil
+
+local function tuntaskanHit(p)
+	-- Sudah dituntaskan orang lain (atau ini sisa undian yang lebih
+	-- lama lagi). Membunyikannya dua kali terdengar seperti gema.
+	if hitTertunda ~= p then return end
+	hitTertunda = nil
+
+	-- Putarannya cuma dipotong kalau dia memang masih milik undian
+	-- ini. Kalau undian berikutnya sudah mulai, Sound yang sama sedang
+	-- memainkan putaran MILIK DIA -- memotongnya di sini berarti
+	-- undian yang baru berbunyi sepersekian detik lalu hening.
+	if p.gen == sfxGen and sfxAura and CFG.auraSfxRoll and sfxAura.IsPlaying then
+		sfxAura:Stop()
+	end
+
+	if p.sfx then
+		p.sfx.TimePosition = 0
+		p.sfx:Play()
+	end
+end
+
 local function bunyiAura(roll, persen, tundaS)
 	-- Mana bunyi mendarat yang dipakai undian ini.
 	--
@@ -1532,6 +1639,12 @@ local function bunyiAura(roll, persen, tundaS)
 	local function mulaiBunyi()
 		if gen ~= sfxGen then return end
 
+		-- Undian sebelumnya belum sempat mendarat -- bunyikan
+		-- hentakannya SEKARANG, sebelum putaran yang baru mulai.
+		-- Lihat hitTertunda: tanpa baris ini, panggung yang ramai
+		-- tidak pernah terdengar mendarat sama sekali.
+		if hitTertunda then tuntaskanHit(hitTertunda) end
+
 		if sfxAura then
 			sfxAura.TimePosition = 0
 			sfxAura:Play()
@@ -1552,21 +1665,20 @@ local function bunyiAura(roll, persen, tundaS)
 		-- tidak masuk akal, tapi 0 di sini berarti task ini jalan di
 		-- frame yang sama dengan Play dan putarannya tidak sempat
 		-- berbunyi.
+		local tertunda = { gen = gen, sfx = sfxMendarat }
+		hitTertunda = tertunda
+
 		task.delay(math.max(roll or 0.6, 0.05), function()
-			-- Sudah ada undian baru yang mulai? Dia yang berhak atas
-			-- kedua Sound ini sekarang; memotong atau membunyikan apa
-			-- pun di sini berarti mengganggu undian orang lain yang
-			-- sedang berjalan.
-			if gen ~= sfxGen then return end
-
-			if sfxAura and CFG.auraSfxRoll and sfxAura.IsPlaying then
-				sfxAura:Stop()
-			end
-
-			if sfxMendarat then
-				sfxMendarat.TimePosition = 0
-				sfxMendarat:Play()
-			end
+			-- TIDAK lagi dibatalkan kalau sudah ada undian baru.
+			--
+			-- Dulu baris di sini `if gen ~= sfxGen then return end`,
+			-- dan itu sumber bug-nya: undian berikutnya datang sebelum
+			-- tiga detik lewat, jadi hentakan mendaratnya dibuang. Yang
+			-- perlu dijaga bukan "siapa yang paling baru", tapi jangan
+			-- sampai satu hentakan berbunyi dua kali dan jangan sampai
+			-- putaran orang lain ikut dipotong -- dua-duanya diurus
+			-- tuntaskanHit lewat perbandingan hitTertunda dan p.gen.
+			tuntaskanHit(tertunda)
 		end)
 	end
 
@@ -1897,6 +2009,14 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 			arcRad       = math.rad(tonumber(d.arcDeg) or 0)
 			arcPutar     = tonumber(d.arcPutar) or 1
 			naikAmp      = tonumber(d.naikAmp) or 0
+			naikPutar    = tonumber(d.naikPutar) or 1
+			-- Denyut zoom. Server mengirim ketiganya cuma untuk tier
+			-- yang memang berdenyut; yang lain jatuh ke 0 di sini, dan
+			-- 0 berarti bagian denyut di gelung render dilewati sama
+			-- sekali.
+			denyutDalam  = tonumber(d.denyutDalam) or 0
+			denyutMulai  = math.clamp(tonumber(d.denyutMulai) or 0.5, 0, 0.95)
+			denyutUlang  = math.max(tonumber(d.denyutUlang) or 1, 1)
 
 			-- Dibunyikan di sini, di cabang BERBAYAR saja.
 			--
@@ -1943,6 +2063,15 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 			arcRad      = math.rad(tonumber(d.arcDeg) or 0)
 			arcPutar    = tonumber(d.arcPutar) or 1
 			naikAmp     = tonumber(d.naikAmp) or 0
+			naikPutar   = tonumber(d.naikPutar) or 1
+			-- Ikut dikembalikan ke nilai diamnya, alasannya sama dengan
+			-- zoomMaks dan arcRad di atas: denyut milik tier 3 yang
+			-- tertinggal akan membuat kedatangan GRATISAN berikutnya
+			-- ikut merapat di tengah jalan -- gerakan yang cuma boleh
+			-- dipunyai orang yang membayar 10 koin.
+			denyutDalam = tonumber(d.denyutDalam) or 0
+			denyutMulai = math.clamp(tonumber(d.denyutMulai) or 0.5, 0, 0.95)
+			denyutUlang = math.max(tonumber(d.denyutUlang) or 1, 1)
 			pandangLurus()
 
 		-- else: kedatangan biasa DI TENGAH adegan berbayar -- diabaikan.

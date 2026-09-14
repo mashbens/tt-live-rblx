@@ -17,13 +17,30 @@ koinnya, makin menonjol tempatnya.
 └── README.md
 ```
 
-Tiga proses: **server antrian** (`make server`), **ngrok** (`make tunnel`),
-**listener** (`make listener`). Roblox Studio menembak ngrok, bukan localhost —
-Studio tidak bisa memanggil 127.0.0.1.
+Tiga proses: **server antrian** (`make server`), **tunnel** (`make tunnel`),
+**listener** (`make listener`). Roblox Studio menembak
+`https://rblx.buanaglobalcipta.com`, bukan localhost — Studio tidak bisa
+memanggil 127.0.0.1.
 
 `my_sscript_lua` tidak dijalankan dari sini: isinya di-paste ke
 ServerScriptService di Roblox Studio, dan `URL` di baris atasnya diarahkan ke
-domain ngrok kamu.
+`PUBLIC_URL` di Makefile.
+
+### Tunnel (pengganti ngrok)
+
+```
+Roblox -> Cloudflare -> nginx (docker di VM)
+       -> 172.17.0.1:9000 -> ssh -R (autossh) -> laptop 127.0.0.1:8000
+```
+
+- DNS: record A `rblx` di Cloudflare, proxied. Sertifikat pakai wildcard
+  `*.buanaglobalcipta.com` yang sudah ada.
+- VM: `/root/nignx/config/conf.d/rblx.conf` (nginx) dan
+  `/etc/ssh/sshd_config.d/10-tt-rblx-tunnel.conf` (`GatewayPorts clientspecified`).
+- Laptop: butuh `autossh`, SSH key yang terdaftar di VM (login tanpa password),
+  dan baris `TUNNEL_SSH=user@ip-vm` di `.env`.
+- `make status` bilang 502 = VM hidup, tapi `make tunnel` atau `make server`
+  di laptop belum jalan.
 
 ## Alur antrian
 
@@ -53,7 +70,7 @@ Tiga proses, tiga terminal:
 
 ```bash
 python -m uvicorn main:app --port 8000            # 1. server antrian
-ngrok http --url=<domain-kamu> 8000               # 2. tunnel buat Roblox Studio
+make tunnel                                      # 2. tunnel SSH ke VM buat Roblox Studio
 python tiktok_listener.py <username_tiktok>       # 3. listener (tanpa @, akun harus live)
 ```
 
@@ -169,9 +186,10 @@ Ambangnya `TIER2_KOIN` (1), `TIER3_KOIN` (10), dan `TIER4_KOIN` (30) di `.env`.
 > | Ukuran | 1,0× | 1,0× | 1,0× | **4,0× (raksasa)** |
 > | Border | — | biru es | oranye bara | — |
 > | Aura VFX di badan | — | — | **1 dari 3, diacak** | — (polos) |
-> | Sorotan | — | 4 detik | 7 detik | 9 detik |
-> | Busur kamera | — | ±16° | ±26° | ±20° |
-> | Naik-turun kamera | — | 1,5 stud | 2,5 stud | **5 stud** |
+> | Sorotan | — | 3 detik | 5 detik | 7 detik |
+> | Busur kamera | — | ±16°, 1 sapuan | ±26°, 1,5 sapuan | ±20°, 1 sapuan |
+> | Naik-turun kamera | — | 1,5 stud, 1 gundukan | 3 stud, **2 gundukan (naik lalu turun)** | **5 stud**, 1 gundukan |
+> | Zoom | masuk→keluar | masuk→keluar | **masuk→keluar→masuk lagi (denyut)** | masuk→keluar |
 > | Membekukan panggung | — | — | — | **ya** |
 >
 > Kameranya **selalu di depan** — tidak ada tier yang memutar ke samping
@@ -206,12 +224,26 @@ muncul. Untuk siaran hasilnya juga lebih kuat: "naik podium" itu bahasa status
 yang langsung dimengerti penonton, sementara "jadi besar" cuma terbaca sebagai
 efek game.
 
-**Satu koin sudah dapat kamera.** Tier 2 disorot 5 detik (`SPOTLIGHT_MS_TIER2`),
-tier 3 mulai dari 7 detik dan bisa memanjang oleh koin. Panjang sorotan tier 2
-sengaja **datar**: kalau ikut memanjang, orang yang menumpuk gift 1 koin bisa
-menyamai lama sorotan tier 3 tanpa pernah naik podium, dan 10 koin kehilangan
-alasannya. Yang membedakan tier 3 tetap dua hal sekaligus — podium, dan sorotan
-yang bisa memanjang.
+**Satu koin sudah dapat kamera.** Tier 2 disorot 3 detik
+(`SPOTLIGHT_MS_TIER2`), tier 3 lima detik, tier 4 tujuh detik. Ketiganya
+**datar** — tidak satu pun ikut memanjang oleh koin. Kalau ikut memanjang,
+orang yang menumpuk gift 1 koin bisa menyamai lama sorotan tier 3, dan 10 koin
+kehilangan alasannya.
+
+Yang membedakan tier bukan lamanya, tapi **bentuk gerakannya**. Tier 3 satu-
+satunya yang kameranya **berdenyut**: masuk, mundur, masuk lagi, sambil menyapu
+kiri-kanan (±26°, 1,5 sapuan) dan naik lalu turun (3 stud, 2 gundukan) — keempat
+arah terpakai dan bidikannya tidak pernah lepas dari avatarnya. Tier 2 cuma
+dapat satu zoom masuk-keluar dan satu sapuan; tier 4 tidak berdenyut sama sekali
+karena merapat ke badan 4× berarti kameranya berakhir di dalam tulang keringnya.
+Semua angkanya satu tabel di `my_scrip_lua_v2`: `KAMERA_TIER`.
+
+Dua angka yang terikat ke panjang sorotan, dan keduanya dijaga
+`make test-tier`: `tunda` (kapan putaran angka aura mulai) dan `roll`
+(lamanya). Jumlah keduanya harus ≤ panjang sorotan, kalau tidak angkanya
+mendarat setelah kamera pergi — momen yang dibayar orangnya jatuh di luar
+sorotannya sendiri. Itu sebabnya tier 2 memakai `roll` 2,4 detik, bukan
+`AURA_ROLL` (3 detik) seperti yang lain.
 
 Jedanya juga dipisah: `SPOTLIGHT_GAP_TIER2_S` (7 detik) untuk tier 2,
 `SPOTLIGHT_GAP_S` (10 detik) untuk tier 3. Tier 2 datang jauh lebih sering, dan
@@ -496,10 +528,18 @@ itu tidak bisa diterima.
 
 **Sorotan tidak pernah bertabrakan.** Kalau banyak yang kirim gift sekaligus,
 `main.py` menahan entri sorotan di antrian dan menyajikan entri biasa dulu,
-sampai jedanya terlewat. Jedanya dihitung dari tier entri yang sedang **di
-depan antrian**: `SPOTLIGHT_GAP_TIER2_S` (7 detik) kalau yang di depan tier 2,
-`SPOTLIGHT_GAP_S` (10 detik) kalau tier 3. Entri yang bukan sorotan tidak
-pernah ikut tertahan.
+sampai jedanya terlewat. Syaratnya **dua**, dan yang berlaku yang paling lama:
+
+1. Jeda milik tier entri yang sedang **di depan antrian** —
+   `SPOTLIGHT_GAP_TIER2_S` (7 detik), `SPOTLIGHT_GAP_TIER3_S` (9 detik), atau
+   `SPOTLIGHT_GAP_TIER4_S` (11 detik).
+2. Sorotan yang **sedang jalan** harus sudah habis, plus `SPOTLIGHT_NAPAS_S`
+   (1,5 detik — napas sekaligus penutup selisih waktu muat avatar).
+
+Syarat kedua itu yang menutup kasus tier 4 → tier 3: jeda tier 3 (9 detik) sama
+panjang dengan sorotan tier 4, jadi dulu tier 3 masuk persis saat adegan tier 4
+belum selesai — kameranya direbut di tengah jalan dan salah satu dari keduanya
+kehilangan sorotannya. Entri yang bukan sorotan tidak pernah ikut tertahan.
 
 **Tier 2 tidak kebal reset** (`KEEP_TIER_FROM = 99`): seluruh barisan kerumunan
 dikosongkan tiap reset, jadi tier 1 tidak pernah kehilangan slot ke penyintas
@@ -583,7 +623,7 @@ Jamal Brazil Groove: 117119421748582Jamal Dance: 72213123467340
 game:GetObjects("rbxassetid://96976207749910")[1].Parent = workspace
 
 
-ngrok http --url=deluxe-sash-retired.ngrok-free.dev 8000
+make tunnel   # https://rblx.buanaglobalcipta.com
 
 129577777879366 - green aura
 12010147091 - red aura

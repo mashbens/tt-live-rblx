@@ -247,13 +247,66 @@ cek("tier tak dikenal jatuh ke tier 1, bukan nil",
 
 # Putaran angka harus selesai di dalam sorotan (tier berbayar saja --
 # tier 1 tidak punya sorotan, papannya hidup selama AURA_TIME).
-for t, ms in ((2, srv.SPOTLIGHT_MS_T2), (3, srv.SPOTLIGHT_MS_T3)):
+#
+# `roll` dibaca per tier, bukan AURA_ROLL untuk semua: tier yang
+# sorotannya pendek memakai putaran yang lebih pendek juga. Yang dijaga
+# di sini tetap satu hal yang sama -- hentakan mendaratnya tidak boleh
+# jatuh SESUDAH kameranya pergi.
+SOROTAN_MS = {2: srv.SPOTLIGHT_MS_T2, 3: srv.SPOTLIGHT_MS_T3,
+              4: srv.SPOTLIGHT_MS_T4}
+
+for t, ms in sorted(SOROTAN_MS.items()):
     k = g.kameraTier(t)
-    habis = k.tunda + AURA_ROLL
+    roll = k.roll or AURA_ROLL
+    habis = k.tunda + roll
     cek(f"tier {t}: angka mendarat sebelum sorotan habis "
-        f"({k.tunda:.1f}+{AURA_ROLL:.1f} <= {ms / 1000:.1f}s)",
+        f"({k.tunda:.1f}+{roll:.1f} <= {ms / 1000:.1f}s)",
         habis <= ms / 1000 + 1e-9,
         f"mendarat di {habis:.1f}s, sorotan cuma {ms / 1000:.1f}s")
+
+# --- DENYUT ZOOM ---
+#
+# Dua hal yang bisa salah tanpa terlihat sampai ada yang bayar 10 koin:
+#
+#   1. Denyutnya mulai SEBELUM zoom dasarnya selesai mundur. Dua
+#      gerakan yang saling berlawanan di waktu yang sama tidak terbaca
+#      sebagai dua gerakan -- yang terlihat cuma kamera yang ragu-ragu.
+#   2. Rapatannya lebih dekat daripada jarak masuk biasa (ZOOM_MASUK).
+#      Client punya DENYUT_MIN sebagai jaring terakhir, tapi jaring itu
+#      memotong gerakannya -- yang benar angkanya tidak pernah sampai ke
+#      sana.
+ZOOM_MASUK = angka("ZOOM_MASUK")
+
+for t, ms in sorted(SOROTAN_MS.items()):
+    k = g.kameraTier(t)
+    if not k.denyutDalam or k.denyutDalam <= 0:
+        continue
+
+    lama_s = ms / 1000
+    mundur_selesai = (k.tahan + k.keluar) / lama_s
+    cek(f"tier {t}: denyut mulai sesudah zoom dasarnya selesai mundur "
+        f"({mundur_selesai:.2f} <= {k.denyutMulai:.2f})",
+        k.denyutMulai >= mundur_selesai - 1e-9,
+        f"mundur baru selesai di {mundur_selesai:.2f} adegan, "
+        f"denyut sudah mulai di {k.denyutMulai:.2f}")
+
+    rapat = k.maks * (1 - k.denyutDalam)
+    cek(f"tier {t}: rapatan denyut tidak melewati jarak masuk biasa "
+        f"({rapat:.2f} >= {ZOOM_MASUK:.2f})",
+        rapat >= ZOOM_MASUK - 1e-9,
+        f"denyut membawa kamera ke {rapat:.2f} jarak, lebih dekat "
+        f"daripada ZOOM_MASUK {ZOOM_MASUK:.2f} -- dia akan dipotong "
+        f"DENYUT_MIN di client")
+
+# Gundukan naik-turun harus BULAT. sin(pi*u*n) cuma pulang ke nol di
+# u=1 kalau n bulat; yang tidak bulat meninggalkan kamera di tinggi yang
+# bukan tinggi biasa, dan kedatangan berikutnya mewarisi pergeseran itu.
+for t in (1, 2, 3, 4):
+    n = g.kameraTier(t).naikPutar or 1
+    cek(f"tier {t}: gundukan naik-turun bulat ({n})",
+        abs(n - round(n)) < 1e-9 and n >= 1,
+        f"naikPutar {n} -- adegannya berakhir di tinggi yang bukan "
+        f"tinggi biasa")
 
 # Raksasa: papannya cuma nama, jadi tidak ada yang perlu ditunggu.
 cek("tier 4 tidak menunda apa-apa (papannya cuma nama)",
@@ -370,6 +423,53 @@ cek("beku diikat ke GIANT_MIN_TIER, bukan angka sendiri",
 cek("aura VFX bukan milik tier raksasa",
     int(angka("AURA_VFX_TIER")) < int(angka("GIANT_MIN_TIER")),
     "raksasa harus polos: aura di badan sebesar itu menyaingi ukurannya")
+
+
+print("\n8. Sorotan tidak boleh bertumpuk")
+#
+# Kasus yang dulu bocor: tier 4 disorot (9 detik), tier 3 menunggu
+# jedanya sendiri (9 detik) -- lalu masuk tepat saat adegan tier 4 belum
+# selesai. Kameranya direbut di tengah jalan dan salah satu dari
+# keduanya kehilangan sorotannya, tanpa error apa pun.
+#
+# Yang menjaganya sekarang SPOTLIGHT_NAPAS_S di _ambil_entri.
+srv.queue.clear()
+srv.last_spotlight_at = None
+srv.last_spotlight_lama_s = 0.0
+
+for nama, t in (("raksasa", 4), ("aura", 3), ("gratisan", 1)):
+    srv.push(srv.PushRequest(username=nama, tier=t, koin=t * 10))
+
+cek("yang bayar paling dulu disajikan duluan",
+    (srv._ambil_entri() or {}).get("username") == "raksasa")
+cek("tier 3 ditahan, yang gratisan yang jalan",
+    (srv._ambil_entri() or {}).get("username") == "gratisan",
+    "tier 3 keluar selagi tier 4 masih disorot")
+
+# Jeda yang BERLAKU: yang lebih lama antara jeda tier 3 dan "sorotan
+# tier 4 habis + napas". Dihitung, bukan ditulis: mana dari keduanya yang
+# menang berubah tiap kali angka di .env digeser, dan tes yang menebak
+# salah satunya akan gagal karena setelan -- bukan karena bug.
+lama_t4 = srv.SPOTLIGHT_MS_T4 / 1000
+jeda_berlaku = max(srv._jeda_sorotan(3), lama_t4 + srv.SPOTLIGHT_NAPAS_S)
+
+cek(f"jeda yang berlaku menutupi seluruh sorotan tier 4 "
+    f"({jeda_berlaku:.1f}s >= {lama_t4:.1f}+{srv.SPOTLIGHT_NAPAS_S:.1f}s)",
+    jeda_berlaku >= lama_t4 + srv.SPOTLIGHT_NAPAS_S - 1e-9)
+
+# Sedetik sebelum jeda itu lewat: masih ditahan.
+srv.last_spotlight_at -= jeda_berlaku - 1.0
+cek("sebelum jedanya lewat, tier 3 masih ditahan",
+    srv._ambil_entri() is None,
+    "tier 3 masuk selagi sorotan tier 4 belum tuntas")
+
+srv.last_spotlight_at -= 1.1
+cek("sesudah jedanya lewat, tier 3 baru disorot",
+    (srv._ambil_entri() or {}).get("username") == "aura")
+
+srv.queue.clear()
+srv.last_spotlight_at = None
+srv.last_spotlight_lama_s = 0.0
 
 print()
 if gagal:

@@ -33,7 +33,7 @@
 	                             menyaingi tier berbayar.
 	  tier 2  gift >= 1 koin     PERHATIAN, dan yang paling sering.
 	                             Border biru es + cakram cahaya di
-	                             lantai. Sorotan PENDEK 4 detik: kamera
+	                             lantai. Sorotan PENDEK 3 detik: kamera
 	                             merapat, mundur sampai 75% jarak, dan
 	                             menyapu busur depan +/-16 derajat.
 	                             Sengaja pendek -- yang menentukan di
@@ -44,11 +44,14 @@
 	                             dapat efek partikel yang menempel di
 	                             badan -- satu dari tiga, DIACAK tiap
 	                             kedatangan (hijau / merah / rimuru).
-	                             Border oranye bara. Sorotan 7 detik,
-	                             busurnya lebih lebar (+/-26 derajat) dan
-	                             menyapu 1,5 kali, jadi kedua sisi
-	                             wajahnya ikut terlihat -- tetap dari
-	                             DEPAN. Lantai aura 550%.
+	                             Border oranye bara. Sorotan 5 detik
+	                             dengan kamera yang BERDENYUT: merapat,
+	                             mundur, merapat lagi, sambil menyapu
+	                             +/-26 derajat 1,5 kali dan naik lalu
+	                             turun. Keempat arah terpakai dan
+	                             bidikannya tidak pernah lepas dari
+	                             orangnya -- tetap dari DEPAN. Lantai
+	                             aura 550%.
 	  tier 4  gift >= 30 koin    UKURAN, dan CUMA itu. Raksasa 4x berdiri
 	                             di belakang barisan, tidak ikut menari,
 	                             cuma melambai. Tanpa border, tanpa
@@ -78,12 +81,15 @@
 	masuk-keluar, sapuan kiri-kanan di dalam kerucut depan, dan
 	naik-turun.
 
-	Yang membedakan tier 2 dari tier 3 lebar busurnya (16 vs 26 derajat)
-	dan berapa kali dia menyapu, plus aura yang cuma dipunyai tier 3 --
-	lihat KAMERA_TIER.
+	Yang membedakan tier 2 dari tier 3: lebar busurnya (16 vs 26
+	derajat), berapa kali dia menyapu (1 vs 1,5), naik-turunnya (satu
+	gundukan vs dua -- tier 3 naik LALU turun), dan zoom yang merapat
+	untuk kedua kalinya di paruh akhir adegan. Plus aura VFX yang cuma
+	dipunyai tier 3. Semuanya satu tabel: lihat KAMERA_TIER.
 
-	Panggung BERHENTI selama adegan tier 3: tidak ada yang di-spawn
-	sampai raksasanya selesai berdiri.
+	Panggung BERHENTI di kedatangan tier 4 (BEKU_MIN_TIER): spawnAvatar
+	dijalankan langsung di gelung utama, jadi tidak ada kedatangan baru
+	yang diambil sampai raksasanya selesai berdiri.
 
 	Ambang koin dan panjang sorotannya milik main.py (.env), bukan file
 	ini -- di sini cuma bentuk visualnya. Semuanya bisa dimatikan lewat
@@ -108,8 +114,10 @@
 	   mundur ke jarak biasa. Ini sumber gerakan utamanya sekarang:
 	   ayunan bergerak terus (melelahkan), zoom bergerak sekali per
 	   kedatangan lalu berhenti (bercerita).
-	3. ORBIT penuh selama sorotan tier 3. Tier 2 tidak mengorbit -- dia
-	   cuma ditahan dekat lebih lama.
+	3. DENYUT selama sorotan tier 3: zoom masuk, mundur, MASUK LAGI,
+	   sambil menyapu kiri-kanan dan naik-turun. Tier 2 tidak berdenyut
+	   -- dia cuma dapat satu zoom masuk-keluar dan satu sapuan.
+	   (Orbit yang dulu ada di sini sudah dibuang, lihat di bawah.)
 
 	Kameranya SELALU memandang yang terakhir datang, kecuali selama
 	adegan berbayar: di situ kedatangan gratisan tidak bisa menyeretnya
@@ -138,8 +146,8 @@
 
 	Cara pakai:
 	1. Nyalakan Allow HTTP Requests (File > Game Settings > Security)
-	2. Jalankan FastAPI + ngrok seperti biasa (make server / make tunnel)
-	3. Cek URL di bawah masih sama dengan ngrok yang jalan
+	2. Jalankan FastAPI + tunnel seperti biasa (make server / make tunnel)
+	3. Cek URL di bawah = PUBLIC_URL di Makefile
 	4. Isi PLAYLIST di bawah (asset musik + dance yang berpasangan)
 	5. Tekan Play, lalu baca satu baris [visual] di Output
 --]]
@@ -158,7 +166,7 @@ local InsertService     = game:GetService("InsertService")
 
 -- ============ PENGATURAN ============
 
-local URL           = "https://deluxe-sash-retired.ngrok-free.dev"
+local URL           = "https://rblx.buanaglobalcipta.com"
 local POLL_INTERVAL = 1
 
 -- Susunan barisan
@@ -650,13 +658,13 @@ end
 -- ramai dia datang tiap beberapa detik -- membekukan panggung untuk
 -- tiap satu koin berarti panggungnya lebih sering beku daripada jalan,
 -- dan antrian gratisan tidak pernah kebagian. Tier 2 tetap dapat border
--- dan kamera 5 detik; yang dia tidak dapat cuma hak menghentikan
+-- dan kamera 3 detik; yang dia tidak dapat cuma hak menghentikan
 -- panggung.
 local BEKU_ENABLED   = true
 -- Ikut naik 3 -> 4 bersama raksasanya.
 --
 -- Yang boleh menghentikan panggung tetap CUMA raksasa. Tier 3 sekarang
--- badan normal di barisan: adegannya 7 detik dan datang jauh lebih
+-- badan normal di barisan: adegannya 5 detik dan datang jauh lebih
 -- sering daripada 30 koin, jadi memberinya hak membekukan panggung
 -- berarti antrian gratisan berhenti berjalan sebagian besar waktu.
 -- Diikatkan ke GIANT_MIN_TIER, bukan ditulis 4 lagi.
@@ -1023,8 +1031,41 @@ local ZOOM_KELUAR_GIANT = 1.8
 --   arcPutar berapa kali dia menyapu kiri-kanan-pulang selama adegan.
 --   naikAmp seberapa jauh kamera naik lalu turun lagi selama adegan,
 --           stud. Puncaknya di tengah adegan, pulang ke nol di akhir.
+--   naikPutar berapa GUNDUKAN naik-turun itu selama adegan.
+--           1 = naik lalu pulang (satu gundukan, ini yang lama).
+--           2 = naik, pulang, TURUN di bawah tinggi biasa, pulang lagi.
+--           Selalu bilangan bulat: kalau tidak, adegannya berakhir di
+--           tinggi yang bukan tinggi biasa, dan pergeseran itu diwarisi
+--           kedatangan berikutnya.
 --   tunda   berapa lama putaran angka aura ditahan sebelum mulai,
 --           detik. Lihat penjelasan panjang di bawah tabel.
+--   roll    lama putaran angka auranya, detik. Biasanya AURA_ROLL;
+--           tier yang sorotannya pendek memakai yang lebih pendek,
+--           supaya angkanya MENDARAT sebelum kameranya pergi. Uji di
+--           test_tier.py menjaga tunda + roll <= lama sorotan.
+--
+-- --- DENYUT ZOOM (masuk, mundur, MASUK LAGI) ---
+--
+-- Zoom dasarnya cuma satu gerakan: masuk saat datang, lalu mundur.
+-- Ketiga angka di bawah menambahkan rapatan KEDUA di tengah-akhir
+-- adegan, jadi bentuknya jadi masuk -> mundur -> masuk lagi -> mundur.
+--
+--   denyutDalam  seberapa dalam rapatan itu, pecahan jarak saat itu.
+--                0 = tidak ada denyut sama sekali (tier selain 3).
+--                0.35 = merapat sampai 35% lebih dekat dari jaraknya.
+--                Batas atasnya: maks x (1 - denyutDalam) tidak boleh
+--                lebih kecil dari ZOOM_MASUK, kalau tidak rapatannya
+--                dipotong DENYUT_MIN di client. Diuji di test_tier.py.
+--   denyutMulai  kapan denyutnya mulai, pecahan lama adegan. 0.42 =
+--                sesudah zoom dasarnya selesai mundur. Menabrakkan
+--                keduanya bikin gerakannya saling membatalkan -- yang
+--                terlihat cuma kamera yang ragu-ragu.
+--   denyutUlang  berapa kali merapat di dalam jendela itu. 1 = sekali.
+--
+-- Kameranya TETAP MEMBIDIK avatarnya selama denyut: yang berubah cuma
+-- jaraknya. Tingginya ikut diskalakan bersama jarak (lihat gelung
+-- render di client), jadi sudut tunduknya tidak berubah waktu merapat
+-- -- kalau tidak, tiap rapatan ikut memotong kakinya.
 --
 -- ORBIT SUDAH TIDAK DIPAKAI, begitu juga jalur tiga sudut milik raksasa
 -- (serong kiri -> serong kanan -> belakang) yang sempat ada di sini.
@@ -1039,27 +1080,85 @@ local ZOOM_KELUAR_GIANT = 1.8
 -- samping (90 derajat). Di 26 derajat wajah dan papan auranya masih
 -- menghadap kamera sepenuhnya.
 --
--- Yang membedakan tier 2 dan 3 sekarang LEBAR busurnya dan berapa kali
--- dia menyapu, bukan lagi seberapa jauh dia berputar:
---   tier 2  +/-16 derajat, satu sapuan  -> tenang, cukup untuk 4 detik
---   tier 3  +/-26 derajat, 1,5 sapuan   -> jelas lebih hidup, dan
---                                          sempat memperlihatkan kedua
---                                          sisi wajahnya
+-- Yang membedakan tier 2 dan 3 sekarang BENTUK gerakannya, bukan lagi
+-- seberapa jauh dia berputar:
+--   tier 2  +/-16 derajat, satu sapuan, satu gundukan naik, zoom
+--           masuk-keluar sekali -> tenang, cukup untuk 3 detik
+--   tier 3  +/-26 derajat, 1,5 sapuan, DUA gundukan (naik lalu turun),
+--           dan zoom yang MASUK LAGI di paruh kedua -> keempat arah
+--           terpakai (kiri, kanan, atas, bawah) plus satu rapatan
+--           kedua, dan itu yang membuat 10 koin terasa beda dari 1 koin
+--           tanpa perlu satu detik pun lebih lama
 local KAMERA_TIER = {
 	-- Tier 1 tidak punya adegan: dia cuma dapat zoom masuk-keluar biasa
 	-- dan mundur sampai jarak penuh. Busurnya 0 -- ayunan panggung yang
 	-- biasa sudah menggerakkan gambarnya.
 	[1] = { tahan = 1.0, keluar = ZOOM_KELUAR,       maks = 1.00,
-	        arcDeg = 0,  arcPutar = 0,   naikAmp = 0,   tunda = 1.2 },
-	-- tunda 0,9 dan bukan 1,2: sorotan tier 2 cuma 4,0 detik, dan
-	-- putaran angkanya makan AURA_ROLL (3,0 detik). 1,2 + 3,0 = 4,2
-	-- berarti angkanya MENDARAT SETELAH kamera pergi -- momen yang
-	-- dibayar orangnya jatuh di luar sorotannya sendiri. 0,9 + 3,0 =
-	-- 3,9 masih masuk. Dijaga uji di test_tier.py.
+	        arcDeg = 0,  arcPutar = 0,   naikAmp = 0,   naikPutar = 1,
+	        tunda = 1.2, roll = AURA_ROLL,
+	        denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
+
+	-- Sorotan tier 2 cuma 3,0 detik sekarang, dan itu yang memaksa DUA
+	-- angka di baris ini, bukan selera:
+	--
+	--   tunda 0,5  papan auranya baru masuk frame sesudah kamera mulai
+	--              mundur (tahan 0,5 + keluar 1,5). Lebih pendek dari
+	--              ini dan putarannya jalan selagi papannya masih di
+	--              luar frame atas.
+	--   roll 2,4   0,5 + 2,4 = 2,9 -- angkanya mendarat 0,1 detik
+	--              sebelum kameranya pergi. Dengan AURA_ROLL penuh (3,0)
+	--              jumlahnya 3,5 dan hentakan mendaratnya jatuh DI LUAR
+	--              sorotannya sendiri: momen yang dibayar orangnya
+	--              terjadi waktu kamera sudah pindah. Dijaga uji di
+	--              test_tier.py.
 	[2] = { tahan = 0.5, keluar = 1.5,               maks = 0.75,
-	        arcDeg = 16, arcPutar = 1.0, naikAmp = 1.5, tunda = 0.9 },
-	[3] = { tahan = 0.8, keluar = 2.0,               maks = 0.70,
-	        arcDeg = 26, arcPutar = 1.5, naikAmp = 2.5, tunda = 1.8 },
+	        arcDeg = 16, arcPutar = 1.0, naikAmp = 1.5, naikPutar = 1,
+	        tunda = 0.5, roll = 2.4,
+	        denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
+
+	-- Tier 3: SATU-SATUNYA yang kameranya berdenyut.
+	--
+	-- Urutan yang terjadi dalam 5 detik, dan kenapa angkanya begitu:
+	--
+	--   0,0 - 0,6  menahan dekat (tahan)
+	--   0,6 - 2,0  mundur sampai 70% jarak (keluar 1,4)
+	--   2,1 - 5,0  DENYUT: merapat 35% lagi, puncaknya di ~3,5 detik,
+	--              lalu mundur kembali (denyutMulai 0.42 x 5,0 = 2,1)
+	--
+	-- Kenapa 35% dan bukan 40%: 0,70 x (1 - 0,35) = 0,455, tepat di
+	-- luar ZOOM_MASUK (0,45). Jadi rapatan keduanya sedekat waktu dia
+	-- DATANG, tidak pernah lebih. Di 40% angkanya jadi 0,42 -- lebih
+	-- dekat daripada jarak masuk, dan client memotongnya di DENYUT_MIN;
+	-- yang terlihat gerakan yang berhenti mendadak di tengah rapatan.
+	-- Dijaga uji di test_tier.py.
+	--
+	-- Bersamaan dengan itu, sepanjang adegan:
+	--   kiri-kanan  busur +/-26 derajat, 1,5 sapuan -- kanan, kiri,
+	--               pulang ke depan
+	--   atas-bawah  naikAmp 3,0 dengan naikPutar 2 -- naik di paruh
+	--               pertama, TURUN di paruh kedua, pulang ke tinggi
+	--               biasa di akhir
+	--
+	-- Turunnya sengaja jatuh bersamaan dengan rapatan kedua: kamera
+	-- rendah dan dekat berarti memandang orangnya dari sedikit bawah,
+	-- dan itu sudut yang membuat badan biasa terlihat paling besar.
+	-- Keempat arah terpakai, dan bidikannya tidak pernah lepas dari
+	-- avatarnya.
+	--
+	-- denyutMulai 0,42 dan bukan lebih kecil: zoom dasarnya baru
+	-- selesai mundur di detik 2,0 (u = 0,40). Denyut yang mulai
+	-- sebelum itu mendorong ke arah yang berlawanan dengan mundurnya,
+	-- dan yang terlihat cuma kamera yang ragu-ragu -- bukan dua
+	-- gerakan.
+	--
+	-- tunda 1,8 + roll 3,0 = 4,8: angkanya mendarat di detik 4,8, waktu
+	-- denyutnya sudah hampir pulang ke jarak penuh -- jadi papan auranya
+	-- ada di dalam frame tepat pada detik yang paling ditonton.
+	[3] = { tahan = 0.6, keluar = 1.4,               maks = 0.70,
+	        arcDeg = 26, arcPutar = 1.5, naikAmp = 3.0, naikPutar = 2,
+	        tunda = 1.8, roll = AURA_ROLL,
+	        denyutDalam = 0.35, denyutMulai = 0.42, denyutUlang = 1 },
+
 	-- Raksasa mundur sampai JARAK PENUH walau yang lain tidak: badan 4x
 	-- tidak muat di 70%, dan yang dia jual justru ukurannya.
 	--
@@ -1067,8 +1166,16 @@ local KAMERA_TIER = {
 	-- akal untuk dia: badan setinggi empat orang dibaca dari kaki ke
 	-- kepala, jadi kamera yang naik-turun memperlihatkan ukurannya jauh
 	-- lebih baik daripada kamera yang bergeser ke samping.
+	--
+	-- TANPA denyut, dan itu disengaja. Merapat ke badan 4x berarti
+	-- kameranya berakhir di dalam tulang keringnya: yang terlihat bukan
+	-- "dekat", tapi satu bidang warna. Yang menjual tier 4 ukurannya,
+	-- dan ukuran cuma terbaca dari jarak yang cukup untuk memuat
+	-- seluruh badannya.
 	[4] = { tahan = 0.8, keluar = ZOOM_KELUAR_GIANT, maks = 1.00,
-	        arcDeg = 20, arcPutar = 1.0, naikAmp = 5.0, tunda = 0 },
+	        arcDeg = 20, arcPutar = 1.0, naikAmp = 5.0, naikPutar = 1,
+	        tunda = 0,   roll = AURA_ROLL,
+	        denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
 }
 
 -- KENAPA putaran angka aura DITUNDA.
@@ -1122,7 +1229,7 @@ local SPAWN_LURUS = true
 --
 -- BATAS WAKTUNYA SENGAJA PENDEK. Ini pertukaran langsung: makin lama
 -- menunggu makin kecil peluang masih ada yang belum siap, tapi
--- avatarnya juga makin telat muncul -- dan sorotan tier 2 cuma 4 detik.
+-- avatarnya juga makin telat muncul -- dan sorotan tier 2 cuma 3 detik.
 -- 0,6 detik menangkap sebagian besar aset yang sudah ada di cache atau
 -- dekat, tanpa memakan porsi sorotan yang terasa.
 --
@@ -1939,7 +2046,11 @@ local function tampilkanAura(model, nama, persen, slot, tier)
 		nama   = nama,
 		persen = persen,
 		lama   = AURA_TIME,
-		roll   = AURA_ROLL,
+		-- Per tier, bukan AURA_ROLL untuk semua: tier yang sorotannya
+		-- pendek (tier 2, 3 detik) butuh putaran yang lebih pendek juga,
+		-- kalau tidak angkanya mendarat setelah kameranya pergi. Lihat
+		-- `roll` di KAMERA_TIER.
+		roll   = kameraTier(tier).roll or AURA_ROLL,
 		-- Berapa lama putaran angkanya ditahan sebelum mulai. Papannya
 		-- sendiri muncul langsung; yang ditunda cuma hitungannya, supaya
 		-- tidak berputar selagi papannya masih di luar frame atas.
@@ -2063,7 +2174,7 @@ local function pasangBorder(model, slot, tier, kakiY, skala)
 		--
 		-- Tapi akibatnya: SEMUA border tembus badan sepanjang waktu.
 		-- Waktu tier 3 disorot, garis-garis milik barisan di depannya
-		-- ikut menumpuk di frame -- persis di tujuh detik yang paling
+		-- ikut menumpuk di frame -- persis di lima detik yang paling
 		-- ditonton, dan justru mengotori adegan orang yang baru bayar.
 		--
 		-- Jadi hak "tembus badan" dipindah: bukan milik semua border
@@ -2182,6 +2293,16 @@ local function fokusKamera(pos, lamaS, orbit, jauh, k, tier)
 		arcDeg     = (k.arcDeg and k.arcDeg > 0) and k.arcDeg or nil,
 		arcPutar   = k.arcPutar,
 		naikAmp    = (k.naikAmp and k.naikAmp ~= 0) and k.naikAmp or nil,
+		-- Berapa gundukan naik-turunnya. nil untuk yang cuma satu
+		-- (client jatuh ke 1), jadi pesan tier lain tidak ikut membesar.
+		naikPutar  = (k.naikPutar and k.naikPutar > 1) and k.naikPutar or nil,
+		-- Denyut zoom: masuk lagi di paruh kedua adegan. Cuma tier 3
+		-- yang punya, jadi ketiganya nil untuk yang lain -- dan client
+		-- yang membaca nil TIDAK berdenyut sama sekali.
+		denyutDalam = (k.denyutDalam and k.denyutDalam > 0)
+			and k.denyutDalam or nil,
+		denyutMulai = k.denyutMulai,
+		denyutUlang = k.denyutUlang,
 	})
 end
 
@@ -3047,12 +3168,20 @@ if TIER_ENABLED then
 	for _, t in ipairs({ 2, 3, 4 }) do
 		local k = kameraTier(t)
 		print(("Kamera tier %d: tahan %.1fs, mundur %.1fs sampai %d%% jarak, " ..
-			"busur depan %s, naik-turun %.1f stud, tunda angka %.1fs")
+			"busur depan %s, naik-turun %.1f stud x%d gundukan, %s, " ..
+			"angka %.1fs ditunda %.1fs")
 			:format(t, k.tahan, k.keluar, math.floor(k.maks * 100 + 0.5),
 				(k.arcDeg and k.arcDeg > 0)
 					and ("+/-%d derajat x%.1f sapuan"):format(k.arcDeg, k.arcPutar)
 					or "tidak menyapu",
-				k.naikAmp or 0,
+				k.naikAmp or 0, k.naikPutar or 1,
+				(k.denyutDalam and k.denyutDalam > 0)
+					and ("denyut %d%% x%d dari %d%% adegan")
+						:format(math.floor(k.denyutDalam * 100 + 0.5),
+							k.denyutUlang or 1,
+							math.floor((k.denyutMulai or 0) * 100 + 0.5))
+					or "tanpa denyut",
+				k.roll or AURA_ROLL,
 				k.tunda))
 	end
 	print(("Aura VFX: %s, tepat tier %d, %d pilihan diacak")

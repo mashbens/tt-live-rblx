@@ -14,7 +14,26 @@
 
 PY            := ./.venv/bin/python
 PORT          ?= 8000
-NGROK_DOMAIN  ?= deluxe-sash-retired.ngrok-free.dev
+
+# Tunnel ke VM sendiri, pengganti ngrok:
+#   Roblox -> Cloudflare -> nginx (docker, VM) -> 172.17.0.1:9000 -> ssh -R -> laptop:8000
+# Tunnel sengaja diikat ke IP docker0 (172.17.0.1), bukan 0.0.0.0, supaya port
+# 9000 tidak terbuka ke internet -- cuma container nginx yang bisa menjangkaunya.
+# Config sisi VM: /root/nignx/config/conf.d/rblx.conf dan
+# /etc/ssh/sshd_config.d/10-tt-rblx-tunnel.conf (GatewayPorts clientspecified).
+# Login SSH ke VM dibaca dari .env (TUNNEL_SSH=user@ip) -- repo ini publik,
+# alamat VM tidak ditulis di sini.
+TUNNEL_SSH    ?= $(shell grep -E '^TUNNEL_SSH=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ')
+TUNNEL_BIND   ?= 172.17.0.1:9000
+PUBLIC_URL    ?= https://rblx.buanaglobalcipta.com
+
+# autossh menyambung ulang sendiri kalau wifi putus di tengah live.
+# ExitOnForwardFailure: kalau port 9000 masih dipegang sesi lama yang basi,
+# ssh keluar dan autossh mencoba lagi, bukannya jalan tanpa tunnel.
+TUNNEL_CMD := AUTOSSH_GATETIME=0 autossh -M 0 -N \
+	-o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+	-o ExitOnForwardFailure=yes -o BatchMode=yes \
+	-R $(TUNNEL_BIND):127.0.0.1:$(PORT) $(TUNNEL_SSH)
 
 # http://127.0.0.1:8000/docs#/default/push_api_push_post
 
@@ -40,7 +59,7 @@ help:
 	@echo ""
 	@echo "  JALAN (tiga terminal)"
 	@echo "    make server      server antrian di port $(PORT)"
-	@echo "    make tunnel      ngrok ke $(NGROK_DOMAIN)"
+	@echo "    make tunnel      tunnel SSH ke $(PUBLIC_URL)"
 	@echo "    make listener    baca komentar live  (TIKTOK=namaakun)"
 	@echo "                     sumber otomatis: TikFinity kalau jalan,"
 	@echo "                     kalau tidak jatuh ke EulerStream"
@@ -65,7 +84,7 @@ help:
 	@echo "  ANTRIAN"
 	@echo "    make peek        lihat isi antrian"
 	@echo "    make clear       kosongkan antrian"
-	@echo "    make status      cek server, tunnel, dan kuota inspector ngrok"
+	@echo "    make status      cek server, tunnel dari luar, dan isi antrian"
 	@echo ""
 	@echo "  LAIN"
 	@echo "    make dev         server + auto-reload (JANGAN dipakai saat live)"
@@ -91,7 +110,8 @@ dev:
 	$(PY) -m uvicorn main:app --reload --port $(PORT)
 
 tunnel:
-	ngrok http --url=$(NGROK_DOMAIN) $(PORT)
+	@echo ">> $(PUBLIC_URL) -> localhost:$(PORT). Ctrl+C memutus."
+	$(TUNNEL_CMD)
 
 listener: check-tiktok
 	$(PY) tiktok_listener.py $(TIKTOK) $(ARGS)
@@ -115,7 +135,7 @@ up: check-tiktok
 	@trap 'kill 0' EXIT INT TERM; \
 	$(PY) -m uvicorn main:app --port $(PORT) & \
 	sleep 2; \
-	ngrok http --url=$(NGROK_DOMAIN) $(PORT) --log=stdout > /dev/null 2>&1 & \
+	$(TUNNEL_CMD) & \
 	sleep 2; \
 	$(PY) tiktok_listener.py $(TIKTOK) $(ARGS); \
 	wait
@@ -199,8 +219,10 @@ clear:
 status:
 	@printf 'server antrian  : '; curl -s -m 2 $(BASE_URL)/ >/dev/null 2>&1 \
 		&& echo "hidup di $(BASE_URL)" || echo "MATI"
-	@printf 'tunnel ngrok    : '; curl -s -m 2 http://127.0.0.1:4040/api/tunnels >/dev/null 2>&1 \
-		&& echo "hidup -- inspector di http://127.0.0.1:4040" || echo "MATI"
+	@printf 'tunnel          : '; code=$$(curl -s -m 5 -o /dev/null -w '%{http_code}' $(PUBLIC_URL)/); \
+		case $$code in 2*|3*|404) echo "hidup di $(PUBLIC_URL)";; \
+		502|504) echo "MATI -- VM menyahut ($$code), tapi tunnel/server laptop tidak";; \
+		*) echo "MATI ($$code)";; esac
 	@printf 'antrian         : '; curl -s -m 2 $(BASE_URL)/api/peek 2>/dev/null \
 		| $(PY) -c "import json,sys; print(json.load(sys.stdin)['size'], 'nama menunggu')" 2>/dev/null \
 		|| echo "-"
