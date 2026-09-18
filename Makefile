@@ -1,16 +1,16 @@
 # Perintah-perintah tt-rblx. Jalankan `make` untuk daftar lengkapnya.
 #
-# Alur normal butuh TIGA terminal, satu perintah masing-masing:
-#     make server      (terminal 1)
-#     make tunnel      (terminal 2)
-#     make listener    (terminal 3)
+# Server antrian jalan terus di VM (`make deploy`, container tt-rblx), jadi
+# saat live cukup SATU terminal di laptop:
+#     make listener
 #
 # `make listener` memilih sumbernya sendiri: TikFinity Desktop kalau
 # aplikasinya jalan, kalau tidak baru lewat EulerStream. Paksa salah satu
 # dengan `make listener ARGS=--source=tikfinity` atau `ARGS=--source=euler`.
 #
-# `make up` menjalankan ketiganya sekaligus di satu terminal -- praktis, tapi
-# log ketiganya bercampur. Buat live beneran, tiga terminal lebih enak dibaca.
+# Cadangan kalau VM bermasalah: `make server` + `make tunnel` di laptop (lihat
+# README, "Cadangan: server di laptop lewat tunnel"). `make up` menjalankan
+# jalur cadangan itu sekaligus di satu terminal.
 
 PY            := ./.venv/bin/python
 PORT          ?= 8000
@@ -46,13 +46,24 @@ TUNNEL_CMD := AUTOSSH_GATETIME=0 autossh -M 0 -N \
 # TikTok bernama "bens".
 TIKTOK ?= $(shell grep -E '^TIKTOK_USERNAME=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ')
 
-BASE_URL := http://127.0.0.1:$(PORT)
+# Server antrian yang dipakai peek/clear/status. Kalau .env berisi PUSH_URL
+# (server di VM), ke sana; kalau tidak, ke `make server` di laptop.
+PUSH_URL_ENV := $(shell grep -E '^PUSH_URL=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ')
+BASE_URL     ?= $(if $(PUSH_URL_ENV),$(PUSH_URL_ENV:/api/push=),http://127.0.0.1:$(PORT))
+API_TOKEN    ?= $(shell grep -E '^API_TOKEN=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ')
+
+# Server di VM (`make deploy`). Login SSH-nya sama dengan tunnel.
+VM_SSH ?= $(TUNNEL_SSH)
+VM_DIR ?= /root/tt-rblx
+# Kunci .env yang dibaca main.py. Cuma ini yang dikirim ke VM -- kunci
+# EulerStream, login VM, dan setelan listener tetap di laptop.
+VM_ENV_KEYS := ^(TIER[0-9]_(SCALE|KOIN)|SPOTLIGHT_[A-Z0-9_]+|QUEUE_MAX|API_TOKEN)=
 
 # Rojo dipasang lewat Aftman (aftman.toml). Pakai shim-nya langsung supaya
 # jalan juga di shell yang belum memuat ~/.aftman/env.
 ROJO      ?= $(HOME)/.aftman/bin/rojo
 
-.PHONY: help install server dev tunnel listener listener-tf watch watch-tf up mock mock-tier2 mock-tier3 mock-tier4 mock-tier5 selftest test test-tier test-sync lint rojo rojo-build peek clear status clean
+.PHONY: help install server dev tunnel listener listener-tf watch watch-tf up mock mock-tier2 mock-tier3 mock-tier4 mock-tier5 selftest test test-tier test-sync lint rojo rojo-build peek clear status clean deploy vm-logs
 
 help:
 	@echo ""
@@ -94,6 +105,10 @@ help:
 	@echo "    make peek        lihat isi antrian"
 	@echo "    make clear       kosongkan antrian"
 	@echo "    make status      cek server, tunnel dari luar, dan isi antrian"
+	@echo ""
+	@echo "  VM"
+	@echo "    make deploy      kirim server + setelan .env ke VM, build, jalankan"
+	@echo "    make vm-logs     log server antrian di VM (Ctrl+C keluar)"
 	@echo ""
 	@echo "  LAIN"
 	@echo "    make dev         server + auto-reload (JANGAN dipakai saat live)"
@@ -241,7 +256,7 @@ peek:
 	@echo ""
 
 clear:
-	@curl -s -X DELETE $(BASE_URL)/api/clear || echo "server antrian tidak menyahut"
+	@curl -s -X DELETE -H "X-Token: $(API_TOKEN)" $(BASE_URL)/api/clear || echo "server antrian tidak menyahut"
 	@echo ""
 
 status:
@@ -254,6 +269,27 @@ status:
 	@printf 'antrian         : '; curl -s -m 2 $(BASE_URL)/api/peek 2>/dev/null \
 		| $(PY) -c "import json,sys; print(json.load(sys.stdin)['size'], 'nama menunggu')" 2>/dev/null \
 		|| echo "-"
+
+# ------------------------------------------------------------------------- vm
+
+# Server antrian di VM: Roblox -> Cloudflare -> nginx -> container tt-rblx.
+# Tidak butuh laptop menyala; listener di laptop mengirim ke PUSH_URL.
+#
+# .env VM ditulis ulang tiap deploy dari .env laptop (disaring VM_ENV_KEYS),
+# jadi mengubah setelan tier/sorotan = ubah .env di sini lalu `make deploy`.
+# Antrian ikut kosong tiap deploy (dia cuma di memori) -- jangan saat live.
+deploy:
+	@test -n "$(VM_SSH)" || { echo "TUNNEL_SSH belum diisi di .env"; exit 1; }
+	@test -n "$(API_TOKEN)" || { echo "API_TOKEN belum diisi di .env -- server di VM terbuka ke internet"; exit 1; }
+	ssh $(VM_SSH) 'mkdir -p $(VM_DIR)/deploy'
+	grep -E '$(VM_ENV_KEYS)' .env | ssh $(VM_SSH) 'umask 077; cat > $(VM_DIR)/.env'
+	tar czf - Dockerfile .dockerignore main.py roblox_ssl.py deploy/docker-compose.yml \
+		| ssh $(VM_SSH) 'tar xzf - -C $(VM_DIR) && cd $(VM_DIR) && docker compose -f deploy/docker-compose.yml up -d --build'
+	@echo ""
+	@code=$$(curl -s -m 10 -o /dev/null -w '%{http_code}' $(PUBLIC_URL)/); echo "$(PUBLIC_URL) -> $$code"
+
+vm-logs:
+	ssh -t $(VM_SSH) 'docker logs -f --tail 100 tt-rblx'
 
 # ------------------------------------------------------------------------ lain
 

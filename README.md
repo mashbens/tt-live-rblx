@@ -24,8 +24,8 @@ koinnya, makin menonjol tempatnya.
 └── README.md
 ```
 
-Tiga proses: **server antrian** (`make server`), **tunnel** (`make tunnel`),
-**listener** (`make listener`). Roblox Studio menembak
+Server antrian jalan **di VM** (container Docker), listener jalan **di
+laptop** (`make listener`). Roblox Studio menembak
 `https://rblx.buanaglobalcipta.com`, bukan localhost — Studio tidak bisa
 memanggil 127.0.0.1.
 
@@ -33,21 +33,36 @@ Skrip Studio di `src/` tidak di-paste lagi: `make rojo`, lalu di Studio
 Plugins > Rojo > Connect -- tiap kali file di `src/` disimpan, Studio ikut
 berubah. `URL` di atas `AvatarQueueV2` diarahkan ke `PUBLIC_URL` di Makefile.
 
-### Tunnel (pengganti ngrok)
+### Server di VM
 
 ```
-Roblox -> Cloudflare -> nginx (docker di VM)
-       -> 172.17.0.1:9000 -> ssh -R (autossh) -> laptop 127.0.0.1:8000
+Roblox  -> Cloudflare -> nginx (docker, VM) -> container tt-rblx:8000
+laptop (make listener) -> PUSH_URL (subdomain yang sama) -> container tt-rblx
 ```
 
-- DNS: record A `rblx` di Cloudflare, proxied. Sertifikat pakai wildcard
-  `*.buanaglobalcipta.com` yang sudah ada.
-- VM: `/root/nignx/config/conf.d/rblx.conf` (nginx) dan
-  `/etc/ssh/sshd_config.d/10-tt-rblx-tunnel.conf` (`GatewayPorts clientspecified`).
-- Laptop: butuh `autossh`, SSH key yang terdaftar di VM (login tanpa password),
-  dan baris `TUNNEL_SSH=user@ip-vm` di `.env`.
-- `make status` bilang 502 = VM hidup, tapi `make tunnel` atau `make server`
-  di laptop belum jalan.
+- `make deploy` mengirim `main.py` + Dockerfile ke `/root/tt-rblx` di VM,
+  build, dan menjalankan container `tt-rblx` di network `nignx_app_net`
+  (tidak ada port yang dibuka ke internet). Setelan server (`TIER*`,
+  `SPOTLIGHT_*`, `QUEUE_MAX`, `API_TOKEN`) disaring dari `.env` laptop dan
+  ditulis ulang di VM tiap deploy -- ubah angka di sini, lalu `make deploy`.
+  **Antrian ikut kosong tiap deploy**, jadi jangan saat live.
+- `make vm-logs` menampilkan log server-nya.
+- `API_TOKEN` di `.env`: kunci untuk `/api/push`, `/api/clear`, `/api/cache`
+  (header `X-Token`). Listener, `make mock`, dan `make clear` mengirimnya
+  sendiri. `/api/next` dan `/api/settings` sengaja tanpa kunci -- Roblox
+  cuma membaca.
+- VM: `/root/nignx/config/conf.d/rblx.conf` (nginx). Versi lama yang
+  menunjuk tunnel disimpan di `/root/nignx/rblx.conf.tunnel.bak`.
+- Laptop: SSH key yang terdaftar di VM dan baris `TUNNEL_SSH=user@ip-vm`
+  di `.env` (dipakai `make deploy`).
+
+### Cadangan: server di laptop lewat tunnel
+
+Cara lama, kalau VM bermasalah: kembalikan `rblx.conf.tunnel.bak` di VM,
+`PUSH_URL=http://127.0.0.1:8000/api/push` di `.env`, lalu `make server` +
+`make tunnel` (`ssh -R` ke `172.17.0.1:9000`, butuh `autossh` dan
+`GatewayPorts clientspecified` di
+`/etc/ssh/sshd_config.d/10-tt-rblx-tunnel.conf`).
 
 ## Alur antrian
 
@@ -65,7 +80,8 @@ Isi `.env` (sudah ada di `.gitignore`, jangan di-commit):
 
 ```
 EULERSTREAM_API_KEY=euler_...        # daftar gratis di https://www.eulerstream.com
-PUSH_URL=http://127.0.0.1:8000/api/push
+PUSH_URL=https://rblx.buanaglobalcipta.com/api/push
+API_TOKEN=...                        # sama dengan yang dikirim `make deploy` ke VM
 ```
 
 Tanpa `EULERSTREAM_API_KEY` koneksi masih bisa jalan, tapi gampang kena
@@ -73,19 +89,17 @@ rate-limit diam-diam justru saat live sedang ramai.
 
 ### Menjalankan
 
-Tiga proses, tiga terminal:
+Server antrian sudah jalan terus di VM, jadi di laptop cukup satu terminal:
 
 ```bash
-python -m uvicorn main:app --port 8000            # 1. server antrian
-make tunnel                                      # 2. tunnel SSH ke VM buat Roblox Studio
-python tiktok_listener.py <username_tiktok>       # 3. listener (tanpa @, akun harus live)
+make listener                                    # listener (akun harus live)
 ```
 
 Uji tanpa perlu ada yang siaran:
 
 ```bash
 python tiktok_listener.py --self-test "builderman" "halo bang" "@Roblox"
-curl localhost:8000/api/peek
+make peek
 ```
 
 `--dry-run` memproses komentar sungguhan tapi tidak mengirim ke antrian.

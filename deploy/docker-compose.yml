@@ -1,0 +1,17 @@
+# Dijalankan di VM oleh `make deploy`, dari folder /root/tt-rblx.
+#
+# Ikut network milik nginx (nignx_app_net) supaya nginx memanggilnya
+# dengan nama container -- tidak ada port yang dibuka ke internet.
+services:
+  tt-rblx:
+    build: ..
+    container_name: tt-rblx
+    restart: unless-stopped
+    # .env di VM berisi setelan server saja (tier, sorotan, QUEUE_MAX,
+    # API_TOKEN) -- disaring `make deploy` dari .env laptop.
+    env_file: ../.env
+    networks: [nignx_app_net]
+
+networks:
+  nignx_app_net:
+    external: true

@@ -63,6 +63,11 @@ def _env_float(name: str, default: float) -> float:
 # Ke mana username dikirim. Ini server antrian (main.py), bukan server viewer.
 PUSH_URL = os.environ.get("PUSH_URL", "http://127.0.0.1:8000/api/push")
 
+# Harus sama dengan API_TOKEN di .env server (VM). Dikirim cuma ke PUSH_URL,
+# tidak dipasang di header bawaan client: client yang sama juga memanggil
+# users.roblox.com, dan kunci ini tidak ada urusannya di sana.
+API_TOKEN = os.environ.get("API_TOKEN", "")
+
 # Jeda minimal antar-summon untuk SATU penonton yang sama. Tanpa ini, satu orang
 # bisa mengisi seluruh antrian sendirian.
 USER_COOLDOWN_S = _env_float("USER_COOLDOWN_S", 45.0)
@@ -900,7 +905,7 @@ class Pipeline:
                 # Dipotong: nickname TikTok bisa panjang sekali dan berisi emoji;
                 # ini cuma buat ditampilkan "dipanggil oleh ..." di Roblox.
                 "tiktokUser": nickname[:40],
-            })
+            }, headers={"X-Token": API_TOKEN} if API_TOKEN else None)
             r.raise_for_status()
             data = r.json()
         except Exception as e:

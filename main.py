@@ -15,12 +15,13 @@ Perubahan dari versi sebelumnya:
 """
 
 import os
+import secrets
 import time
 from collections import deque
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -42,6 +43,22 @@ load_dotenv()
 _SSL_CONTEXT = _make_ssl_context()
 
 app = FastAPI(title="Roblox Avatar Queue Server")
+
+# Kunci untuk endpoint yang MENGUBAH antrian (/api/push, /api/clear,
+# /api/cache). Server ini dibuka ke internet lewat subdomain publik, dan
+# tanpa kunci siapa pun yang tahu alamatnya bisa menjejalkan nama ke
+# panggung atau mengosongkan antrian di tengah live.
+#
+# Kosong = tanpa kunci, untuk `make server` di laptop. Di VM wajib diisi,
+# dan listener di laptop mengirim nilai yang sama lewat header X-Token.
+# /api/next dan /api/settings sengaja tidak dikunci: Roblox cuma membaca,
+# dan HttpService Studio tidak perlu tahu rahasia apa pun.
+API_TOKEN = os.environ.get("API_TOKEN", "")
+
+
+def cek_token(x_token: str = Header(default="")) -> None:
+    if API_TOKEN and not secrets.compare_digest(x_token, API_TOKEN):
+        raise HTTPException(status_code=401, detail="token salah")
 
 app.add_middleware(
     CORSMiddleware,
@@ -452,7 +469,7 @@ def health():
     return {"test": "ok"}
 
 
-@app.post("/api/push")
+@app.post("/api/push", dependencies=[Depends(cek_token)])
 def push(req: PushRequest):
     """Masukkan username ke antrian. Nanti dipanggil listener TikTok."""
     name = req.username.strip()
@@ -663,7 +680,7 @@ def peek():
     }
 
 
-@app.delete("/api/clear")
+@app.delete("/api/clear", dependencies=[Depends(cek_token)])
 def clear():
     """Kosongkan antrian. Debugging saja."""
     n = len(queue)
@@ -671,7 +688,7 @@ def clear():
     return {"ok": True, "cleared": n}
 
 
-@app.delete("/api/cache")
+@app.delete("/api/cache", dependencies=[Depends(cek_token)])
 def clear_cache():
     """Kosongkan cache displayName. Berguna kalau ada yang ganti nama."""
     n = len(display_cache)
