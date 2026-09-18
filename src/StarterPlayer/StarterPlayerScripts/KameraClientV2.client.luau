@@ -3446,11 +3446,20 @@ end
 -- WaitForChild tanpa batas di task sendiri: server versi lama tidak
 -- membuat foldernya, dan menunggu selamanya di task terpisah tidak
 -- menahan apa pun.
+--
+-- Begitu unduhannya selesai, server diberi tahu lewat AvatarPramuatSiap:
+-- dia menahan avatarnya sampai semua pemain melapor (paling lama
+-- SPAWN_PRAMUAT_S), jadi yang koneksinya bagus tidak menunggu sia-sia
+-- dan yang lambat tidak disodori avatar bolong. Dilapor juga kalau
+-- PreloadAsync gagal -- aset yang rusak tidak akan siap berapa lama pun
+-- ditunggu.
 task.spawn(function()
 	local folder = ReplicatedStorage:WaitForChild("AvatarPramuat")
+	local siap   = ReplicatedStorage:WaitForChild("AvatarPramuatSiap")
 	local function pramuat(m)
 		task.spawn(function()
 			pcall(function() ContentProvider:PreloadAsync({ m }) end)
+			if m.Parent == folder then siap:FireServer(m) end
 		end)
 	end
 	for _, m in ipairs(folder:GetChildren()) do pramuat(m) end

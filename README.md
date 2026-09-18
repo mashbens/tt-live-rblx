@@ -537,12 +537,18 @@ unduhan itu baru mulai saat modelnya sampai. Client menahan avatar paling lama
 dan muncul bolong.
 
 Sekarang server **mempra-muat**: model dikirim dulu ke
-`ReplicatedStorage.AvatarPramuat` selama `SPAWN_PRAMUAT_S` (1,5 detik) — client
-mulai mengunduh asetnya selagi dia tersembunyi — baru dipindah ke panggung.
+`ReplicatedStorage.AvatarPramuat` — client mengunduh asetnya selagi dia
+tersembunyi, lalu melapor lewat `AvatarPramuatSiap` — dan baru dipindah ke
+panggung begitu **semua pemain** sudah melapor siap, paling lama
+`SPAWN_PRAMUAT_S` (1,5 detik). Koneksi bagus: avatar yang sudah di cache nyaris
+tanpa jeda. Koneksi jelek: tetap dilepas di 1,5 detik seperti dulu, supaya penonton tidak
+menunggu avatarnya.
 Tunggunya ada SEBELUM pesan kamera, papan aura, dan jadwal gempa nova dikirim,
-jadi seluruh jadwal itu tetap sinkron dengan badannya. Harganya: tiap avatar
-muncul 1,5 detik lebih lambat. Naikkan angkanya kalau live-mu masih sering
-bolong, turunkan kalau terasa lamban; `0` mematikan pra-muat.
+jadi seluruh jadwal itu tetap sinkron dengan badannya.
+
+Kalau Output sering menampilkan `[pramuat] ... belum siap sesudah 1.5 detik`,
+koneksinya memang tidak sanggup menyusul — naikkan angkanya kalau lebih suka
+menunggu, `0` mematikan pra-muat.
 
 #### Tap-tap layar: podium gratis
 

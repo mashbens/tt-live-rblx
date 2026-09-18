@@ -818,7 +818,7 @@ cek(f"dan itu memang yang memperbaikinya (dulu {lama:.0f} derajat, "
 # ada yang dimuat lebih awal -- dan jadwal kamera, papan aura, dan gempa
 # nova yang berjalan sesudahnya ikut terlambat relatif ke badannya.
 _teks = "\n".join(src)
-_i_pra = _teks.find("model.Parent = folderPramuat")
+_i_pra = _teks.find("\t\ttungguPramuat(model, username)")
 _i_ws = _teks.find("\tmodel.Parent = workspace\n")
 cek("pra-muat terjadi sebelum avatarnya masuk panggung",
     0 < _i_pra < _i_ws,
@@ -826,8 +826,20 @@ cek("pra-muat terjadi sebelum avatarnya masuk panggung",
 _klien = io.open("src/StarterPlayer/StarterPlayerScripts/KameraClientV2.client.luau", encoding="utf-8").read()
 cek("client ikut mengunduh aset avatar yang sedang dipra-muat",
     'WaitForChild("AvatarPramuat")' in _klien
-    and 'FindFirstChild("AvatarPramuat")' in _teks,
+    and 'FindFirstChild("AvatarPramuat")' in _teks
+    and "model.Parent = folder\n" in _teks,
     "server menunggu, tapi tidak ada client yang memanfaatkan tunggunya")
+cek("server menunggu laporan siap dari client, bukan jeda tetap",
+    "tungguPramuat(model, username)" in _teks
+    and "remote.OnServerEvent" in _teks
+    and "task.wait(SPAWN_PRAMUAT_S)" not in _teks,
+    "tunggunya kembali jadi angka tetap: koneksi bagus menunggu sia-sia, "
+    "koneksi jelek tetap dapat avatar bolong")
+cek("client melapor ke server begitu asetnya terunduh",
+    'WaitForChild("AvatarPramuatSiap")' in _klien
+    and "siap:FireServer(m)" in _klien,
+    "server menunggu laporan yang tidak pernah dikirim -- tiap avatar "
+    "tertahan penuh SPAWN_PRAMUAT_S")
 
 
 print("\n7b. Nova: tepat satu tier, dan semua sisi sepakat tier yang mana")

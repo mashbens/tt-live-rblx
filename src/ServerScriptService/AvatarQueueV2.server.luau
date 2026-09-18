@@ -1891,6 +1891,26 @@ local SPAWN_SIAP_MAKS = 0.6
 --
 -- ReplicatedStorage direplikasi utuh ke semua client, streaming menyala
 -- atau tidak. 0 = matikan pra-muat.
+--
+-- SEKARANG ANGKA INI BATAS, BUKAN LAMA TUNGGU. Dulu server menunggu
+-- persis 1,5 detik, cepat atau lambat koneksinya: di koneksi bagus itu
+-- 1,5 detik terbuang, di koneksi jelek itu tidak cukup dan avatarnya
+-- tetap muncul bolong. Sekarang tiap client melapor lewat
+-- AvatarPramuatSiap begitu PreloadAsync-nya selesai, dan avatarnya
+-- masuk panggung SEGERA sesudah semua pemain di server melapor --
+-- avatar yang sudah ada di cache nyaris tanpa jeda, yang berat ditunggu
+-- sampai lengkap.
+--
+-- Batasnya tetap perlu: satu aset yang gagal diunduh membuat
+-- PreloadAsync lama sekali kembali, dan avatar yang tidak pernah muncul
+-- jauh lebih buruk daripada rambut yang telat. Yang kena batas dicatat
+-- di Output ("[pramuat] ... belum siap"); kalau itu sering muncul
+-- selagi live, koneksinya memang tidak sanggup, bukan angkanya.
+--
+-- Sengaja tetap 1,5 (angka lama), bukan dinaikkan: sempat dicoba 5, dan
+-- di live itu terasa terlalu lama -- penonton yang baru kirim gift
+-- menunggu avatarnya. Yang dibeli laporan client cuma MEMPERCEPAT yang
+-- sudah siap; yang belum siap tetap dilepas di 1,5 detik seperti dulu.
 local SPAWN_PRAMUAT_S = 1.5
 local SPAWN_SIAP_FADE = 0.12
 
@@ -2278,12 +2298,70 @@ local V2Config = ReplicatedStorage:FindFirstChild("V2Config")
 V2Config.Name   = "V2Config"
 V2Config.Parent = ReplicatedStorage
 
--- Tempat avatar menunggu selagi asetnya diunduh penonton. Lihat
--- SPAWN_PRAMUAT_S. Namanya dibaca client (KameraClientV2).
-local folderPramuat = ReplicatedStorage:FindFirstChild("AvatarPramuat")
-	or Instance.new("Folder")
-folderPramuat.Name   = "AvatarPramuat"
-folderPramuat.Parent = ReplicatedStorage
+-- Pra-muat: memarkir avatar di ReplicatedStorage.AvatarPramuat sampai
+-- SEMUA pemain melapor asetnya siap, atau sampai SPAWN_PRAMUAT_S habis.
+-- Semua pemain, bukan pemain pertama: yang merekam siaran belum tentu
+-- yang paling cepat.
+--
+-- SATU local di level atas, sisanya di dalam `do`. Script ini sudah
+-- menempel di batas 200 local per fungsi milik Luau -- chunk utama juga
+-- sebuah fungsi -- dan yang lewat satu saja membuat SELURUH script
+-- gagal dikompilasi ("Out of local registers"): panggung mati total,
+-- tanpa satu pun baris yang sempat jalan. Local baru di level atas
+-- harus dibayar dengan membuang yang lain, atau dibungkus seperti ini.
+local tungguPramuat
+do
+	-- Namanya dibaca client (KameraClientV2).
+	local folder = ReplicatedStorage:FindFirstChild("AvatarPramuat")
+		or Instance.new("Folder")
+	folder.Name   = "AvatarPramuat"
+	folder.Parent = ReplicatedStorage
+
+	-- Laporan "aset avatar ini sudah terunduh" dari client. Remote
+	-- tersendiri, BUKAN V2Event: V2Event sengaja tidak punya
+	-- OnServerEvent (lihat catatan nova). Yang bisa dilakukan client
+	-- lewat sini cuma memendekkan tunggu pra-muat -- paling buruk
+	-- avatarnya muncul sedikit lebih cepat, tidak pernah lebih lambat
+	-- dari SPAWN_PRAMUAT_S.
+	local remote = ReplicatedStorage:FindFirstChild("AvatarPramuatSiap")
+		or Instance.new("RemoteEvent")
+	remote.Name   = "AvatarPramuatSiap"
+	remote.Parent = ReplicatedStorage
+
+	local laporan = {}   -- model -> { [pemain] = true }
+
+	remote.OnServerEvent:Connect(function(pemain, model)
+		if typeof(model) ~= "Instance" then return end
+		local sudah = laporan[model]
+		if sudah then sudah[pemain] = true end
+	end)
+
+	tungguPramuat = function(model, username)
+		local sudah = {}
+		laporan[model] = sudah
+		model.Parent = folder
+		local mulai = os.clock()
+
+		while model.Parent == folder
+			and os.clock() - mulai < SPAWN_PRAMUAT_S do
+			local lengkap = true
+			for _, pemain in ipairs(Players:GetPlayers()) do
+				if not sudah[pemain] then lengkap = false break end
+			end
+			if lengkap then break end
+			task.wait(0.05)
+		end
+
+		laporan[model] = nil
+
+		local lama = os.clock() - mulai
+		if lama >= SPAWN_PRAMUAT_S then
+			warn(("[pramuat] %s belum siap sesudah %.1f detik -- " ..
+				"dimunculkan apa adanya, rambut/bajunya bisa menyusul")
+				:format(username, lama))
+		end
+	end
+end
 
 local avatars   = {}   -- slot -> model
 local tracks    = {}   -- slot -> AnimationTrack
@@ -3724,8 +3802,7 @@ local function spawnAvatar(entry, slot)
 
 	-- Pra-muat dulu, baru panggung. Lihat SPAWN_PRAMUAT_S.
 	if SPAWN_PRAMUAT_S > 0 then
-		model.Parent = folderPramuat
-		task.wait(SPAWN_PRAMUAT_S)
+		tungguPramuat(model, username)
 		-- Dihapus selagi menunggu (tidak ada yang melakukannya sekarang,
 		-- tapi task.wait di tengah fungsi ini membuka jendela untuk itu).
 		if not model.Parent then return end
