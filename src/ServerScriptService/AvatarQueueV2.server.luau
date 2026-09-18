@@ -2109,17 +2109,31 @@ local PLAYLIST = {
 -- menyala -- tanpa batas ini playlist berhenti selamanya di lagu itu.
 local MUSIC_MAX_S = 300
 
--- Kendali lagu dari luar Roblox (opsional, MATI secara default).
+-- Lagu diputar DI LUAR Roblox (music_player.py di laptop, masuk ke
+-- stream lewat OBS / Live Studio), Roblox cuma mengganti tariannya.
 --
--- Kalau dinyalakan, script ini ikut menanyakan URL .. "/api/music" tiap
--- polling dan menuruti jawabannya:
---     { "action": "next" }   -> lompat ke lagu berikutnya
---     { "index": 2 }         -> lompat ke lagu nomor 2 (mulai dari 1)
---     { }                    -> tidak melakukan apa-apa
+-- Kenapa di luar: lagu berlisensi yang di-upload ke Roblox kena
+-- moderasi. Kalau musiknya diputar di laptop, `musik` di PLAYLIST
+-- dibiarkan "" dan yang dipakai dari tiap baris cuma `dance`-nya.
 --
--- Endpoint-nya BELUM ADA di main.py. Biarkan false sampai dibuat;
--- dinyalakan tanpa endpoint-nya cuma menghasilkan warning tiap detik.
-local MUSIC_API = false
+-- Selama MUSIC_API menyala, playlist Roblox TIDAK maju sendiri: yang
+-- menentukan kapan lagu ganti adalah pemutar di laptop, karena cuma dia
+-- yang tahu durasi tiap lagu. Script ini membaca URL .. "/api/music":
+--     { seq, index, sisa_ms }
+-- seq naik tiap lagu dimulai (termasuk lagu yang sama diulang), index
+-- = baris PLAYLIST (mulai dari 1), sisa_ms = berapa lama lagi lagunya
+-- berbunyi. Pemutar melapor ~2 detik SEBELUM lagunya bunyi, jadi tarian
+-- bisa diganti tepat di detik yang sama, bukan telat satu polling.
+--
+-- File ke-N di folder asset/ (urut nama) = baris ke-N PLAYLIST.
+local MUSIC_API = true
+
+-- Jarak antar polling /api/music, detik. Terpisah dari POLL_INTERVAL
+-- antrian: gelung antrian bisa tertahan beberapa detik oleh adegan
+-- sorotan (BEKU), dan tarian tidak boleh ikut telat karenanya. Harus
+-- jauh di bawah JEDA_MS pemutar (2 detik) supaya kabarnya sampai
+-- sebelum lagunya bunyi.
+local POLL_MUSIK = 0.5
 
 -- HUD diagnosa kecil di pojok kiri atas layar penonton: jumlah frame,
 -- CameraType, berapa studs kamera bergeser, dan titik fokusnya. Matikan
@@ -2709,6 +2723,8 @@ end
 -- itu playlist berhenti selamanya di lagu yang rusak.
 local function startMusicLoop()
 	if not MUSIC_ENABLED or #PLAYLIST == 0 then return end
+	-- Pemutar di laptop yang memegang kendali -- lihat MUSIC_API.
+	if MUSIC_API then return end
 
 	task.spawn(function()
 		putarLagu(1)
@@ -4166,16 +4182,37 @@ local function fetchNext()
 	return nil
 end
 
-local function cekMusikApi()
-	if not MUSIC_API then return end
-	local data = ambilJson("/api/music")
-	if not data then return end
+local musikSeq = nil   -- seq terakhir yang sudah dijadwalkan
 
-	if data.action == "next" then
-		laguBerikutnya()
-	elseif type(data.index) == "number" and data.index >= 1 then
-		putarLagu(data.index)
+local function cekMusikApi()
+	local data = ambilJson("/api/music")
+	if not data or type(data.seq) ~= "number" or data.seq == musikSeq then
+		return
 	end
+	if type(data.index) ~= "number" or data.index < 1 then return end
+
+	musikSeq = data.seq
+	local seq  = data.seq
+	local sisa = (tonumber(data.sisa_ms) or 0) / 1000
+
+	-- Lagunya belum bunyi: tunggu sampai detik bunyinya. Sudah lewat
+	-- (server Roblox baru hidup di tengah lagu): ganti sekarang juga.
+	task.delay(math.max(0, sisa), function()
+		-- Keburu disusul lagu lain selama menunggu -> yang ini batal.
+		if musikSeq == seq then
+			putarLagu(data.index)
+		end
+	end)
+end
+
+local function startMusicApi()
+	if not (MUSIC_ENABLED and MUSIC_API) then return end
+	task.spawn(function()
+		while true do
+			cekMusikApi()
+			task.wait(POLL_MUSIK)
+		end
+	end)
 end
 
 -- ============ ANGKA KAMERA UNTUK CLIENT ============
@@ -4686,6 +4723,7 @@ if MUSIC_ENABLED then
 end
 
 startMusicLoop()
+startMusicApi()
 
 while true do
 	local entry = fetchNext()
@@ -4742,6 +4780,5 @@ while true do
 		end
 	end
 
-	cekMusikApi()
 	task.wait(POLL_INTERVAL)
 end

@@ -6,3 +6,6 @@ __pycache__/
 *.rbxl
 *.rbxlx.lock
 *.rbxl.lock
+
+# Lagu untuk music_player.py. Repo ini publik -- file lagu jangan ikut.
+asset/*

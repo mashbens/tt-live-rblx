@@ -699,3 +699,52 @@ def clear_cache():
     n = len(display_cache)
     display_cache.clear()
     return {"ok": True, "cleared": n}
+
+# ------------------------------------------------------------------ musik
+#
+# Lagunya diputar DI LAPTOP (music_player.py), bukan di Roblox: lagu
+# berlisensi yang di-upload ke Roblox kena moderasi. Roblox cuma perlu tahu
+# lagu nomor berapa yang sedang jalan supaya tariannya ikut ganti.
+#
+# Yang disimpan KEADAAN, bukan perintah sekali pakai. Server Roblox yang baru
+# hidup di tengah lagu langsung tahu lagu yang sedang jalan, tanpa menunggu
+# lagu berikutnya.
+#
+# Waktu mulai dicap dengan jam VM dan dikirim ke Roblox sebagai SISA waktu,
+# bukan jam dinding. Jam laptop, VM, dan server Roblox tidak pernah sama
+# persis; selisih waktu relatif tidak terpengaruh itu.
+class MusicRequest(BaseModel):
+    index: int
+    nama: str = ""
+    # Lagu baru mulai berbunyi sekian ms SESUDAH laporan ini dikirim. Jeda
+    # ini yang memberi Roblox waktu untuk polling dan bersiap, jadi harus
+    # lebih lama dari POLL_MUSIK di AvatarQueueV2 ditambah waktu tempuh.
+    mulai_dalam_ms: int = 0
+
+
+musik: dict = {"seq": 0, "index": 0, "nama": "", "mulai": 0.0}
+
+
+@app.post("/api/music", dependencies=[Depends(cek_token)])
+def set_music(req: MusicRequest):
+    """Dipanggil music_player.py tiap kali akan memulai lagu."""
+    musik["seq"] += 1
+    musik["index"] = req.index
+    musik["nama"] = req.nama
+    musik["mulai"] = time.monotonic() + max(0, req.mulai_dalam_ms) / 1000
+    return {"ok": True, "seq": musik["seq"]}
+
+
+@app.get("/api/music")
+def get_music():
+    """Dibaca Roblox. seq naik tiap lagu baru, termasuk lagu yang sama diulang."""
+    if not musik["seq"]:
+        return {}
+    return {
+        "seq": musik["seq"],
+        "index": musik["index"],
+        "nama": musik["nama"],
+        # Positif = belum mulai, tunggu segini. Negatif = sudah jalan sejak
+        # segini lalu.
+        "sisa_ms": round((musik["mulai"] - time.monotonic()) * 1000),
+    }

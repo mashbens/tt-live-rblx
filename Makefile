@@ -63,7 +63,7 @@ VM_ENV_KEYS := ^(TIER[0-9]_(SCALE|KOIN)|SPOTLIGHT_[A-Z0-9_]+|QUEUE_MAX|API_TOKEN
 # jalan juga di shell yang belum memuat ~/.aftman/env.
 ROJO      ?= $(HOME)/.aftman/bin/rojo
 
-.PHONY: help install server dev tunnel listener listener-tf watch watch-tf up mock mock-tier3 mock-tier4 mock-tier5 selftest test test-tier test-sync lint rojo rojo-build peek clear status clean deploy vm-logs
+.PHONY: help install server dev tunnel listener player listener-tf watch watch-tf up mock mock-tier3 mock-tier4 mock-tier5 selftest test test-tier test-sync lint rojo rojo-build peek clear status clean deploy vm-logs
 
 help:
 	@echo ""
@@ -78,6 +78,9 @@ help:
 	@echo "    make listener    baca komentar live  (TIKTOK=namaakun)"
 	@echo "                     sumber otomatis: TikFinity kalau jalan,"
 	@echo "                     kalau tidak jatuh ke EulerStream"
+	@echo ""
+	@echo "    make player      putar lagu asset/ di laptop, tarian Roblox ikut"
+	@echo "                     (buka http://127.0.0.1:8765, tekan Mulai)"
 	@echo ""
 	@echo "  JALAN (satu terminal)"
 	@echo "    make up          ketiganya sekaligus, Ctrl+C mematikan semua"
@@ -131,6 +134,11 @@ server:
 dev:
 	@echo ">> auto-reload aktif: antrian akan TERHAPUS tiap file berubah."
 	$(PY) -m uvicorn main:app --reload --port $(PORT)
+
+# Lagu diputar di laptop (masuk stream lewat OBS / Live Studio), tarian Roblox
+# ikut ganti lewat /api/music. Lihat docstring music_player.py.
+player:
+	$(PY) music_player.py
 
 tunnel:
 	@echo ">> $(PUBLIC_URL) -> localhost:$(PORT). Ctrl+C memutus."
