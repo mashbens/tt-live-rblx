@@ -194,12 +194,17 @@ sendiri — tidak ada yang dijumlah:
 | Tier | Gift | Yang didapat |
 |---|---|---|
 | 1 | komentar biasa | berdiri, menari |
-| 2 | **Rose** | skip lane + cakram biru, sorotan 3 s |
-| 3 | **Rosa** / 1.000 tap | AURA (VFX acak 1 dari 3) |
-| 4 | **Bouquet Flower** | UPACARA (nova) |
-| 5 | **Doughnut** | UKURAN (raksasa) |
+| 3 | **Rose** / gift lain 1–29 koin / 1.000 tap | ADEGAN SINEMATIK: garis tepi, aura VFX acak 1 dari 3, letterbox, tema warna |
+| 4 | **Rosa** / Rose ×10 dalam satu combo | UPACARA (nova) + aura VFX |
+| 5 | **Doughnut** / gift lain ≥30 koin (termasuk Bouquet Flower) | UKURAN (raksasa) |
 
-Rose lagi = spawn Rose lagi. Bouquet lagi = nova lagi, **tidak** naik ke
+**Susunannya digeser satu tingkat** dari aslinya: Rose dulu tier 2 (cakram
+biru), Rosa dulu sinematik, Bouquet Flower dulu nova. Yang digeser cuma
+pemicunya (`GIFT_TIER`, `GIFT_NAIK`, `TIER3_KOIN` di listener) — nomor tier
+dan efeknya di Lua tidak berubah, jadi Output Studio mencatat Rose sebagai
+"tier 3". Tier 2 (cakram biru) tidak dipakai gift apa pun lagi.
+
+Rose lagi = spawn Rose lagi. Rosa lagi = nova lagi, **tidak** naik ke
 raksasa. Dua gift sebelum dia ngetik username = dua spawn, berurutan, tidak ada
 yang dilewati.
 
@@ -207,15 +212,15 @@ yang dilewati.
 ditambah selama `GIFT_BOOST_TTL_S`, dan jumlah itu tidak pernah turun:
 Doughnut (30) lalu Rose (1) = 31 koin = **raksasa lagi**, padahal yang barusan
 dikirim cuma Rose. Harga juga tidak bisa lagi jadi satu-satunya penentu:
-Bouquet Flower dan Doughnut **sama-sama 30 koin**. Yang dilepas untuk ini,
+Rosa dan gift lain seharga 10 koin tidak akan bisa dibedakan. Yang dilepas untuk ini,
 sengaja: nyicil tidak dihitung lagi — Rose dikirim sepuluh kali terpisah =
 sepuluh spawn Rose, bukan satu Rosa.
 
 **Gift yang namanya tidak dikenal** jatuh ke harga satuannya, bukan ke tier 1:
-1–9 koin = tier 2, 10–29 = tier 3, ≥30 = raksasa (`TIER2_KOIN`, `TIER3_KOIN`,
-`TIER5_KOIN` di `.env`). Nova sengaja tidak punya ambang koin — cuma lewat
-Bouquet Flower. Ejaan nama bisa ditimpa lewat
-`GIFT_TIER=rose:2,rosa:3,bouquet flower:4,doughnut:5`; nama yang sebenarnya
+1–29 koin = sinematik (tier 3), ≥30 = raksasa (`TIER3_KOIN=1`, `TIER5_KOIN=30`
+di `.env`). Nova sengaja tidak punya ambang koin — cuma lewat Rosa (dan Rose
+×10). Ejaan nama bisa ditimpa lewat `GIFT_TIER=rose:3,rosa:4,doughnut:5`;
+nama yang sebenarnya
 dikirim TikTok selalu tercetak di log `[gift]`, jadi cocokkan dari situ.
 
 > **Tabel serta penjelasan podium di bagian ini menggambarkan v13.**
@@ -226,7 +231,7 @@ dikirim TikTok selalu tercetak di log `[gift]`, jadi cocokkan dari situ.
 > `AvatarQueueV2` + `KameraClientV2` + ModuleScript
 > `TierNova` (semuanya di `src/`) — memakai pembeda yang berbeda:
 >
-> | | Tier 1 | Tier 2 (Rose) | Tier 3 (Rosa / 1.000 tap) | Tier 4 (Bouquet Flower) | Tier 5 (Doughnut) |
+> | | Tier 1 | Tier 2 (tidak dipakai gift) | Tier 3 (Rose / 1.000 tap) | Tier 4 (Rosa) | Tier 5 (Doughnut) |
 > |---|---|---|---|---|---|
 > | Antrian | normal | potong ke depan | potong ke depan | potong ke depan | potong ke depan |
 > | Ukuran | 1,0× | 1,0× | 1,0× | 1,0× | **4,0× (raksasa)** |
@@ -652,23 +657,22 @@ push manual dianggap satu orang yang sama dan saling menimpa podium.
 
 | Kiriman (satu combo) | Hasil |
 |---|---|
-| Rose ×3 | 3 spawn Rose |
-| Rose ×10 | 1 Rosa |
-| Rose ×25 | 2 Rosa **dulu**, lalu 5 Rose |
-| Rosa ×3 | 3 spawn Rosa |
-| Bouquet Flower ×3 | 3 nova |
+| Rose ×3 | 3 spawn Rose (sinematik) |
+| Rose ×10 | 1 nova (setara Rosa) |
+| Rose ×25 | 2 nova **dulu**, lalu 5 Rose |
+| Rosa ×3 | 3 nova |
+| Bouquet Flower ×3 | 3 raksasa (ikut harganya, 30 koin) |
 | Doughnut ×3 | 3 raksasa (tiap yang baru menggantikan yang sebelumnya) |
 | gift tak dikenal ×3 | 3 spawn di tier harganya |
 
-- **Cuma Rose yang ditampung** 10:1 (`GIFT_NAIK=rose:10:3` di `.env`), dan
-  naiknya mentok di Rosa — Rose ×10.000 tetap Rosa, tidak pernah nova atau
-  raksasa.
+- **Cuma Rose yang ditampung** 10:1 (`GIFT_NAIK=rose:10:4` di `.env`), dan
+  naiknya mentok di nova — Rose ×10.000 tetap nova, tidak pernah raksasa.
 - **Penampungan cuma di dalam SATU combo.** Rose ×5 lalu Rose ×5 (dua combo) =
-  10 Rose, bukan Rosa. Kiriman terpisah tidak pernah dijumlah.
+  10 Rose, bukan nova. Kiriman terpisah tidak pernah dijumlah.
 - Gift streakable baru diproses sekali waktu streak-nya selesai, jadi satu
   combo = satu event dengan jumlahnya.
 - **Tidak ada batas spawn per combo** — keputusan yang disengaja. Konsekuensinya:
-  Rose ×500 = 50 Rosa yang antre satu per satu (sekitar 8 menit), dan gift
+  Rose ×500 = 50 nova yang antre satu per satu (sekitar 8 menit), dan gift
   berbayar dari penonton lain yang datang sesudahnya **menunggu di belakangnya**.
 - **Di antrian juga tidak digabung.** Tiap spawn berbayar jadi entri sendiri,
   disisipkan sesudah yang berbayar lain yang sudah menunggu, jadi yang duluan
@@ -785,8 +789,8 @@ efek cukup lewat `.env` + restart server, tanpa sinkron ulang ke Studio.
 Kembar di panggung karena itu normal, dan itu disengaja: rem terhadap spam ada
 di sisi listener (`NAME_DEDUPE_S`), bukan di Studio.
 
-Kirim Rose lalu Rosa menghasilkan **dua** spawn — tier 2, lalu tier 3. Tidak
-ada lagi yang dijumlah. Rose ×25 menghasilkan tujuh: 2 Rosa lalu 5 Rose.
+Kirim Rose lalu Rosa menghasilkan **dua** spawn — tier 3, lalu tier 4. Tidak
+ada lagi yang dijumlah. Rose ×25 menghasilkan tujuh: 2 nova lalu 5 Rose.
 
 **Yang bayar menembus semua rem**: cooldown, dedupe, dan batas antrian tidak
 berlaku untuk tier 2 ke atas. Ditolak karena "antrian penuh" setelah membayar

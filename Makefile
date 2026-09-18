@@ -63,7 +63,7 @@ VM_ENV_KEYS := ^(TIER[0-9]_(SCALE|KOIN)|SPOTLIGHT_[A-Z0-9_]+|QUEUE_MAX|API_TOKEN
 # jalan juga di shell yang belum memuat ~/.aftman/env.
 ROJO      ?= $(HOME)/.aftman/bin/rojo
 
-.PHONY: help install server dev tunnel listener listener-tf watch watch-tf up mock mock-tier2 mock-tier3 mock-tier4 mock-tier5 selftest test test-tier test-sync lint rojo rojo-build peek clear status clean deploy vm-logs
+.PHONY: help install server dev tunnel listener listener-tf watch watch-tf up mock mock-tier3 mock-tier4 mock-tier5 selftest test test-tier test-sync lint rojo rojo-build peek clear status clean deploy vm-logs
 
 help:
 	@echo ""
@@ -85,9 +85,8 @@ help:
 	@echo "  TES"
 	@echo "    make mock        19 skenario pasti (5 tier, combo, gift tak menumpuk, tap)"
 	@echo "                     lalu campuran acak mirip live"
-	@echo "    make mock-tier2  banjir Rose, menguji cakram biru tier 2"
-	@echo "    make mock-tier3  banjir Rosa, menguji aura VFX tier 3"
-	@echo "    make mock-tier4  banjir Bouquet Flower, menguji nova tier 4"
+	@echo "    make mock-tier3  banjir Rose, menguji adegan sinematik tier 3"
+	@echo "    make mock-tier4  banjir Rosa, menguji nova tier 4"
 	@echo "    make mock-tier5  banjir Doughnut, menguji raksasa tier 5"
 	@echo "    make selftest    uji saringan dengan beberapa komentar contoh"
 	@echo "    make test-tier   uji lantai aura + jatah border di AvatarQueueV2"
@@ -178,17 +177,13 @@ up: check-tiktok
 mock:
 	$(PY) mock_comments.py $(ARGS)
 
-# Rose saja (tier 2: skip lane + cakram biru). Lajunya menyesuaikan sendiri
-# ke jeda sorotan tier itu milik server (dibaca lewat /api/settings), jadi
-# tiap kedatangan benar-benar kebagian tampil dan tidak menumpuk di antrian.
-mock-tier2:
-	$(PY) mock_comments.py --tier2 $(ARGS)
-
-# Rosa saja (tier 3: aura VFX acak).
+# Rose saja (tier 3: adegan sinematik + aura VFX acak). Lajunya menyesuaikan
+# sendiri ke jeda sorotan tier itu milik server (dibaca lewat /api/settings),
+# jadi tiap kedatangan benar-benar kebagian tampil dan tidak menumpuk.
 mock-tier3:
 	$(PY) mock_comments.py --tier3 $(ARGS)
 
-# Bouquet Flower saja (tier 4: adegan nova). Butuh ModuleScript TierNova di
+# Rosa saja (tier 4: adegan nova). Butuh ModuleScript TierNova di
 # ReplicatedStorage; tanpa itu Output client mencetak [nova] dan avatarnya
 # langsung berdiri tanpa adegan.
 mock-tier4:

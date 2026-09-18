@@ -917,22 +917,22 @@ import tiktok_listener as tl
 # Bug yang terlihat di siaran: tier dihitung dari JUMLAH koin yang terus
 # ditambah, jadi Doughnut (30) lalu Rose (1) = 31 koin = raksasa lagi.
 # Sekarang tiap gift menentukan tiernya sendiri.
-cek("Rose = tier 2", tl.tier_dari_gift("Rose", 1)[0] == 2)
-cek("Rosa = tier 3 (aura)", tl.tier_dari_gift("Rosa", 10)[0] == 3)
-cek(f"Bouquet Flower = tier {NOVA_TIER} (nova)",
-    tl.tier_dari_gift("Bouquet Flower", 30)[0] == NOVA_TIER)
+# Susunan yang digeser: Rose = sinematik (3), Rosa = nova, Doughnut =
+# raksasa. Bouquet Flower tidak punya tier sendiri lagi -- ikut harganya.
+cek("Rose = tier 3 (sinematik)", tl.tier_dari_gift("Rose", 1)[0] == 3)
+cek(f"Rosa = tier {NOVA_TIER} (nova)", tl.tier_dari_gift("Rosa", 10)[0] == NOVA_TIER)
 cek(f"Doughnut = tier {GIANT_MIN} (raksasa)",
     tl.tier_dari_gift("Doughnut", 30)[0] == GIANT_MIN)
-# Harganya SAMA. Kalau tiernya ditentukan koin, salah satunya tidak akan
-# pernah tercapai -- itu persis alasan nama yang menentukan.
-cek("Bouquet dan Doughnut seharga tapi beda tier",
-    tl.tier_dari_gift("Bouquet Flower", 30)[0]
-    != tl.tier_dari_gift("Doughnut", 30)[0])
+cek(f"Bouquet Flower ikut harganya (30 koin) -> raksasa",
+    tl.tier_dari_gift("Bouquet Flower", 30) == (GIANT_MIN, "koin"))
+cek("tier 2 (cakram) tidak dipakai gift apa pun",
+    2 not in set(tl.GIFT_TIER.values())
+    and 2 not in {tl.tier_dari_koin(k) for k in range(0, 2000)})
 cek("nama gift tidak peka huruf besar-kecil dan spasi",
-    tl.tier_dari_gift("  bOuQuEt   flower ", 30)[0] == NOVA_TIER)
+    tl.tier_dari_gift("  rOsA  ", 10)[0] == NOVA_TIER)
 
 # Gift tak dikenal jatuh ke harga SATUANNYA, bukan ke tier 1.
-cek("tak dikenal 5 koin -> tier 2", tl.tier_dari_gift("Finger Heart", 5)[0] == 2)
+cek("tak dikenal 5 koin -> tier 3", tl.tier_dari_gift("Finger Heart", 5)[0] == 3)
 cek("tak dikenal 20 koin -> tier 3", tl.tier_dari_gift("Perfume", 20)[0] == 3)
 cek(f"tak dikenal 29.999 koin -> raksasa, bukan tier 1",
     tl.tier_dari_gift("Lion", 29999)[0] == GIANT_MIN)
@@ -940,25 +940,26 @@ cek("tak dikenal 0 koin -> tier 1", tl.tier_dari_gift("Gratis", 0)[0] == 1)
 # Nova sengaja tidak punya ambang koin: dia cuma lewat Bouquet Flower.
 cek("tidak ada harga yang jatuh ke nova",
     NOVA_TIER not in {tl.tier_dari_koin(k) for k in range(0, 2000)},
-    "gift tak dikenal bisa jadi nova -- nova cuma untuk Bouquet Flower")
+    "gift tak dikenal bisa jadi nova -- nova cuma untuk Rosa (dan Rose x10)")
 # --- Combo: jumlah combo = jumlah spawn, Rose ditampung 10:1 ---
 #
 # Yang dijaga dua hal, dan yang kedua yang paling penting: penampungan cuma
 # boleh terjadi di dalam SATU combo, dan tidak boleh ada jalan dari gift
-# murah ke nova atau raksasa.
-cek("Rose x3 = 3 spawn Rose", tl.rincian_gift("Rose", 3, 1) == [(2, 1)] * 3)
-cek("Rose x10 = 1 Rosa", tl.rincian_gift("Rose", 10, 1) == [(3, 10)])
-cek("Rose x25 = 2 Rosa DULU, lalu 5 Rose",
-    tl.rincian_gift("Rose", 25, 1) == [(3, 10)] * 2 + [(2, 1)] * 5,
+# murah ke raksasa.
+cek("Rose x3 = 3 spawn Rose", tl.rincian_gift("Rose", 3, 1) == [(3, 1)] * 3)
+cek("Rose x10 = 1 nova (setara Rosa)", tl.rincian_gift("Rose", 10, 1) == [(NOVA_TIER, 10)])
+cek("Rose x25 = 2 nova DULU, lalu 5 Rose",
+    tl.rincian_gift("Rose", 25, 1) == [(NOVA_TIER, 10)] * 2 + [(3, 1)] * 5,
     f"dapat {tl.rincian_gift('Rose', 25, 1)}")
-cek("Rosa x3 = 3 spawn Rosa, tidak naik", tl.rincian_gift("Rosa", 3, 10) == [(3, 10)] * 3)
+cek("Rosa x3 = 3 nova, tidak naik",
+    tl.rincian_gift("Rosa", 3, 10) == [(NOVA_TIER, 10)] * 3)
 cek(f"Doughnut x3 = 3 raksasa",
     tl.rincian_gift("Doughnut", 3, 30) == [(GIANT_MIN, 30)] * 3)
 cek("gift tak dikenal x3 = 3 spawn di tier harganya, tanpa ditampung",
-    tl.rincian_gift("Finger Heart", 30, 5) == [(2, 5)] * 30)
+    tl.rincian_gift("Finger Heart", 30, 5) == [(3, 5)] * 30)
 cek("gift gratis tidak memberi spawn apa pun", tl.rincian_gift("Kucing", 9, 0) == [])
-cek("combo Rose sebesar apa pun tidak pernah sampai nova atau raksasa",
-    max(t for t, _ in tl.rincian_gift("Rose", 10000, 1)) < NOVA_TIER,
+cek("combo Rose sebesar apa pun tidak pernah sampai raksasa",
+    max(t for t, _ in tl.rincian_gift("Rose", 10000, 1)) == NOVA_TIER,
     "Rose x10000 bisa naik melewati Rosa")
 
 cek("ambang koin listener dan main.py sama",

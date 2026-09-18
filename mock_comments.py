@@ -13,9 +13,8 @@ Jalankan:
     .venv/bin/python mock_comments.py --dry-run        # jangan kirim ke /api/push
     .venv/bin/python mock_comments.py                  # skenario pasti, lalu campuran harian
     .venv/bin/python mock_comments.py --tanpa-pembuka  # langsung campuran harian
-    .venv/bin/python mock_comments.py --tier2          # banjir Rose, menguji cakram biru
-    .venv/bin/python mock_comments.py --tier3          # banjir Rosa, menguji aura VFX
-    .venv/bin/python mock_comments.py --tier4          # banjir Bouquet Flower, menguji nova
+    .venv/bin/python mock_comments.py --tier3          # banjir Rose, menguji adegan sinematik
+    .venv/bin/python mock_comments.py --tier4          # banjir Rosa, menguji nova
     .venv/bin/python mock_comments.py --tier5          # banjir Doughnut, menguji raksasa
 
 Pipeline-nya diimpor dari tiktok_listener, BUKAN disalin — jadi apa pun yang
@@ -84,14 +83,14 @@ PENONTON = [
 #
 # Tiga yang TIDAK ada di GIFT_TIER, sengaja: mereka menguji jalur cadangan
 # lewat harga satuan. "Kucing" harganya 0 (gift gratis harus dilewati),
-# "Finger Heart" 5 koin harus jatuh ke tier Rose, dan "Galaxy" 1.000 koin
-# harus jatuh ke raksasa -- bukan ke tier 1, yang dulu jadi alasan tabel nama
-# dibuang.
+# "Finger Heart" 5 koin harus jatuh ke tier Rose, "Galaxy" 1.000 koin dan
+# "Bouquet Flower" 30 koin harus jatuh ke raksasa -- bukan ke tier 1, yang
+# dulu jadi alasan tabel nama dibuang.
 GIFT_KOIN = {
     "Rose": 1,
     "Rosa": 10,
-    # Bouquet Flower dan Doughnut sama-sama 30 koin. Itu justru yang perlu
-    # diuji: dari harga saja keduanya tidak bisa dibedakan.
+    # Bouquet Flower tidak lagi punya tier sendiri: seharga Doughnut, jadi
+    # dia menguji jalur "gift dikenal TikTok, tidak ada di GIFT_TIER".
     "Bouquet Flower": 30,
     "Doughnut": 30,
     "Finger Heart": 5,
@@ -113,10 +112,10 @@ def koin_gift(nama: str) -> int:
 # dan yang paling gampang rusak tanpa ketahuan justru jalur yang tidak
 # pernah dilewati.
 #
-#   Rose            1 koin  -> tier 2 (cakram biru)
-#   Finger Heart    5 koin  -> tier 2 (tak dikenal, dari harga)
-#   Rosa           10 koin  -> tier 3 (aura)
-#   Bouquet Flower 30 koin  -> tier 4 (nova)
+#   Rose            1 koin  -> tier 3 (sinematik)
+#   Finger Heart    5 koin  -> tier 3 (tak dikenal, dari harga)
+#   Rosa           10 koin  -> tier 4 (nova)
+#   Bouquet Flower 30 koin  -> tier 5 (tak dikenal, dari harga: raksasa)
 #   Doughnut       30 koin  -> tier 5 (raksasa)
 #   Kucing          0 koin  -> tier 1 (gift gratis)
 #
@@ -131,12 +130,12 @@ def koin_gift(nama: str) -> int:
 GIFT = ((["Rose"] * 12) + (["Finger Heart"] * 2) + (["Rosa"] * 4)
         + (["Bouquet Flower"] * 3) + (["Doughnut"] * 2) + (["Kucing"] * 3))
 
-# Komposisi untuk --tier2..5: satu gift saja, untuk menilai SATU jenis
-# adegan tanpa ketiban sorotan tier lain.
+# Komposisi untuk --tier3..5: satu gift saja, untuk menilai SATU jenis
+# adegan tanpa ketiban sorotan tier lain. Tidak ada --tier2: cakram biru
+# tidak dipakai gift apa pun lagi.
 GIFT_PER_TIER = {
-    2: ["Rose"],
-    3: ["Rosa"],
-    4: ["Bouquet Flower"],
+    3: ["Rose"],
+    4: ["Rosa"],
     5: ["Doughnut"],
 }
 
@@ -164,12 +163,12 @@ T = LIKE_TIER
 SKENARIO = [
     ("komentar biasa -> tier 1",
      "cakupan_01", "Cakupan 1", [("komen", "Roblox")], ("tier", [1])),
-    ("Rose lalu username -> tier 2 (cakram biru)",
-     "cakupan_02", "Cakupan 2", [("gift", "Rose", 1), ("komen", "builderman")], ("tier", [2])),
-    ("Rosa lalu username -> tier 3 (aura)",
-     "cakupan_03", "Cakupan 3", [("gift", "Rosa", 1), ("komen", "Shedletsky")], ("tier", [3])),
-    ("Bouquet Flower lalu username -> tier 4 (nova)",
-     "cakupan_04", "Cakupan 4", [("gift", "Bouquet Flower", 1), ("komen", "Loleris")], ("tier", [4])),
+    ("Rose lalu username -> tier 3 (sinematik)",
+     "cakupan_02", "Cakupan 2", [("gift", "Rose", 1), ("komen", "builderman")], ("tier", [3])),
+    ("Rosa lalu username -> tier 4 (nova)",
+     "cakupan_03", "Cakupan 3", [("gift", "Rosa", 1), ("komen", "Shedletsky")], ("tier", [4])),
+    ("Bouquet Flower lalu username -> tier 5 dari harganya (raksasa)",
+     "cakupan_04", "Cakupan 4", [("gift", "Bouquet Flower", 1), ("komen", "Loleris")], ("tier", [5])),
     ("Doughnut lalu username -> tier 5 (raksasa)",
      "cakupan_05", "Cakupan 5", [("gift", "Doughnut", 1), ("komen", "TheGamer101")], ("tier", [5])),
 
@@ -177,32 +176,32 @@ SKENARIO = [
     ("BUG LAMA: Doughnut lalu Rose sebelum username -> raksasa DULU, baru Rose",
      "cakupan_06", "Cakupan 6",
      [("gift", "Doughnut", 1), ("gift", "Rose", 1), ("komen", "linkmon99")],
-     ("tier", [5, 2])),
+     ("tier", [5, 3])),
     ("BUG LAMA: username dulu, Doughnut, lalu Rose -> Rose, bukan raksasa lagi",
      "cakupan_07", "Cakupan 7",
      [("komen", "Telamon"), ("gift", "Doughnut", 1), ("gift", "Rose", 1)],
-     ("tier", [1, 5, 2])),
-    ("Bouquet dua kali -> nova dua kali, TIDAK naik ke raksasa",
+     ("tier", [1, 5, 3])),
+    ("Rosa dua kali -> nova dua kali, TIDAK naik ke raksasa",
      "cakupan_08", "Cakupan 8",
-     [("komen", "Merely"), ("gift", "Bouquet Flower", 1), ("gift", "Bouquet Flower", 1)],
+     [("komen", "Merely"), ("gift", "Rosa", 1), ("gift", "Rosa", 1)],
      ("tier", [1, 4, 4])),
     # --- combo: jumlah combo = jumlah spawn, Rose ditampung 10:1 ---
     ("combo Rose x3 -> 3 spawn Rose",
-     "cakupan_09", "Cakupan 9", [("gift", "Rose", 3), ("komen", "badcc")], ("tier", [2, 2, 2])),
-    ("combo Rose x25 -> 2 Rosa DULU, lalu 5 Rose",
+     "cakupan_09", "Cakupan 9", [("gift", "Rose", 3), ("komen", "badcc")], ("tier", [3, 3, 3])),
+    ("combo Rose x25 -> 2 nova DULU, lalu 5 Rose",
      "cakupan_17", "Cakupan 17", [("gift", "Rose", 25), ("komen", "Stickmasterluke")],
-     ("tier", [3, 3, 2, 2, 2, 2, 2])),
+     ("tier", [4, 4, 3, 3, 3, 3, 3])),
     ("combo Doughnut x3 -> 3 raksasa",
      "cakupan_18", "Cakupan 18", [("gift", "Doughnut", 3), ("komen", "Sonicthehedgehog")],
      ("tier", [5, 5, 5])),
-    ("Rose x5 lalu Rose x5 (DUA combo) -> 10 Rose, bukan Rosa",
+    ("Rose x5 lalu Rose x5 (DUA combo) -> 10 Rose, bukan nova",
      "cakupan_19", "Cakupan 19",
      [("gift", "Rose", 5), ("gift", "Rose", 5), ("komen", "MrBeast6000")],
-     ("tier", [2] * 10)),
+     ("tier", [3] * 10)),
 
     # --- gift yang namanya tidak dikenal jatuh ke harga satuannya ---
-    ("Finger Heart 5 koin (tak dikenal) -> tier 2 dari harganya",
-     "cakupan_10", "Cakupan 10", [("gift", "Finger Heart", 1), ("komen", "Asimo3089")], ("tier", [2])),
+    ("Finger Heart 5 koin (tak dikenal) -> tier 3 dari harganya",
+     "cakupan_10", "Cakupan 10", [("gift", "Finger Heart", 1), ("komen", "Asimo3089")], ("tier", [3])),
     ("Galaxy 1.000 koin (tak dikenal) -> tier 5, bukan tier 1",
      "cakupan_11", "Cakupan 11", [("gift", "Galaxy", 1), ("komen", "KreekCraft")], ("tier", [5])),
     ("gift gratis (0 koin) lalu username -> tetap tier 1",
@@ -486,12 +485,10 @@ if __name__ == "__main__":
     parser.add_argument("--fast", action="store_true", help="Tanpa jeda sama sekali")
     parser.add_argument("--seed", type=int, default=None, help="Bikin urutannya bisa diulang persis")
     parser.add_argument("--dry-run", action="store_true", help="Jangan kirim ke /api/push")
-    parser.add_argument("--tier2", action="store_true",
-                        help="Banjir Rose -- menguji cakram biru tier 2")
     parser.add_argument("--tier3", action="store_true",
-                        help="Banjir Rosa -- menguji aura VFX tier 3")
+                        help="Banjir Rose -- menguji adegan sinematik tier 3")
     parser.add_argument("--tier4", action="store_true",
-                        help="Banjir Bouquet Flower -- menguji adegan nova tier 4")
+                        help="Banjir Rosa -- menguji adegan nova tier 4")
     parser.add_argument("--tier5", action="store_true",
                         help="Banjir Doughnut -- menguji raksasa tier 5")
     parser.add_argument("--tanpa-pembuka", action="store_true",
@@ -506,7 +503,7 @@ if __name__ == "__main__":
 
     min_delay, max_delay = (0.0, 0.0) if args.fast else (args.min_delay, args.max_delay)
 
-    # --tier2..5 cuma menggeser dua angka default; --gift-rate dan
+    # --tier3..5 cuma menggeser dua angka default; --gift-rate dan
     # --gift tetap boleh menimpanya, jadi bisa dipakai bersamaan.
     dipilih = [t for t in GIFT_PER_TIER if getattr(args, f"tier{t}")]
     if len(dipilih) > 1:

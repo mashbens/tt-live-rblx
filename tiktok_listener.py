@@ -126,7 +126,19 @@ BLACKLIST_PATH = Path(os.environ.get("BLACKLIST_PATH", BASE_DIR / "roblox_blackl
 #
 # Nama yang sebenarnya dikirim TikTok selalu tercetak di log [gift], jadi
 # ejaannya dicocokkan dari situ, bukan ditebak.
-GIFT_TIER_BAWAAN = "rose:2,rosa:3,bouquet flower:4,doughnut:5"
+#
+# SUSUNAN SEKARANG (digeser satu tingkat dari aslinya). Nomor di sini nomor
+# EFEK di panggung, bukan urutan harga:
+#
+#   Rose           -> 3  adegan sinematik (garis tepi, aura VFX, letterbox)
+#   Rosa           -> 4  nova
+#   Doughnut       -> 5  raksasa
+#
+# Tier 2 (cakram biru) tidak dipakai gift apa pun lagi. Bouquet Flower
+# sengaja tidak tercantum: dia ikut harganya (30 koin), jadi raksasa.
+# Yang digeser cuma daftar ini dan ambang koin di bawah, bukan nomor tier
+# di Lua -- efek tiap nomor tetap persis sama, cuma pemicunya yang pindah.
+GIFT_TIER_BAWAAN = "rose:3,rosa:4,doughnut:5"
 
 
 def _normal_nama_gift(nama: str) -> str:
@@ -161,8 +173,13 @@ GIFT_TIER = _baca_gift_tier(os.environ.get("GIFT_TIER", GIFT_TIER_BAWAAN))
 # Harga yang dipakai harga SATU gift, bukan dikali combo. Konsisten dengan
 # aturan nama: Rose x10 tetap Rose, jadi Finger Heart x10 juga tetap
 # seharga satu Finger Heart.
-TIER2_KOIN = int(_env_float("TIER2_KOIN", 1))    # 1-9 koin    -> tier 2 (setara Rose)
-TIER3_KOIN = int(_env_float("TIER3_KOIN", 10))   # 10-29 koin  -> tier 3 (setara Rosa, aura)
+#
+# TIER3_KOIN = 1 menutup tier 2 sepenuhnya: semua gift berbayar di bawah
+# TIER5_KOIN jatuh ke adegan sinematik, setara Rose. TIER2_KOIN dibiarkan
+# ada supaya .env lama tetap terbaca, tapi cabangnya tidak pernah tercapai
+# selama dia tidak di bawah TIER3_KOIN.
+TIER2_KOIN = int(_env_float("TIER2_KOIN", 1))    # tidak tercapai (lihat di atas)
+TIER3_KOIN = int(_env_float("TIER3_KOIN", 1))    # 1-29 koin   -> tier 3 (sinematik, setara Rose)
 TIER5_KOIN = int(_env_float("TIER5_KOIN", 30))   # >=30 koin   -> tier 5 (raksasa)
 
 
@@ -204,7 +221,7 @@ def tier_dari_gift(nama: str, koin_satuan: int) -> tuple[int, str]:
 # sisanya tetap spawn satu per satu di tiernya sendiri:
 #
 #   Rose x3   -> 3 Rose
-#   Rose x10  -> 1 Rosa
+#   Rose x10  -> 1 Rosa (nova)
 #   Rose x25  -> 2 Rosa + 5 Rose
 #
 # Yang TIDAK berubah dari aturan tier: kiriman TERPISAH tetap tidak pernah
@@ -212,8 +229,8 @@ def tier_dari_gift(nama: str, koin_satuan: int) -> tuple[int, str]:
 # (dua combo) tetap 10 Rose, bukan 1 Rosa. Menjumlah kiriman terpisah itu
 # jalur yang dulu membuat Doughnut lalu Rose jadi raksasa lagi.
 #
-# Dan naiknya cuma ke tier yang ditulis di sini (Rosa). Rose x10.000 tetap
-# 1.000 Rosa -- tidak ada jalan dari Rose ke nova atau raksasa.
+# Dan naiknya cuma ke tier yang ditulis di sini (Rosa, sekarang nova). Rose
+# x10.000 tetap 1.000 nova -- tidak ada jalan dari Rose ke raksasa.
 #
 # Tidak ada batas jumlah spawn per combo, sengaja (keputusan produk):
 # Rose x500 = 50 Rosa yang antre satu per satu, dan gift berbayar lain yang
@@ -221,8 +238,8 @@ def tier_dari_gift(nama: str, koin_satuan: int) -> tuple[int, str]:
 #
 # Formatnya "nama:berapa:tier", dipisah koma. Bisa ditimpa lewat .env:
 #
-#     GIFT_NAIK=rose:10:3
-GIFT_NAIK_BAWAAN = "rose:10:3"
+#     GIFT_NAIK=rose:10:4
+GIFT_NAIK_BAWAAN = "rose:10:4"
 
 
 def _baca_gift_naik(teks: str) -> dict[str, tuple[int, int]]:

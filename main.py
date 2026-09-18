@@ -130,7 +130,9 @@ TIER_EFFECTS = {
         "spotlight": False,
     },
     2: {
-        # Rose. Cakram biru di kaki, tanpa garis tepi dan tanpa aura VFX.
+        # Cakram biru di kaki, tanpa garis tepi dan tanpa aura VFX. TIDAK
+        # dipakai gift apa pun lagi sejak susunan digeser (Rose sekarang
+        # tier 3) -- dibiarkan supaya push tier 2 manual tetap jalan.
         # Daftar ini keterangan, bukan perintah -- Lua bercabang dari
         # `tier` -- tapi dua sisi yang bercerita beda adalah cara paling
         # gampang menyesatkan orang yang membacanya.
@@ -151,7 +153,8 @@ TIER_EFFECTS = {
         "orbit": False,
     },
     3: {
-        # Rosa, atau 1.000 tap. Aura VFX acak di badan (satu dari tiga
+        # Rose, gift lain di bawah TIER5_KOIN, atau 1.000 tap (dulu Rosa).
+        # Aura VFX acak di badan (satu dari tiga
         # asset, dipilih di Lua) plus border.
         "scale": _env_float("TIER3_SCALE", 1.0),
         "effects": ["border", "aura-vfx"],
@@ -160,7 +163,8 @@ TIER_EFFECTS = {
         "orbit": False,
     },
     4: {
-        # Bouquet Flower. Badan normal; yang membuatnya terbaca UPACARANYA
+        # Rosa, atau Rose x10 dalam satu combo (dulu Bouquet Flower).
+        # Badan normal; yang membuatnya terbaca UPACARANYA
         # (TierNova, dijalankan client). Aura VFX acaknya menyala saat avatar
         # aslinya muncul kembali.
         #
@@ -178,7 +182,8 @@ TIER_EFFECTS = {
         "orbit": False,
     },
     5: {
-        # Doughnut. Dibaca Lua sebagai skala raksasa. Di sini, bukan di Lua,
+        # Doughnut, atau gift apa pun >= TIER5_KOIN (termasuk Bouquet
+        # Flower). Dibaca Lua sebagai skala raksasa. Di sini, bukan di Lua,
         # supaya bisa digeser lewat .env tanpa menyentuh Studio.
         #
         # AWAS kalau .env-nya dari zaman empat tier: TIER4_SCALE=4 yang
@@ -204,7 +209,7 @@ TIER_EFFECTS = {
 # angkanya cuma ditampilkan di /api/settings supaya alat lain tidak perlu
 # menebak. Tier 4 (nova) sengaja tidak punya: dia cuma lewat nama.
 TIER2_KOIN = int(_env_float("TIER2_KOIN", 1))
-TIER3_KOIN = int(_env_float("TIER3_KOIN", 10))
+TIER3_KOIN = int(_env_float("TIER3_KOIN", 1))
 TIER5_KOIN = int(_env_float("TIER5_KOIN", 30))
 
 # Lama sorotan tier 2 (Rose). DATAR, dan paling pendek.
