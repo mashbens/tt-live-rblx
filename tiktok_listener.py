@@ -85,36 +85,191 @@ BLACKLIST_PATH = Path(os.environ.get("BLACKLIST_PATH", BASE_DIR / "roblox_blackl
 
 # ---------------------------------------------------------------------- TIER --
 
-# Tier ditentukan HARGA, bukan nama gift.
+# Tier ditentukan NAMA GIFT dulu, baru harganya kalau namanya tidak dikenal.
 #
-# Dulu di sini ada tabel {"rose": 2, "rosa": 3}. Masalahnya TikTok punya
-# ratusan gift: semua yang tidak tercantum jatuh ke tier 1, jadi orang yang
-# kirim gift 1.000 koin dapat perlakuan sama dengan yang cuma ngetik --
-# lebih buruk dari yang kirim rose 1 koin. Harga gift ikut dikirim TikTok di
-# tiap GiftEvent (`gift.diamond_count`), jadi tidak ada alasan menebak dari
-# nama.
+#   tier 1  komentar biasa
+#   tier 2  Rose            skip lane + cakram biru, sorotan 3 detik
+#   tier 3  Rosa / tap      AURA (efek partikel acak di badan)
+#   tier 4  Bouquet Flower  UPACARA (nova)
+#   tier 5  Doughnut        UKURAN (raksasa)
 #
-# Ambangnya dibaca dari besar ke kecil, yang pertama cocok yang dipakai.
-# Di bawah ambang terendah = tier 1 (sama dengan komentar biasa).
-TIER2_KOIN = int(_env_float("TIER2_KOIN", 1))    # rose  = 1 koin  -> border + sinematik pendek
-TIER3_KOIN = int(_env_float("TIER3_KOIN", 10))   # rosa  = 10 koin -> border + aura VFX acak
-TIER4_KOIN = int(_env_float("TIER4_KOIN", 30))   #         30 koin -> RAKSASA, tanpa aura
+# KENAPA NAMA, dan kenapa ini membalik keputusan yang dulu tertulis di sini.
+#
+# Dulu tier dihitung dari JUMLAH koin, dan jumlah itu DITAMBAHKAN tiap gift
+# selama jendela GIFT_BOOST_TTL_S. Tujuannya combo: rose x10 = 10 koin =
+# sama dengan sekali rosa. Tapi penjumlahan tidak pernah turun, dan itu yang
+# bikin bug yang terlihat di siaran: kirim Doughnut (30) lalu Rose (1) =
+# 31 koin = RAKSASA LAGI, padahal yang barusan dikirim cuma Rose. Sekali
+# jadi raksasa, gift apa pun sesudahnya tetap raksasa.
+#
+# Sekarang tiap gift menentukan tiernya SENDIRI dan tidak ada yang
+# dijumlah. Rose lagi = spawn Rose lagi. Bouquet lagi = nova lagi, tidak
+# naik ke raksasa.
+#
+# Harganya juga tidak bisa lagi jadi satu-satunya penentu: Bouquet Flower
+# dan Doughnut sama-sama 30 koin, dan dari koin saja keduanya tidak bisa
+# dibedakan -- salah satunya tidak akan pernah tercapai.
+#
+# Yang DILEPAS untuk ini, sengaja: nyicil tidak lagi dihitung. Rose dikirim
+# sepuluh kali terpisah = sepuluh spawn Rose, bukan satu Rosa.
+#
+# Nama dicocokkan tanpa peduli huruf besar-kecil dan spasi berlebih. Bisa
+# ditimpa lewat .env, misal kalau TikTok ternyata menamainya "Flower
+# Bouquet":
+#
+#     GIFT_TIER=rose:2,rosa:3,bouquet flower:4,doughnut:5
+#
+# Nama yang sebenarnya dikirim TikTok selalu tercetak di log [gift], jadi
+# ejaannya dicocokkan dari situ, bukan ditebak.
+GIFT_TIER_BAWAAN = "rose:2,rosa:3,bouquet flower:4,doughnut:5"
+
+
+def _normal_nama_gift(nama: str) -> str:
+    return " ".join((nama or "").lower().split())
+
+
+def _baca_gift_tier(teks: str) -> dict[str, int]:
+    hasil: dict[str, int] = {}
+    for bagian in teks.split(","):
+        if ":" not in bagian:
+            continue
+        nama, _, angka = bagian.rpartition(":")
+        try:
+            hasil[_normal_nama_gift(nama)] = int(angka.strip())
+        except ValueError:
+            continue
+    return hasil
+
+
+GIFT_TIER = _baca_gift_tier(os.environ.get("GIFT_TIER", GIFT_TIER_BAWAAN))
+
+# Gift yang namanya TIDAK ada di GIFT_TIER jatuh ke harganya.
+#
+# Ini yang menutup lubang yang dulu membuat tabel nama dibuang: TikTok punya
+# ratusan gift, dan kalau yang tak tercantum jatuh ke tier 1, orang yang
+# kirim Lion 29.999 koin dapat perlakuan sama dengan yang cuma ngetik.
+#
+# Tier 4 (nova) sengaja TIDAK punya ambang koin: Bouquet Flower harganya
+# sama dengan Doughnut, jadi gift tak dikenal seharga 30 koin ke atas
+# jatuhnya ke yang tertinggi -- raksasa.
+#
+# Harga yang dipakai harga SATU gift, bukan dikali combo. Konsisten dengan
+# aturan nama: Rose x10 tetap Rose, jadi Finger Heart x10 juga tetap
+# seharga satu Finger Heart.
+TIER2_KOIN = int(_env_float("TIER2_KOIN", 1))    # 1-9 koin    -> tier 2 (setara Rose)
+TIER3_KOIN = int(_env_float("TIER3_KOIN", 10))   # 10-29 koin  -> tier 3 (setara Rosa, aura)
+TIER5_KOIN = int(_env_float("TIER5_KOIN", 30))   # >=30 koin   -> tier 5 (raksasa)
 
 
 def tier_dari_koin(koin: int) -> int:
-    """Berapa koin jadi tier berapa. Satu-satunya tempat aturan ini hidup.
+    """Tier untuk gift yang namanya tidak dikenal, dari harga satuannya.
 
     Dibaca dari ambang TERTINGGI ke terendah. Urutan itu bukan gaya
     penulisan: dibalik, 30 koin akan berhenti di cabang tier 2 yang juga
     cocok, dan tidak ada satu pun tier di atasnya yang pernah tercapai.
     """
-    if koin >= TIER4_KOIN:
-        return 4
+    if koin >= TIER5_KOIN:
+        return 5
     if koin >= TIER3_KOIN:
         return 3
     if koin >= TIER2_KOIN:
         return 2
     return 1
+
+
+def tier_dari_gift(nama: str, koin_satuan: int) -> tuple[int, str]:
+    """(tier, asal) untuk satu gift. `asal` = "nama" atau "koin", untuk log.
+
+    Satu-satunya tempat aturan gift -> tier hidup.
+    """
+    tier = GIFT_TIER.get(_normal_nama_gift(nama))
+    if tier is not None:
+        return tier, "nama"
+    return tier_dari_koin(koin_satuan), "koin"
+
+
+# COMBO: jumlah combo = jumlah spawn.
+#
+#   Rosa x3          -> 3 spawn Rosa
+#   Doughnut x3      -> 3 raksasa
+#   Finger Heart x3  -> 3 spawn di tier harganya
+#
+# Satu pengecualian, dan cuma satu: gift di GIFT_NAIK DITAMPUNG. Tiap
+# kelipatannya dinaikkan jadi satu spawn tier yang lebih tinggi, dan
+# sisanya tetap spawn satu per satu di tiernya sendiri:
+#
+#   Rose x3   -> 3 Rose
+#   Rose x10  -> 1 Rosa
+#   Rose x25  -> 2 Rosa + 5 Rose
+#
+# Yang TIDAK berubah dari aturan tier: kiriman TERPISAH tetap tidak pernah
+# dijumlah. Penampungan ini cuma di dalam SATU combo -- Rose x5 lalu Rose x5
+# (dua combo) tetap 10 Rose, bukan 1 Rosa. Menjumlah kiriman terpisah itu
+# jalur yang dulu membuat Doughnut lalu Rose jadi raksasa lagi.
+#
+# Dan naiknya cuma ke tier yang ditulis di sini (Rosa). Rose x10.000 tetap
+# 1.000 Rosa -- tidak ada jalan dari Rose ke nova atau raksasa.
+#
+# Tidak ada batas jumlah spawn per combo, sengaja (keputusan produk):
+# Rose x500 = 50 Rosa yang antre satu per satu, dan gift berbayar lain yang
+# datang sesudahnya menunggu di belakangnya.
+#
+# Formatnya "nama:berapa:tier", dipisah koma. Bisa ditimpa lewat .env:
+#
+#     GIFT_NAIK=rose:10:3
+GIFT_NAIK_BAWAAN = "rose:10:3"
+
+
+def _baca_gift_naik(teks: str) -> dict[str, tuple[int, int]]:
+    hasil: dict[str, tuple[int, int]] = {}
+    for bagian in teks.split(","):
+        potong = bagian.rsplit(":", 2)
+        if len(potong) != 3:
+            continue
+        try:
+            per, tier = int(potong[1].strip()), int(potong[2].strip())
+        except ValueError:
+            continue
+        if per > 0:
+            hasil[_normal_nama_gift(potong[0])] = (per, tier)
+    return hasil
+
+
+GIFT_NAIK = _baca_gift_naik(os.environ.get("GIFT_NAIK", GIFT_NAIK_BAWAAN))
+
+
+def _ringkas_spawn(spawn: list[tuple[int, int]]) -> str:
+    """[(3,10),(3,10),(2,1)] -> "2x tier 3 + 1x tier 2", untuk log."""
+    hitung: dict[int, int] = {}
+    for t, _ in spawn:
+        hitung[t] = hitung.get(t, 0) + 1
+    return " + ".join(f"{n}x tier {t}" for t, n in hitung.items())
+
+
+def rincian_gift(nama: str, jumlah: int, koin_satuan: int) -> list[tuple[int, int]]:
+    """Satu kiriman gift -> daftar spawn [(tier, koin), ...], urut tampil.
+
+    `koin` di tiap spawn = harga yang membeli spawn ITU (Rosa hasil tampungan
+    10 Rose tertulis 10 koin), bukan total combo -- supaya angka di log dan
+    papan tidak berbohong soal satu avatar.
+
+    Yang dinaikkan tampil DULUAN, baru sisanya: yang lebih mahal yang
+    membuka, sama seperti urutan orang membayar untuk sesuatu yang besar.
+    Daftar kosong = gift ini tidak memberi apa-apa (gratis / tier 1).
+    """
+    jumlah = max(1, int(jumlah or 1))
+    koin_satuan = max(0, int(koin_satuan or 0))
+    tier, _ = tier_dari_gift(nama, koin_satuan)
+    if tier <= 1:
+        return []
+
+    naik = GIFT_NAIK.get(_normal_nama_gift(nama))
+    if not naik:
+        return [(tier, koin_satuan)] * jumlah
+
+    per, tier_naik = naik
+    return ([(tier_naik, koin_satuan * per)] * (jumlah // per)
+            + [(tier, koin_satuan)] * (jumlah % per))
 
 
 # Sanity guard, bukan aturan main. Gift termahal TikTok ada di kisaran
@@ -138,25 +293,40 @@ GIFT_BOOST_TTL_S = _env_float("GIFT_BOOST_TTL_S", 90.0)
 
 # --------------------------------------------------------------------- LIKE --
 
-# Berapa kali tap layar untuk naik podium (tier 3) tanpa mengeluarkan koin
+# Berapa kali tap layar untuk naik ke tier 2 (aura) tanpa mengeluarkan koin
 # sama sekali.
 #
-# Ini jalur GRATIS ke podium, dan sengaja mahal dalam usaha: 2.000 tap itu
-# menit-menitan menahan jari. Gunanya bukan menyaingi gift, tapi memberi
-# penonton yang tidak mau bayar satu hal yang bisa mereka kejar -- dan
-# tap-tap itu yang mendorong live-nya naik di beranda TikTok.
+# Ini jalur GRATIS, dan sengaja mahal dalam usaha. Gunanya bukan menyaingi
+# gift, tapi memberi penonton yang tidak mau bayar satu hal yang bisa mereka
+# kejar -- dan tap-tap itu yang mendorong live-nya naik di beranda TikTok.
 #
-# Hitungannya AKUMULATIF per penonton dan berulang: tiap kelipatan 2.000
-# tercapai, dia dapat satu podium lagi, sisanya diteruskan ke hitungan
+# Turun 2.000 -> 1.000, dan alasannya data, bukan selera: tiga live
+# sungguhan mencatat 296, 641, dan 897 tap SEPANJANG SIARAN, dijumlah dari
+# SEMUA penonton. TikTok tidak mengirim satu event per tap -- tap digabung
+# dan sebagian tidak pernah dikirim sama sekali -- jadi angka yang sampai ke
+# sini jauh di bawah yang dirasakan jari penontonnya. Dengan 2.000 per orang
+# jalur ini mustahil tercapai, dan itu sebabnya tier dari tap tidak pernah
+# muncul. Angka yang kebaca per orang sekarang ikut dicetak di [detak]
+# ("tap terbanyak"): setel angka ini dari situ, bukan dari tebakan.
+#
+# Hitungannya AKUMULATIF per penonton dan berulang: tiap kelipatan angka ini
+# tercapai, dia dapat satu kali tier 2 lagi, sisanya diteruskan ke hitungan
 # berikutnya. Tidak ada kedaluwarsa -- orang yang nyicil tap sepanjang
 # siaran tetap sampai.
-LIKE_PODIUM = int(_env_float("LIKE_PODIUM", 2000))
+LIKE_PODIUM = int(_env_float("LIKE_PODIUM", 1000))
 
-# Tier tertinggi yang bisa dicapai lewat tap saja.
+# Tier yang didapat lewat tap saja.
 #
-# Sama dengan tier tertinggi yang ada sekarang: tap yang tekun memang
-# pantas menyamai gift terbesar, dan itu yang mendorong live-nya naik di
-# beranda TikTok.
+# Setara Rosa: AURA. Bukan lebih -- nova (Bouquet Flower) dan raksasa
+# (Doughnut) itu yang DIJUAL, dan kalau tap juga bisa sampai ke sana,
+# keduanya kehilangan alasannya untuk dibeli.
+#
+# Naik dari tier Rose ke tier Rosa waktu Rose turun jadi "skip lane +
+# cakram biru" saja. Tap itu usaha yang besar (1.000 per orang), dan
+# hadiahnya tidak boleh lebih kecil daripada gift 1 koin.
+#
+# Tap sekarang spawn SENDIRI, bukan digabung ke gift yang kebetulan
+# menunggu. Sama dengan aturan gift: tiap hal yang didapat = satu spawn.
 LIKE_TIER = int(_env_float("LIKE_TIER", 3))
 
 # Tiap kelipatan segini dicatat di log, supaya kamu bisa mengumumkan
@@ -263,18 +433,28 @@ class Pipeline:
         self._cooldown: dict[str, float] = {}          # username TikTok -> monotonic terakhir
         self._recent_names: dict[str, float] = {}      # username Roblox (lower) -> monotonic
         self._roblox_cache: dict[str, tuple[bool, float]] = {}  # nama -> (ada, kedaluwarsa)
-        # penonton -> (koin yang belum terpakai, kedaluwarsa). Yang disimpan
-        # KOIN, bukan tier: koin bisa dijumlahkan, tier tidak. Itu yang bikin
-        # rose x10 pelan-pelan sampai ke podium.
-        self._boost: dict[str, tuple[int, float]] = {}
+        # penonton -> gift yang belum terpakai, URUT dari yang dikirim duluan.
+        # Tiap isinya (tier, koin, nama gift, kedaluwarsa).
+        #
+        # Daftar, bukan satu angka: dua gift sebelum dia ngetik username =
+        # dua spawn, berurutan, tidak ada yang dilewati. Dulu isinya satu
+        # angka koin yang DIJUMLAH, dan penjumlahan itu yang membuat
+        # Doughnut lalu Rose jadi raksasa lagi.
+        self._boost: dict[str, list[tuple[int, int, str, float]]] = {}
         # Username Roblox terakhir yang berhasil dipanggil tiap penonton,
-        # beserta total koin yang sudah dipakai untuknya. Ini yang membuat
-        # urutan "username dulu, baru gift" ikut jalan.
-        self._nama_terakhir: dict[str, tuple[str, int, float]] = {}
-        # penonton -> tap yang belum ditukar jadi podium. Yang disimpan
-        # SISANYA, bukan totalnya: begitu 2.000 tercapai angkanya dikurangi
-        # 2.000, jadi tap ke-2.001 sudah mulai menabung podium berikutnya.
+        # dan sampai kapan dia diingat. Ini yang membuat urutan "username
+        # dulu, baru gift" ikut jalan. Koinnya tidak disimpan lagi -- tidak
+        # ada lagi yang dijumlah.
+        self._nama_terakhir: dict[str, tuple[str, float]] = {}
+        # penonton -> tap yang belum ditukar jadi tier LIKE_TIER. Yang disimpan
+        # SISANYA, bukan totalnya: begitu LIKE_PODIUM tercapai angkanya
+        # dikurangi sebanyak itu, jadi tap berikutnya sudah mulai menabung
+        # untuk giliran berikutnya.
         self._likes: dict[str, int] = {}
+        # penonton -> total tap yang PERNAH tercatat sepanjang siaran, tidak
+        # pernah dikurangi. Cuma untuk laporan [detak]: angka inilah yang
+        # memberi tahu seberapa realistis LIKE_PODIUM untuk live kamu.
+        self._likes_total: dict[str, int] = {}
         # penonton -> kedaluwarsa hak podium yang sudah dia menangkan lewat
         # tap tapi belum sempat dipakai karena username-nya belum disebut.
         self._podium_pending: dict[str, float] = {}
@@ -293,11 +473,11 @@ class Pipeline:
         # Saat live sungguhan angkanya ikut dicetak waktu Ctrl+C, dan di
         # situ dia menjawab pertanyaan yang berbeda: berapa banyak yang
         # benar-benar bayar malam ini, dipecah per tingkat.
-        # Kunci 4 ada supaya tier itu ikut tercetak di ringkasan walau
-        # tidak ada yang mencapainya. Penambahannya sendiri lewat
+        # Kelima kunci ada supaya tier yang tidak dicapai siapa pun ikut
+        # tercetak di ringkasan sebagai nol. Penambahannya sendiri lewat
         # .get(tier, 0), jadi tier tak terdaftar tidak akan error --
         # cuma tidak akan pernah muncul di laporan.
-        self.per_tier = {1: 0, 2: 0, 3: 0, 4: 0}
+        self.per_tier = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
         self.gifts = 0         # gift yang harganya kebaca
         self.boost_hangus = 0  # gift yang tidak pernah disusul komentar
         self.likes = 0         # tap yang tercatat sepanjang siaran
@@ -333,80 +513,72 @@ class Pipeline:
     async def handle_gift(self, tiktok_user: str, nickname: str,
                           gift_name: str, jumlah: int = 1,
                           koin_satuan: int = 0) -> None:
-        """Proses gift. Dua urutan yang sama-sama harus jalan:
+        """Proses gift. Jumlah combo = jumlah spawn (lihat rincian_gift).
 
-        1. GIFT DULU, baru username -> koinnya disimpan, menunggu komentar
-           berikutnya dari orang itu (paling lama GIFT_BOOST_TTL_S).
+        Dua urutan yang sama-sama harus jalan:
+
+        1. GIFT DULU, baru username -> gift-nya disimpan di daftar tunggu,
+           menunggu komentar berikutnya dari orang itu (paling lama
+           GIFT_BOOST_TTL_S). Semua spawn dari semua gift yang menunggu
+           keluar berurutan begitu dia ngetik.
         2. USERNAME DULU, baru gift -> avatarnya sudah/sedang tampil, jadi
-           langsung didorong ulang dengan koin yang sudah bertambah. Tanpa
+           langsung didorong lagi dengan tier gift yang barusan. Tanpa
            jalur ini, orang yang ngetik dulu baru bayar tidak dapat apa-apa
            sampai dia mengetik untuk kedua kalinya -- dan kebanyakan tidak
            melakukannya.
 
-        `koin_satuan` itu harga SATU gift (`gift.diamond_count`); dikali
-        `jumlah` (combo) jadi total yang dia bayar barusan.
+        Tidak ada yang dijumlah ANTAR kiriman di kedua jalur. Di dalam satu
+        kiriman, jumlah combo = jumlah spawn -- lihat rincian_gift.
+
+        `koin_satuan` itu harga SATU gift (`gift.diamond_count`).
         """
         koin_satuan = max(0, int(koin_satuan or 0))
         jumlah = max(1, int(jumlah or 1))
-        koin_baru = koin_satuan * jumlah
+        tier, asal = tier_dari_gift(gift_name, koin_satuan)
+        spawn = rincian_gift(gift_name, jumlah, koin_satuan)
 
-        if koin_baru <= 0:
-            # Gift gratis atau harganya tidak terbaca. Bukan error: TikTok
-            # memang punya gift 0 koin, dan itu memang tidak layak dibayar
-            # dengan tempat di panggung.
-            log.info("[gift] '%s' dari %s harganya 0 koin, dilewati", gift_name, nickname)
+        if not spawn:
+            # Gift gratis, atau harganya tidak terbaca dan namanya tidak
+            # dikenal. Bukan error: TikTok memang punya gift 0 koin, dan
+            # itu memang tidak layak dibayar dengan tempat di panggung.
+            log.info("[gift] '%s' dari %s (%s koin) tidak memberi tier, dilewati",
+                     gift_name, nickname, koin_satuan)
             return
 
         self.gifts += 1
         now = time.monotonic()
-
-        # Koin yang belum terpakai DIJUMLAH, bukan diambil yang terbesar.
-        #
-        # Ini inti dari combo: rose 1 koin dikirim sepuluh kali dalam satu
-        # jendela = 10 koin = podium, sama persis dengan sekali rosa. Orang
-        # yang nyicil tidak lagi kalah dari orang yang sekali kirim.
-        #
-        # Yang menahan angkanya membesar sepanjang siaran itu jendela
-        # GIFT_BOOST_TTL_S: begitu lewat, hitungannya mulai dari nol lagi.
-        lama = self._boost.get(tiktok_user)
-        if lama and now < lama[1]:
-            koin_baru += lama[0]
+        ringkas = _ringkas_spawn(spawn)
 
         # --- urutan 2: dia baru saja menyebut username ---
         terakhir = self._nama_terakhir.get(tiktok_user)
-        if terakhir and now < terakhir[2]:
-            nama, koin_lama, _ = terakhir
+        if terakhir and now < terakhir[1]:
+            nama = terakhir[0]
+            log.info("[gift] %s kirim %s x%s (tier %s dari %s) -> '%s' spawn lagi: %s",
+                     nickname, gift_name, jumlah, tier, asal, nama, ringkas)
 
-            # Koin ditambahkan ke total yang SUDAH terpakai untuk nama ini.
-            # Karena penjumlahan tidak pernah turun, tidak perlu lagi
-            # penjagaan "gift yang lebih kecil jangan menurunkan tier" --
-            # dulu itu perlu waktu yang disimpan tier, dan rosa lalu rose
-            # bisa mendorong entri tier 2 ke nama yang sudah tier 3.
-            koin_nama = min(koin_lama + koin_baru, KOIN_WARAS)
-            tier_lama = tier_dari_koin(koin_lama)
-            tier_kini = tier_dari_koin(koin_nama)
-
-            log.info("[gift] %s kirim %s x%s (%s koin) -> '%s' jadi %s koin, "
-                     "tier %s -> %s",
-                     nickname, gift_name, jumlah, koin_satuan * jumlah,
-                     nama, koin_nama, tier_lama, tier_kini)
-
-            if await self.push(nama, nickname, koin_nama):
-                self._nama_terakhir[tiktok_user] = (
-                    nama, koin_nama, now + GIFT_BOOST_TTL_S)
-                # Terpakai sekarang juga; jangan disimpan lagi, kalau tidak
-                # komentar berikutnya kena koin yang sama untuk kedua kali.
-                self._boost.pop(tiktok_user, None)
+            # Satu per satu, di-await, supaya urutan antriannya = urutan di
+            # daftar. Yang gagal di tengah jalan (server antrian mati?)
+            # beserta sisanya jatuh ke jalur simpan di bawah, supaya tidak
+            # ada yang hilang.
+            terkirim = 0
+            for t, k in spawn:
+                if not await self.push(nama, nickname, t, k):
+                    break
+                terkirim += 1
+            if terkirim:
+                self._nama_terakhir[tiktok_user] = (nama, now + GIFT_BOOST_TTL_S)
+            if terkirim == len(spawn):
                 return
-            # Push gagal (server antrian mati?) -- jatuh ke jalur simpan
-            # di bawah supaya koinnya tidak hilang begitu saja.
+            spawn = spawn[terkirim:]
 
         # --- urutan 1: simpan, tunggu username ---
-        koin_baru = min(koin_baru, KOIN_WARAS)
-        self._boost[tiktok_user] = (koin_baru, now + GIFT_BOOST_TTL_S)
-        log.info("[gift] %s kirim %s x%s -> %s koin (tier %s), menunggu username (%.0fs)",
-                 nickname, gift_name, jumlah, koin_baru,
-                 tier_dari_koin(koin_baru), GIFT_BOOST_TTL_S)
+        daftar = self._boost.setdefault(tiktok_user, [])
+        for t, k in spawn:
+            daftar.append((t, k, gift_name, now + GIFT_BOOST_TTL_S))
+        log.info("[gift] %s kirim %s x%s (tier %s dari %s) -> %s, "
+                 "menunggu username (%.0fs) -- %s spawn antri",
+                 nickname, gift_name, jumlah, tier, asal, ringkas,
+                 GIFT_BOOST_TTL_S, len(daftar))
 
     async def handle_like(self, tiktok_user: str, nickname: str,
                           jumlah: int = 1) -> None:
@@ -418,16 +590,16 @@ class Pipeline:
         1. TAP DULU, baru username -> haknya disimpan, menunggu komentar
            berikutnya dari orang itu (paling lama LIKE_PODIUM_TTL_S).
         2. USERNAME DULU, baru tap -> avatarnya sudah berdiri di kerumunan,
-           jadi langsung didorong ulang sebagai tier 3 supaya dia naik
-           podium tanpa perlu mengetik namanya lagi.
+           jadi langsung didorong lagi sebagai tier LIKE_TIER tanpa perlu
+           mengetik namanya lagi.
 
         Yang TIDAK ikut: koin. Orang ini tidak membayar apa pun, jadi angka
-        koin di papan namanya tetap apa adanya -- kalau tap diterjemahkan
-        jadi "10 koin", papan berbohong ke penonton lain tentang siapa yang
-        sebenarnya mengeluarkan uang.
+        koinnya 0 -- kalau tap diterjemahkan jadi "10 koin", papan berbohong
+        ke penonton lain tentang siapa yang sebenarnya mengeluarkan uang.
         """
         jumlah = max(1, int(jumlah or 1))
         self.likes += jumlah
+        self._likes_total[tiktok_user] = self._likes_total.get(tiktok_user, 0) + jumlah
 
         total = self._likes.get(tiktok_user, 0) + jumlah
 
@@ -439,7 +611,7 @@ class Pipeline:
                          nickname, total, LIKE_PODIUM - total)
             return
 
-        # Kelebihan tap TIDAK dibuang: 4.100 tap = dua podium, sisa 100 tap
+        # Kelebihan tap TIDAK dibuang: 2.100 tap = dua podium, sisa 100 tap
         # jalan terus ke hitungan berikutnya. Yang dipakai cuma satu podium
         # sekarang -- mendorong dua avatar sekaligus untuk orang yang sama
         # cuma menghasilkan podium kembar bernama sama.
@@ -449,13 +621,12 @@ class Pipeline:
 
         # --- urutan 2: dia baru saja menyebut username ---
         terakhir = self._nama_terakhir.get(tiktok_user)
-        if terakhir and now < terakhir[2]:
-            nama, koin_lama, _ = terakhir
-            log.info("[like] %s tembus %s tap -> '%s' NAIK PODIUM (tanpa koin)",
-                     nickname, LIKE_PODIUM, nama)
-            if await self.push(nama, nickname, koin_lama, podium=True):
-                self._nama_terakhir[tiktok_user] = (
-                    nama, koin_lama, now + GIFT_BOOST_TTL_S)
+        if terakhir and now < terakhir[1]:
+            nama = terakhir[0]
+            log.info("[like] %s tembus %s tap -> '%s' spawn tier %s (tanpa koin)",
+                     nickname, LIKE_PODIUM, nama, LIKE_TIER)
+            if await self.push(nama, nickname, LIKE_TIER, 0, podium=True):
+                self._nama_terakhir[tiktok_user] = (nama, now + GIFT_BOOST_TTL_S)
                 return
             # Push gagal (server antrian mati?) -- haknya disimpan di bawah
             # supaya tap-nya tidak hilang begitu saja.
@@ -470,7 +641,7 @@ class Pipeline:
 
         Sama seperti boost koin: baru dianggap terpakai setelah avatarnya
         benar-benar masuk antrian, supaya salah ketik username tidak
-        menghanguskan 2.000 tap.
+        menghanguskan ribuan tap.
         """
         kedaluwarsa = self._podium_pending.get(tiktok_user)
         if kedaluwarsa is None:
@@ -481,24 +652,45 @@ class Pipeline:
             return False
         return True
 
-    def _lihat_boost(self, tiktok_user: str) -> int:
-        """Koin yang sedang menunggu untuk penonton ini, TANPA memakainya.
+    def _lihat_boost(self, tiktok_user: str) -> list[tuple[int, int, str, float]]:
+        """Gift yang sedang menunggu untuk penonton ini, TANPA memakainya.
+
+        Urut dari yang dikirim duluan. Yang sudah kedaluwarsa dibuang di
+        sini dan dihitung hangus.
 
         Sengaja tidak langsung dihapus: kalau dibuang di sini lalu username-nya
         ternyata salah ketik dan gagal verifikasi, orang yang sudah bayar
-        kehilangan koinnya begitu saja. Boost baru dipakai setelah avatarnya
+        kehilangan gift-nya begitu saja. Gift baru dipakai setelah avatarnya
         benar-benar masuk antrian.
         """
-        boost = self._boost.get(tiktok_user)
-        if not boost:
-            return 0
-        koin, kedaluwarsa = boost
-        if time.monotonic() >= kedaluwarsa:
+        daftar = self._boost.get(tiktok_user)
+        if not daftar:
+            return []
+        now = time.monotonic()
+        hidup = [g for g in daftar if now < g[3]]
+        for tier, koin, nama_gift, kedaluwarsa in daftar:
+            if now >= kedaluwarsa:
+                self.boost_hangus += 1
+                log.info("[gift] %s (%s koin, tier %s) milik %s sudah kedaluwarsa",
+                         nama_gift, koin, tier, tiktok_user)
+        if hidup:
+            self._boost[tiktok_user] = hidup
+        else:
             self._boost.pop(tiktok_user, None)
-            self.boost_hangus += 1
-            log.info("[gift] boost %s koin milik %s sudah kedaluwarsa", koin, tiktok_user)
-            return 0
-        return koin
+        return list(hidup)
+
+    def tap_terbanyak(self) -> str:
+        """Penonton dengan tap terbanyak sejauh ini, untuk baris [detak].
+
+        Angka ruangan ("897 tap") tidak bisa menjawab apakah LIKE_PODIUM
+        masuk akal -- 897 dari satu orang dan 897 dari seratus orang itu
+        dua live yang berbeda. Yang menentukan tercapai-tidaknya angka
+        per ORANG, jadi itu yang dicetak.
+        """
+        if not self._likes_total:
+            return ""
+        user, jumlah = max(self._likes_total.items(), key=lambda kv: kv[1])
+        return f" | tap terbanyak {user} {jumlah}/{LIKE_PODIUM}"
 
     def sapu_boost_hangus(self) -> None:
         """Buang boost yang tidak pernah disusul komentar, sekalian dicatat.
@@ -509,11 +701,19 @@ class Pipeline:
         "gift harus disusul username" ini layak dipertahankan.
         """
         now = time.monotonic()
-        hangus = [u for u, (_, exp) in self._boost.items() if now >= exp]
-        for u in hangus:
-            koin, _ = self._boost.pop(u)
-            self.boost_hangus += 1
-            log.info("[gift] boost %s koin hangus -- %s tidak pernah ngetik username", koin, u)
+        for u in list(self._boost):
+            hidup = []
+            for tier, koin, nama_gift, exp in self._boost[u]:
+                if now >= exp:
+                    self.boost_hangus += 1
+                    log.info("[gift] %s (%s koin, tier %s) hangus -- %s tidak "
+                             "pernah ngetik username", nama_gift, koin, tier, u)
+                else:
+                    hidup.append((tier, koin, nama_gift, exp))
+            if hidup:
+                self._boost[u] = hidup
+            else:
+                self._boost.pop(u)
 
     async def handle(self, tiktok_user: str, nickname: str, text: str) -> None:
         """Tidak pernah raise — satu komentar rusak tidak boleh mematikan listener."""
@@ -548,9 +748,34 @@ class Pipeline:
         # Tier menentukan siapa yang boleh menembus rem. Orang yang sudah bayar
         # tidak boleh kena "[tolak] masih cooldown" -- dari sisi dia, uangnya
         # sudah keluar tapi tidak terjadi apa-apa.
-        koin = self._lihat_boost(tiktok_user)
+        gifts = self._lihat_boost(tiktok_user)
         podium = self._lihat_podium(tiktok_user)
-        istimewa = podium or tier_dari_koin(koin) >= 2
+        istimewa = podium or bool(gifts)
+
+        # DIKLAIM SEKARANG, sebelum await pertama di bawah.
+        #
+        # Tiap komentar diproses di task-nya sendiri (lihat
+        # `asyncio.create_task` di atas). Kalau gift-nya baru dihapus
+        # sesudah push, dua komentar username beruntun dari orang yang
+        # sama sama-sama membaca daftar yang sama selagi yang pertama
+        # masih menunggu verifikasi Roblox -- dan satu Doughnut jadi dua
+        # raksasa. Yang tidak jadi terkirim dikembalikan lewat `kembalikan`.
+        klaim_podium = self._podium_pending.pop(tiktok_user, None) if podium else None
+        if gifts:
+            daftar = self._boost.get(tiktok_user, [])
+            for g in gifts:
+                if g in daftar:
+                    daftar.remove(g)
+            if not daftar:
+                self._boost.pop(tiktok_user, None)
+
+        def kembalikan(sisa_gift, podium_kembali: bool) -> None:
+            if sisa_gift:
+                # Di DEPAN: lebih tua dari gift yang masuk selagi menunggu.
+                self._boost[tiktok_user] = list(sisa_gift) + self._boost.get(tiktok_user, [])
+            if podium_kembali and klaim_podium is not None:
+                lama = self._podium_pending.get(tiktok_user, 0.0)
+                self._podium_pending[tiktok_user] = max(lama, klaim_podium)
 
         if not istimewa:
             last_name = self._recent_names.get(key)
@@ -574,22 +799,48 @@ class Pipeline:
         if VERIFY_ROBLOX and not await self.roblox_exists(name):
             log.info("[tolak] '%s' tidak ada di Roblox", name)
             self.rejected += 1
+            kembalikan(gifts, podium)
             return
 
         # Dedupe dicatat hanya kalau push-nya BERHASIL. Kalau server antrian
         # lagi mati, nama itu tidak pernah masuk antrian — memblokirnya 60 detik
         # cuma bikin percobaan berikutnya ikut hilang percuma.
-        if await self.push(name, nickname, koin, podium=podium):
-            self._recent_names[key] = time.monotonic()
-            # Diingat supaya gift yang datang SESUDAH ini tahu username mana
-            # yang harus dinaikkan, tanpa menunggu orangnya mengetik lagi.
-            self._nama_terakhir[tiktok_user] = (
-                name, koin, time.monotonic() + GIFT_BOOST_TTL_S)
-            # Baru sekarang boost-nya dianggap terpakai.
-            if istimewa:
-                self._boost.pop(tiktok_user, None)
-            if podium:
-                self._podium_pending.pop(tiktok_user, None)
+        # Yang dikirim: SETIAP gift yang menunggu, urut dari yang dikirim
+        # duluan, lalu hadiah tap-nya kalau ada. Masing-masing satu spawn,
+        # dan tidak ada yang dilewati -- Doughnut lalu Rose sebelum dia
+        # ngetik = raksasa DULU, baru Rose.
+        #
+        # Komentar tanpa apa pun yang menunggu tetap satu spawn tier 1.
+        # Komentar yang membawa gift TIDAK ikut menambah spawn tier 1 di
+        # depannya: namanya dipakai untuk gift-nya, bukan dua kali.
+        kiriman = [(tier, koin, False) for tier, koin, _, _ in gifts]
+        if podium:
+            kiriman.append((LIKE_TIER, 0, True))
+        if not kiriman:
+            kiriman = [(1, 0, False)]
+
+        # Di-await satu per satu, bukan dikirim bersamaan: main.py
+        # menyisipkan tiap kiriman berbayar SESUDAH yang sudah menunggu,
+        # jadi urutan await ini yang menjadi urutan tampilnya.
+        terkirim = 0
+        for tier, koin, dari_tap in kiriman:
+            if not await self.push(name, nickname, tier, koin, podium=dari_tap):
+                break
+            terkirim += 1
+
+        # Yang BERHASIL dikirim saja yang dianggap terpakai. Kalau server
+        # antrian mati di tengah jalan, sisanya dikembalikan dan ikut
+        # terkirim di komentar berikutnya.
+        kembalikan(gifts[terkirim:], podium and terkirim < len(kiriman))
+
+        if terkirim == 0:
+            return
+
+        self._recent_names[key] = time.monotonic()
+        # Diingat supaya gift yang datang SESUDAH ini tahu username mana
+        # yang harus di-spawn, tanpa menunggu orangnya mengetik lagi.
+        self._nama_terakhir[tiktok_user] = (
+            name, time.monotonic() + GIFT_BOOST_TTL_S)
 
     async def roblox_exists(self, username: str) -> bool:
         """True kalau username terdaftar di Roblox.
@@ -617,23 +868,20 @@ class Pipeline:
         self._roblox_cache[key] = (found, time.monotonic() + ttl)
         return found
 
-    async def push(self, username: str, nickname: str, koin: int = 0,
-                   podium: bool = False) -> bool:
-        """Kirim ke antrian. False kalau gagal — pemanggilnya yang menentukan
-        apakah kegagalan itu perlu dicatat sebagai 'sudah pernah masuk'.
+    async def push(self, username: str, nickname: str, tier: int = 1,
+                   koin: int = 0, podium: bool = False) -> bool:
+        """Kirim SATU spawn ke antrian. False kalau gagal — pemanggilnya yang
+        menentukan apakah kegagalan itu perlu dicatat sebagai 'sudah pernah
+        masuk'.
 
-        Yang dikirim KOIN; tiernya dihitung di sini supaya cuma ada satu
-        tempat yang menerjemahkan harga jadi tier.
+        Tier-nya dikirim apa adanya. Yang menerjemahkan gift jadi tier cuma
+        tier_dari_gift; di sini tidak ada lagi yang dihitung ulang, apalagi
+        digabung dengan kiriman lain.
+
+        `podium` cuma label: kiriman ini hadiah tap, bukan gift.
         """
         koin = max(0, int(koin or 0))
-        tier = tier_dari_koin(koin)
-
-        # Jalur tap-tap: naik ke tier 3 (raksasa) tanpa koin. max(),
-        # bukan ditimpa -- kalau suatu saat ada tier di atas 3, orang
-        # yang tap DAN bayar besar tidak boleh malah TURUN gara-gara
-        # tapnya.
-        if podium:
-            tier = max(tier, LIKE_TIER)
+        tier = max(1, int(tier or 1))
 
         if self.dry_run:
             log.info("[dry-run] '%s' (dari %s) %s koin = tier %s — tidak dikirim",
@@ -646,10 +894,8 @@ class Pipeline:
             r = await self._client.post(PUSH_URL, json={
                 "username": username,
                 "tier": tier,
-                # Total koin yang sudah dia keluarkan untuk nama ini dalam
-                # jendela boost. Dipakai Roblox untuk memperpanjang sorotan
-                # dan menuliskan angkanya di papan -- itu yang bikin penonton
-                # LAIN tahu seberapa besar yang barusan dikirim.
+                # Harga gift INI saja (dikali combo-nya), bukan total. Cuma
+                # untuk log dan papan -- tiernya sudah ditentukan di atas.
                 "koin": koin,
                 # Dipotong: nickname TikTok bisa panjang sekali dan berisi emoji;
                 # ini cuma buat ditampilkan "dipanggil oleh ..." di Roblox.
@@ -678,7 +924,7 @@ class Pipeline:
         self.per_tier[tier] = self.per_tier.get(tier, 0) + 1
         label = f" TIER {tier} ({koin} koin)" if tier > 1 else ""
         if podium:
-            label = f" TIER {tier} (dari {LIKE_PODIUM} tap, {koin} koin)"
+            label = f" TIER {tier} (dari {LIKE_PODIUM} tap)"
         log.info("[push]%s '%s' (dari %s) masuk antrian, panjang %s",
                  label, username, nickname, data.get("size"))
         return True
@@ -752,10 +998,11 @@ async def detak(pipeline: Pipeline, jeda: float = 30.0) -> None:
         # mendesak, dan menumpangkannya ke detak menghindari satu task lagi.
         pipeline.sapu_boost_hangus()
         log.info("[detak] %s komentar | %s diantrikan | %s ditolak | %s gift | "
-                 "%s boost hangus | %s tap | %s podium dari tap",
+                 "%s boost hangus | %s tap | %s podium dari tap%s",
                  pipeline.seen, pipeline.pushed, pipeline.rejected,
                  pipeline.gifts, pipeline.boost_hangus,
-                 pipeline.likes, pipeline.podium_like)
+                 pipeline.likes, pipeline.podium_like,
+                 pipeline.tap_terbanyak())
 
 
 def _log_setelan(pipeline: "Pipeline", dry_run: bool) -> None:
@@ -763,9 +1010,15 @@ def _log_setelan(pipeline: "Pipeline", dry_run: bool) -> None:
     log.info("Target antrian: %s%s", PUSH_URL, "  (DRY RUN)" if dry_run else "")
     log.info("Setelan: cooldown %.0fs | dedupe nama %.0fs | verifikasi Roblox %s | blacklist %s nama",
              USER_COOLDOWN_S, NAME_DEDUPE_S, "ya" if VERIFY_ROBLOX else "tidak", len(pipeline.blacklist))
-    log.info("Tier dari koin: >=%s = tier 2 (border), >=%s = tier 3 (aura VFX),"
-             " >=%s = tier 4 (raksasa) | boost menunggu username %.0fs",
-             TIER2_KOIN, TIER3_KOIN, TIER4_KOIN, GIFT_BOOST_TTL_S)
+    log.info("Tier dari nama gift: %s | combo xN = N spawn, kiriman terpisah "
+             "tidak dijumlah",
+             ", ".join(f"{n} = tier {t}" for n, t in GIFT_TIER.items()))
+    log.info("Combo ditampung: %s",
+             ", ".join(f"tiap {per} {n} = 1 spawn tier {t}"
+                       for n, (per, t) in GIFT_NAIK.items()) or "-")
+    log.info("Gift tak dikenal dari harga satuan: >=%s = tier 2, >=%s = tier 3, "
+             ">=%s = tier 5 (raksasa) | gift menunggu username %.0fs",
+             TIER2_KOIN, TIER3_KOIN, TIER5_KOIN, GIFT_BOOST_TTL_S)
     log.info("Tap-tap: %s tap = tier %s gratis (berulang), haknya menunggu username %.0fs",
              LIKE_PODIUM, LIKE_TIER, LIKE_PODIUM_TTL_S)
 

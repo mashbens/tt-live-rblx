@@ -1,8 +1,8 @@
 --[[
-    Kamera + Aura Client  --  pasangan dari my_scrip_lua_v2
+    Kamera + Aura Client  --  pasangan dari AvatarQueueV2
 
-    Taruh di: StarterPlayer > StarterPlayerScripts
-              (Insert Object > LocalScript, beri nama KameraClientV2)
+    Di Studio: StarterPlayer.StarterPlayerScripts.KameraClientV2
+               (LocalScript). Disinkron Rojo dari file ini -- `make rojo`.
 
     MATIKAN KameraClient yang lama. Dua LocalScript yang sama-sama
     menulis workspace.CurrentCamera tiap frame bikin kameranya bergetar
@@ -21,7 +21,7 @@
     penonton) dan untuk AnimationTrack.TimePosition (penyamaan tarian).
 
     TIDAK ADA ANGKA UNTUK DISETEL DI FILE INI.
-    Semuanya (CAMERA_*, AURA_*, RESYNC_*) tinggal di my_scrip_lua_v2 dan
+    Semuanya (CAMERA_*, AURA_*, RESYNC_*) tinggal di AvatarQueueV2 dan
     ditarik lewat V2Config.
 --]]
 
@@ -40,7 +40,7 @@ local ContentProvider   = game:GetService("ContentProvider")
 -- client" sepuluh baris di bawah -- pesan yang tidak menyebut sama
 -- sekali bahwa masalahnya letak file, bukan kodenya.
 if not RunService:IsClient() then
-	warn("kamera_client_lua_v2 jalan di SERVER. File ini harus " ..
+	warn("KameraClientV2 jalan di SERVER. File ini harus " ..
 		"LocalScript di StarterPlayer > StarterPlayerScripts " ..
 		"(nama: KameraClientV2), bukan Script di ServerScriptService.")
 	return
@@ -70,6 +70,8 @@ local CADANGAN = {
 	auraSfxSpeed = 1, auraSfxLoop = false,
 	auraSfxHit = "", auraSfxHitVol = 0.8,
 	auraSfxHitTinggi = "", auraSfxHitTinggiVol = 0.9,
+	auraSfxHitRaksasa = "", auraSfxHitRaksasaVol = 1.0,
+	auraSfxHitRaksasaNada = 0.75, auraSfxRollRaksasaNada = 0.8,
 	auraTinggiMin = 900,
 	-- Kosong = tidak ada bunyi kedatangan. Cadangan ini cuma dipakai
 	-- kalau V2Config gagal ditarik; daftar aslinya ada di SFX_TIER.
@@ -78,6 +80,7 @@ local CADANGAN = {
 	zoom = true, zoomMasuk = 0.45, zoomTahan = 1.0, zoomKeluar = 1.8,
 	spawnLurus = true,
 	spawnSiap = true, spawnSiapMaks = 0.6, spawnSiapFade = 0.12,
+	sembunyiPenonton = true,
 	resyncEvery = 3, driftLimit = 0.04,
 	syncKp = 0.6, syncSpeedMaks = 0.15, syncSnap = 0.35,
 	visualAuto = true, visualFpsMin = 32, visualBloom = 0.45,
@@ -160,6 +163,17 @@ local fokusKini   = fokusTarget
 
 local offsetDasar = Vector3.new(0, CFG.up, CFG.back)
 
+-- Tinggi kamera saat MUNDUR PENUH, dari pesan `fokus` yang terakhir.
+--
+-- Tidak diambil dari CFG sekali di awal, karena angkanya berubah: dia
+-- turun selama ada raksasa berdiri supaya kepala raksasanya masuk
+-- frame (CAMERA_UP_JAUH_GIANT di server). Server yang memutuskan;
+-- client cuma menyimpan yang terakhir dia dengar.
+--
+-- Nilai awalnya dari CFG supaya frame-frame sebelum kedatangan pertama
+-- tetap memakai tinggi yang benar.
+local upJauhKini = CFG.upJauh or CFG.up
+
 -- ============ MODE SINEMATIK ============
 --
 -- Selama sorotan (tier 2/3), kamera berhenti mengayun dan MENGORBIT
@@ -177,10 +191,22 @@ local sinemaSampai = 0
 -- dua tingkat.
 local sinemaOrbit = false
 
--- Pengali jarak kamera untuk adegan ini. Dipakai raksasa tier 3, yang
--- pada jarak biasa tidak muat di frame -- kameranya berakhir di dalam
--- tulang keringnya.
+-- Pengali jarak kamera untuk adegan ini. Dipakai raksasa, yang pada
+-- jarak biasa tidak muat di frame -- kameranya berakhir di dalam tulang
+-- keringnya.
 local sinemaJauh = 1
+
+-- Pengali TINGGI kamera, TERPISAH dari pengali jarak di atas.
+--
+-- Dulu tidak ada: offsetSinema dikali satu angka, jadi kamera yang
+-- mundur berkali lipat untuk raksasa ikut NAIK berkali lipat juga.
+-- Akibatnya pada 14x kamera duduk empat belas stud di atas kepala
+-- raksasanya, dan yang dilihat penonton ubun-ubun -- bukan wajah.
+--
+-- Diisi dari pesan server (jauhY, lihat GIANT_KAMERA_TINGGI di sana).
+-- Untuk tier lain nilainya sama dengan sinemaJauh, jadi perilakunya
+-- persis seperti sebelum angka ini ada.
+local sinemaJauhY = 1
 
 -- Busur depan adegan yang sedang jalan, dari server (KAMERA_TIER).
 --
@@ -328,6 +354,330 @@ local function pandangLurus()
 	sudutBias = -ayun
 end
 
+-- ============ KAMERA ADEGAN NOVA (tier 4, Bouquet Flower) ============
+--
+-- Nova punya JALUR kamera sendiri, dan angkanya NOVA.KAMERA di server.
+--
+-- Ini pembalikan dari yang sempat tertulis di sini. Waktu nova baru
+-- menggantikan dash, kameranya sengaja dibiarkan jadi kamera sorotan
+-- biasa: nova terjadi di tempat orangnya berdiri, jadi kamera yang sudah
+-- menghadap ke sana tidak perlu diganti. Itu benar sewaktu dia naik 13
+-- stud. Pada 45 stud tidak lagi -- kamera yang diam di tanah memandang
+-- orang setinggi sembilan badan cuma memperlihatkan telapak kakinya.
+--
+-- EMPAT bidikan berurutan, tiap satu menjawab pertanyaan yang berbeda:
+--
+--   NAIK    kamera RENDAH memandang ke atas sambil mengorbit 360 derajat
+--           sekali penuh. Sudut rendah yang membuat dia menjulang;
+--           orbitnya yang memperlihatkan dia dari segala sisi.
+--   DIAM    meluncur ke DEPAN wajahnya dan berhenti selagi dia
+--           menggantung. Satu-satunya detik tenang di seluruh adegan.
+--   JATUH   meluncur ke ATAS kepalanya, jadi dia jatuh MENJAUH dari
+--           lensa. Ini yang membuat 45 stud terbaca sebagai jarak.
+--   LEDAKAN mundur ke shot lebar supaya shockwave dan barisan yang
+--           berceceran muat dalam satu frame.
+--
+-- Kamera biasa TETAP dihitung di belakang layar selama adegan ini, jadi
+-- pulangnya ke sorotan tarian yang sudah berjalan -- dan karena
+-- pulangnya lewat Lerp yang turun dari 1 ke 0 (`lepas`), tidak ada satu
+-- pun frame yang meloncat.
+--
+-- Dua hal lain masih dikemudikan modulnya lewat callback, dan tetap
+-- MENUMPANG di atas apa pun yang dihasilkan jalur di atas:
+--
+--   FOV     menyempit pelan saat mengumpulkan tenaga, tajam saat
+--           membanting, lalu melebar menghentak saat meledak
+--   GETAR   goyangan waktu naik dan waktu menghantam tanah
+--
+-- Yang tidak pernah diserahkan ke modul: camera.CFrame dan
+-- camera.FieldOfView itu sendiri. Kamera ini punya SATU penulis, gelung
+-- render di bawah -- modul yang menulisnya sendiri akan dibatalkan
+-- gelung itu di frame berikutnya.
+
+-- Berapa derajat FOV sedang digeser dari FOV dasarnya, dan FOV dasar itu
+-- berapa. novaFovDasar nil = tidak ada adegan yang sedang memegang FOV.
+local novaFovDasar = nil
+local novaFovNilai = nil   -- NumberValue: yang di-tween TweenService
+local novaFovTween = nil
+
+-- Getaran kamera: sisa waktu, kekuatan awal, dan pergeseran yang berlaku
+-- di frame ini.
+local novaGetarSampai = 0
+local novaGetarLama   = 0
+local novaGetarKuat   = 0
+local novaGetarOffset = Vector3.zero
+
+-- Geser FOV sejauh `delta` derajat dari FOV dasar adegan ini, dalam
+-- `lama` detik. delta 0 = pulang ke FOV dasarnya.
+--
+-- Lewat NumberValue yang di-tween, bukan menghitung sendiri di gelung
+-- render: yang diminta modulnya easing Roblox (Sine, Quint, Elastic) dan
+-- menulis ulang ketiganya di sini berarti menyalin kurva yang sudah ada.
+local function novaFov(delta, lama, style, dir)
+	if not novaFovNilai then return end
+	if novaFovTween then pcall(function() novaFovTween:Cancel() end) end
+	local tujuan = tonumber(delta) or 0
+	lama = math.max(tonumber(lama) or 0, 0)
+	if lama <= 0 then
+		novaFovNilai.Value = tujuan
+		return
+	end
+	novaFovTween = TweenService:Create(novaFovNilai,
+		TweenInfo.new(lama, style or Enum.EasingStyle.Quad,
+			dir or Enum.EasingDirection.Out), { Value = tujuan })
+	novaFovTween:Play()
+end
+
+-- Goyangkan kamera selama `lama` detik dengan kekuatan `kuat` stud.
+-- lama <= 0 menghentikannya sekarang (dipakai waktu adegannya ditutup).
+local function novaGetar(lama, kuat)
+	lama = tonumber(lama) or 0
+	kuat = tonumber(kuat) or 0
+	if lama <= 0 or kuat <= 0 then
+		novaGetarSampai, novaGetarOffset = 0, Vector3.zero
+		return
+	end
+	novaGetarSampai = os.clock() + lama
+	novaGetarLama   = lama
+	novaGetarKuat   = kuat
+end
+
+-- Dipanggil gelung render tiap frame, SEBELUM camera.CFrame ditulis.
+local function novaGetarFrame()
+	if os.clock() >= novaGetarSampai then
+		novaGetarOffset = Vector3.zero
+		return
+	end
+	-- Meluruh ke nol supaya getarannya berhenti pelan, bukan dipotong.
+	local sisa = (novaGetarSampai - os.clock()) / math.max(novaGetarLama, 1e-3)
+	local k = novaGetarKuat * math.clamp(sisa, 0, 1)
+	novaGetarOffset = Vector3.new(
+		(math.random() - 0.5) * k,
+		(math.random() - 0.5) * k,
+		(math.random() - 0.5) * k)
+end
+
+-- Adegan yang sedang jalan. nil = tidak ada. Diisi jalankanNova,
+-- dikosongkan gelung render sendiri begitu adegannya habis.
+local novaKam = nil
+
+local function haluskan(u)
+	u = math.clamp(u, 0, 1)
+	return u * u * (3 - 2 * u)
+end
+
+local function antara(a, b, u) return a + (b - a) * u end
+
+-- CFrame kamera nova pada waktu t, dan seberapa kuat dia menimpa kamera
+-- biasa (0..1). nil = adegannya habis.
+--
+-- "Depan" = sisi -Z. Bukan pilihan bebas: barisan tumbuh ke arah -Z
+-- (getPosition di server) dan kamera panggung duduk di CAMERA_BACK yang
+-- juga negatif, jadi -Z itu sisi tempat penonton berada -- dan avatarnya
+-- menghadap ke sana. Kamera di sisi +Z memandang punggung.
+local function kameraNova(s, t)
+	local k     = s.k
+	local j     = s.j
+	local e     = t - s.mulai
+	local atas  = Vector3.new(0, 1, 0)
+	local depan = Vector3.new(0, 0, -1)
+
+	-- Titik lantai yang dipakai SELURUH bidikan di bawah.
+	--
+	-- Dia bergeser kalau adegannya mendarat di tempat lain daripada
+	-- tempat dia mulai (s.tanahAkhir, dari `tujuan` di server): badannya
+	-- melintas ke sana selama fase ascend, dan orbit yang tetap
+	-- melingkari titik asal akan menyeret dia keluar frame -- lalu
+	-- ledakannya terjadi di luar layar.
+	--
+	-- Gesernya mengikuti fase yang sama dengan badannya, jadi begitu
+	-- fase diam mulai keduanya sudah sama-sama sampai.
+	local tanah = s.tanah
+	if s.tanahAkhir then
+		local u = 0
+		if e >= j.ascend then
+			u = haluskan((e - j.ascend) / math.max(j.freeze - j.ascend, 0.01))
+		end
+		tanah = s.tanah:Lerp(s.tanahAkhir, u)
+	end
+	local badan = s.badan or (tanah + atas * 3)
+
+	local lepas = math.max(tonumber(k.lepas) or 1, 0.05)
+	if e > j.selesai + lepas then return nil end
+
+	-- --- NAIK: orbit rendah ---
+	if e < j.freeze then
+		local u = math.clamp(e / math.max(j.freeze, 0.01), 0, 1)
+		local a = 2 * math.pi * u * (tonumber(k.naikPutaran) or 1)
+		local r = tonumber(k.naikRadius) or 26
+		-- a=0 menaruh kamera di (0, tinggi, -r) -- tepat di depan. Dan
+		-- karena putarannya bilangan bulat, a=2pi mengembalikannya ke
+		-- titik yang sama: fase berikutnya berangkat dari depan tanpa
+		-- satu pun loncatan.
+		-- Tingginya naik LEBIH CEPAT daripada orbitnya (naikCepat),
+		-- supaya kamera sudah lewat di atas kepala barisan sebelum
+		-- orbitnya membawa dia ke sisi belakang. Alasan lengkapnya di
+		-- NOVA.KAMERA di server.
+		local cepat  = math.max(tonumber(k.naikCepat) or 1, 0.01)
+		local tinggi = antara(tonumber(k.naikBawah) or 2,
+			tonumber(k.naikAtas) or 16, haluskan(math.min(u * cepat, 1)))
+		local pos = tanah + Vector3.new(math.sin(a) * r, tinggi,
+			-math.cos(a) * r)
+		return CFrame.lookAt(pos, badan), 1
+	end
+
+	-- Posisi kamera di akhir orbit. Dihitung, bukan disimpan dari frame
+	-- terakhir: frame terakhir belum tentu jatuh tepat di u=1, dan
+	-- selisih sekecil apa pun di situ terlihat sebagai sentakan.
+	local orbitAkhir = tanah + Vector3.new(0,
+		tonumber(k.naikAtas) or 16, -(tonumber(k.naikRadius) or 26))
+
+	-- Tinggi badannya DI PUNCAK. Dicatat sekali saat fase diam dimulai:
+	-- sesudah dia menjatuhkan diri, `badan` sudah turun -- dan bidikan
+	-- fase jatuh di bawah harus berangkat dari tempat kamera berada
+	-- waktu dia masih menggantung, bukan dari tempat dia sekarang.
+	if not s.puncak then s.puncak = badan end
+
+	local posDepan = s.puncak + depan * (tonumber(k.diamRadius) or 20)
+		- atas * (tonumber(k.diamTurun) or 3)
+
+	-- --- DIAM DI PUNCAK: meluncur ke depan wajahnya ---
+	if e < j.slam then
+		local u = haluskan((e - j.freeze)
+			/ math.max(j.slam - j.freeze, 0.01))
+		return CFrame.lookAt(orbitAkhir:Lerp(posDepan, u), badan), 1
+	end
+
+	local posAtas = tanah + atas * (tonumber(k.atasNaik) or 52)
+		+ depan * (tonumber(k.atasRadius) or 22)
+
+	-- --- JATUH: meluncur ke atas kepalanya ---
+	--
+	-- Bidikannya tetap di badannya, yang sedang turun: jadi kamera naik
+	-- dan orangnya turun di frame yang sama, dan 45 stud itu terbaca
+	-- sebagai jarak yang ditempuh -- bukan sebagai angka.
+	if e < j.mendarat then
+		local u = haluskan((e - j.slam)
+			/ math.max(j.mendarat - j.slam, 0.01))
+		return CFrame.lookAt(posDepan:Lerp(posAtas, u), badan), 1
+	end
+
+	-- --- LEDAKAN: mundur ke shot lebar, lalu lepas ---
+	local mundur = math.max(tonumber(k.lebarMundur) or 1.2, 0.05)
+	local u = haluskan(math.min((e - j.mendarat) / mundur, 1))
+	local posLebar = tanah + atas * (tonumber(k.lebarNaik) or 20)
+		+ depan * (tonumber(k.lebarRadius) or 46)
+	-- posAtas dihitung ulang di sini lewat nilai yang sama, bukan
+	-- disimpan: fase ini berangkat dari tempat fase jatuh berakhir, dan
+	-- dua rumus terpisah untuk satu titik yang sama akan berpisah
+	-- diam-diam kalau salah satunya digeser.
+	-- Dibidik SEDIKIT DI ATAS lantai, bukan ke badannya: yang dijual
+	-- fase ini bukan orangnya lagi, tapi apa yang terjadi di sekitarnya.
+	local cf = CFrame.lookAt(posAtas:Lerp(posLebar, u), tanah + atas * 4)
+
+	local sisa = j.selesai - e
+	if sisa < lepas then
+		return cf, math.clamp(sisa / lepas, 0, 1)
+	end
+	return cf, 1
+end
+
+-- ============ KAMERA PANGGUNG ROSA ============
+--
+-- Jalur kamera Rosa, dari ROSA.JALUR di server: DARI BAWAH, KELILING dekat,
+-- POTRET, lalu LEPAS. Diisi panggungRosa, dibaca gelung render, dan
+-- dikosongkan gelung render sendiri begitu jalurnya habis.
+--
+-- "Depan" = -Z, sama dengan nova. Semua posisi dihitung dari titik
+-- LANTAI tempat dia berdiri (tanah) dan tinggi badannya sendiri.
+local rosaKam = nil
+
+local function kameraRosa(s, t)
+	local J = s.j
+	local e = t - s.mulai
+	local naik   = tonumber(J.naik) or 2.6
+	local orbit  = tonumber(J.orbit) or 3.4
+	local potret = tonumber(J.potret) or 2.6
+	local lepas  = math.max(tonumber(J.lepas) or 1.4, 0.05)
+	local mulaiLepas = naik + orbit + potret
+	if e > mulaiLepas + lepas then return nil end
+
+	local g, H = s.tanah, s.tinggi
+	local atas = Vector3.new(0, 1, 0)
+	local r = tonumber(J.radius) or 7
+	local tOrbit = H * (tonumber(J.tinggiOrbit) or 0.55)
+	local bOrbit = H * (tonumber(J.bidikOrbit) or 0.55)
+
+	local pos, bidik
+	if e < naik then
+		-- DARI BAWAH. Ujung bidikan ini SAMA PERSIS dengan titik awal
+		-- keliling di bawah (sudut 0), jadi pergantiannya tanpa loncatan.
+		local u = haluskan(e / math.max(naik, 0.01))
+		local jarak = antara(tonumber(J.naikJauh) or 10, r, u)
+		pos   = g + Vector3.new(0,
+			antara(tonumber(J.naikBawah) or 0.6, tOrbit, u), -jarak)
+		bidik = g + atas * antara(H * (tonumber(J.naikBidik) or 0.3), bOrbit, u)
+	elseif e < mulaiLepas - potret then
+		-- KELILING. Sudutnya dihaluskan di kedua ujung, jadi putarannya
+		-- berangkat dan berhenti pelan -- bukan langsung berputar penuh
+		-- dari keadaan diam. Putarannya bulat: pulang ke depan.
+		local u = (e - naik) / math.max(orbit, 0.01)
+		local a = 2 * math.pi * (tonumber(J.putaran) or 1) * haluskan(u)
+		local y = tOrbit + math.sin(math.pi * u) * (tonumber(J.orbitNaik) or 0)
+		pos   = g + Vector3.new(math.sin(a) * r, y, -math.cos(a) * r)
+		bidik = g + atas * bOrbit
+	else
+		-- POTRET: sepertiga pertama naik ke wajah sambil mundur sedikit
+		-- (supaya papan auranya masuk frame), sisanya dorong masuk pelan.
+		local u = math.clamp((e - naik - orbit) / math.max(potret, 0.01), 0, 1)
+		local tP = H * (tonumber(J.potretTinggi) or 0.8)
+		local bP = H + (tonumber(J.potretBidik) or 0.8)
+		local jauhP  = tonumber(J.potretJauh) or 9
+		local dekatP = tonumber(J.potretDekat) or 6.5
+		local jarak, y, b
+		if u < 0.35 then
+			local v = haluskan(u / 0.35)
+			jarak, y, b = antara(r, jauhP, v), antara(tOrbit, tP, v),
+				antara(bOrbit, bP, v)
+		else
+			local v = haluskan((u - 0.35) / 0.65)
+			jarak, y, b = antara(jauhP, dekatP, v), tP, bP
+		end
+		pos   = g + Vector3.new(0, y, -jarak)
+		bidik = g + atas * b
+	end
+
+	local mix = 1
+	local masuk = math.max(tonumber(J.masuk) or 0.4, 0.05)
+	if e < masuk then mix = haluskan(e / masuk) end
+	if e > mulaiLepas then
+		mix = 1 - haluskan((e - mulaiLepas) / lepas)
+	end
+	return CFrame.lookAt(pos, bidik), mix
+end
+
+-- Ambil alih FOV untuk satu adegan, dan kembalikan fungsi pelepasnya.
+--
+-- FOV dasarnya dibaca SEKALI di sini. Kalau dibaca tiap panggilan novaFov,
+-- adegan kedua yang datang selagi yang pertama masih menyempitkan FOV akan
+-- mengunci angka yang sedang digeser sebagai "dasar" -- dan FOV-nya tidak
+-- pernah pulang lagi.
+local function novaAmbilFov(kam)
+	if novaFovNilai then return nil end   -- sudah ada adegan yang memegang
+	novaFovDasar = kam.FieldOfView
+	novaFovNilai = Instance.new("NumberValue")
+	novaFovNilai.Value = 0
+
+	return function()
+		if novaFovTween then pcall(function() novaFovTween:Cancel() end) end
+		novaFovTween = nil
+		if novaFovNilai then novaFovNilai:Destroy() end
+		novaFovNilai = nil
+		if novaFovDasar then kam.FieldOfView = novaFovDasar end
+		novaFovDasar = nil
+	end
+end
+
 -- ============ ZOOM MASUK LALU KELUAR ============
 --
 -- Tiap kedatangan baru, kamera mulai DEKAT lalu ditarik mundur ke jarak
@@ -351,6 +701,16 @@ local zoomTahan = 0
 -- (tiap tier punya angkanya sendiri, lihat KAMERA_TIER di sana); kalau
 -- pesannya tidak membawa angka, pakai setelan umum.
 local zoomKeluar = CFG.zoomKeluar or 1.8
+
+-- MERAPAT sampai sedekat apa, sebagai pecahan jarak penuh. Pasangan
+-- zoomMaks di bawah: yang ini ujung dekatnya, yang itu ujung jauhnya.
+--
+-- Biasanya CFG.zoomMasuk untuk semua kedatangan. Yang mengisinya sendiri
+-- cuma raksasa: badan 14x tidak muat di jarak sedekat itu, dan yang
+-- terpotong kepalanya. Diisi ulang tiap kedatangan dengan alasan yang
+-- sama seperti zoomMaks -- angka milik satu adegan tidak boleh diwarisi
+-- kedatangan berikutnya.
+local zoomMasuk = CFG.zoomMasuk or 0.45
 
 -- Mundur sampai sejauh apa, sebagai pecahan jarak penuh. 1 = sejauh
 -- biasa, 0,75 = berhenti di tiga perempat jalan.
@@ -504,7 +864,13 @@ RunService.RenderStepped:Connect(function(dt)
 	-- ketiga: dengan begitu dia bekerja sama di jarak mana pun --
 	-- termasuk di jarak raksasa yang berkali lipat -- tanpa satu pun
 	-- angka tambahan.
-	local dasar = offsetDasar:Lerp(offsetSinema * sinemaJauh, sinemaMix)
+	-- Jarak dan TINGGI diskalakan sendiri-sendiri. Lihat sinemaJauhY:
+	-- satu pengali untuk keduanya menaruh kamera raksasa di atas kepala
+	-- raksasanya sendiri.
+	local sinemaKini = Vector3.new(offsetSinema.X * sinemaJauh,
+		offsetSinema.Y * sinemaJauhY,
+		offsetSinema.Z * sinemaJauh)
+	local dasar = offsetDasar:Lerp(sinemaKini, sinemaMix)
 
 	-- Batas mundur, dicampur mengikuti adegannya.
 	--
@@ -515,7 +881,7 @@ RunService.RenderStepped:Connect(function(dt)
 	-- pernah mundur penuh lagi, dan barisan belakang tidak pernah
 	-- terlihat lagi.
 	local maksKini = 1 + ((zoomMaks or 1) - 1) * sinemaMix
-	local skala = CFG.zoomMasuk + (maksKini - CFG.zoomMasuk) * zoom
+	local skala = zoomMasuk + (maksKini - zoomMasuk) * zoom
 
 	-- DENYUT: merapat sekali lagi di paruh akhir adegan.
 	--
@@ -566,7 +932,7 @@ RunService.RenderStepped:Connect(function(dt)
 	-- di jarak berapa pun, yang kedua menaikkan kamera HANYA saat dia
 	-- sudah mundur -- di situ yang penting kerumunannya, bukan satu
 	-- badan yang utuh.
-	local naik = ((CFG.upJauh or CFG.up) - CFG.up) * zoom
+	local naik = ((upJauhKini or CFG.upJauh or CFG.up) - CFG.up) * zoom
 
 	-- Naik-turun khusus adegan berbayar, stud.
 	--
@@ -600,7 +966,49 @@ RunService.RenderStepped:Connect(function(dt)
 		dasar.Z * skala)
 
 	local offset = CFrame.Angles(0, sudut, 0):VectorToWorldSpace(dasar)
-	camera.CFrame = CFrame.new(fokusKini + offset, fokusKini)
+	local cf = CFrame.new(fokusKini + offset, fokusKini)
+
+	-- Jalur kamera nova MENIMPA semua gerakan di atas selama adegannya,
+	-- lalu melepaskannya lewat mix yang turun ke 0. Lihat kameraNova.
+	-- Jalur kamera Rosa, dengan cara yang sama persis seperti nova di
+	-- bawah: menimpa kamera sorotan biasa lewat mix, lalu melepasnya.
+	-- Nova dicampur SESUDAHNYA, jadi kalau keduanya pernah bertemu, nova
+	-- yang menang.
+	if rosaKam then
+		local rcf, rmix = kameraRosa(rosaKam, t)
+		if rcf then
+			cf = cf:Lerp(rcf, math.clamp(rmix, 0, 1))
+		else
+			rosaKam = nil
+		end
+	end
+
+	if novaKam then
+		local ncf, mix = kameraNova(novaKam, t)
+		if ncf then
+			cf = cf:Lerp(ncf, math.clamp(mix, 0, 1))
+		else
+			novaKam = nil
+		end
+	end
+
+	-- Getarannya MENAMBAH di atas apa pun hasilnya, jalur nova termasuk.
+	--
+	-- Digeser di ruang KAMERA (cf * CFrame.new(...)), bukan di sumbu
+	-- dunia: goyangan yang selalu ke arah +X dunia terbaca berbeda-beda
+	-- tergantung kamera sedang menghadap ke mana, dan di sudut tertentu
+	-- dia berubah jadi zoom yang bergetar alih-alih guncangan.
+	novaGetarFrame()
+	if novaGetarOffset ~= Vector3.zero then
+		cf = cf * CFrame.new(novaGetarOffset)
+	end
+
+	if novaFovNilai and novaFovDasar then
+		camera.FieldOfView = math.clamp(novaFovDasar + novaFovNilai.Value,
+			1, 120)
+	end
+
+	camera.CFrame = cf
 end)
 
 -- Laporan sekali, dua detik setelah mulai.
@@ -640,7 +1048,7 @@ gui.Parent         = pemain:WaitForChild("PlayerGui")
 -- itu sudah jawaban -- LocalScript-nya memang tidak jalan, dan tidak
 -- perlu ada yang membaca Output untuk tahu itu.
 --
--- Matikan lewat DEBUG_HUD di my_scrip_lua_v2 kalau sudah beres.
+-- Matikan lewat DEBUG_HUD di AvatarQueueV2 kalau sudah beres.
 local hud = nil
 if CFG.debug then
 	hud = Instance.new("TextLabel")
@@ -747,6 +1155,17 @@ local GLOW_NAMA = Color3.fromRGB(150, 200, 255)
 -- beberapa kedatangan, dan itu yang bikin angka 900 terasa berbeda dari
 -- 200 sebelum angkanya sendiri terbaca.
 local TIER = {
+	-- Raksasa, dan cuma dia: 10.000% tidak bisa dicapai dengan cara
+	-- lain (AURA_RAKSASA di server, tidak diundi). Ambangnya ditaruh
+	-- jauh di bawah 10.000 supaya angkanya sudah berwarna emas selagi
+	-- putarannya masih naik -- yang dijual justru putaran itu, dan
+	-- warna yang baru berganti di frame terakhir tidak ikut menjualnya.
+	--
+	-- Putih ke emas, satu-satunya yang HANGAT di panggung sedingin ini.
+	{ min = 5000, warna = grad(Color3.fromRGB(255, 255, 255),
+	                           Color3.fromRGB(255, 226, 130),
+	                           Color3.fromRGB(255, 168,  40)),
+	              glow  = Color3.fromRGB(255, 200, 70) },
 	{ min = 850, warna = grad(Color3.fromRGB(255, 236, 150),
 	                          Color3.fromRGB(255, 150,  50),
 	                          Color3.fromRGB(255,  72,  60)),
@@ -1070,34 +1489,22 @@ local function auraDiKepala(d)
 	-- dikecilkan dari sisi lain: stroke tipis dan glow cuma di angka.
 	-- Nama dan kata AURA tanpa glow sama sekali -- puluhan papan yang
 	-- semuanya bercahaya bikin panggungnya jadi kabut.
-	-- Raksasa: SATU BARIS NAMA, selesai.
+	-- CATATAN: ada cabang `d.namaSaja` di sini yang membuat papan
+	-- raksasa cuma berisi SATU BARIS NAMA -- tanpa angka, tanpa kata
+	-- AURA. Server sudah tidak pernah mengirim penanda itu lagi, jadi
+	-- cabangnya dibuang.
 	--
-	-- Papannya juga dipendekkan jadi sepertiga -- kalau tingginya
-	-- dibiarkan, namanya melayang di sepertiga atas dan dua pertiga
-	-- sisanya kotak kosong yang tetap mendorong papan itu menjauh dari
-	-- kepalanya.
-	if d.namaSaja then
-		gui.Size = UDim2.new(0, CFG.auraKepalaW, 0, CFG.auraKepalaH * 0.34)
-		-- Stroke 1 -> 2: papan raksasa dilihat dari jarak paling jauh di
-		-- seluruh panggung (dia berdiri di belakang barisan), dan di
-		-- jarak itu stroke tipis menyusut sampai hilang.
-		local lbl = teksGaya(gui, "Nama", 0.00, 1.00, FONT_NAMA,
-			GRAD_NAMA, GLOW_NAMA, 2, 0)
-		setTeks(lbl, d.nama or "?")
-
-		-- Pembukuan barisnya tetap dijalankan, tidak di-return di sini.
-		--
-		-- Raksasa memang tidak butuh (dia mengirim `tetap` juga), tapi
-		-- meninggalkan `return` berarti papan nama-saja yang suatu saat
-		-- dipakai avatar BIASA tidak pernah terdaftar -- dan yang tidak
-		-- terdaftar tidak pernah dilepas waktu baris di depannya terisi.
-		-- Satu baris ekstra sekarang, bukan bug yang menunggu.
-		if not d.tetap then
-			table.insert(papanAura, { gui = gui, baris = d.baris or 0 })
-			lepasBarisBelakang(d.baris or 0)
-		end
-		return
-	end
+	-- Alasannya di sisi server (lihat tampilkanAura di sana): raksasa
+	-- sekarang dapat 10.000%, satu-satunya angka di panggung yang tidak
+	-- bisa dicapai siapa pun dengan cara lain, dan menyembunyikan
+	-- angkanya berarti yang bayar paling mahal adalah satu-satunya yang
+	-- papannya tidak pernah berputar.
+	--
+	-- Ditulis di sini supaya tidak dipasang lagi tanpa sadar: yang
+	-- dikhawatirkan dulu papan tiga baris di atas kepala setinggi
+	-- belasan stud jadi papan reklame yang menyaingi badannya sendiri.
+	-- Itu masih benar; yang berubah cuma penilaiannya -- angka sebesar
+	-- itu memang pantas menyaingi badannya.
 
 	local jenjang   = tier(d.persen or 0)
 	-- Nama: stroke 1 -> 2 dan tembus 0,05 -> 0. Dua-duanya soal yang
@@ -1181,6 +1588,36 @@ local function auraDiKepala(d)
 
 		if not gui.Parent then return end
 		setTeks(lblPersen, ("%d%%"):format(target))
+
+		-- Raksasa: sesudah angkanya mendarat dan sempat dibaca, papannya
+		-- dirapikan jadi NAMA SAJA. Server yang menentukan siapa dan
+		-- berapa lama (AURA_RAKSASA_NAMA_S); di sini cuma dijalankan.
+		--
+		-- Label nama yang sudah ada DIPERBESAR mengisi papan, bukan dibuat
+		-- ulang: kembarannya (glow) menempel lewat glowOf, dan label baru
+		-- berarti kembaran baru yang harus dirangkai lagi.
+		local sesudah = tonumber(d.namaSesudah)
+		if sesudah and sesudah >= 0 then
+			task.wait(sesudah)
+			if not gui.Parent then return end
+			for _, lbl in ipairs({ lblPersen, lblAura }) do
+				local kembar = glowOf[lbl]
+				if kembar then kembar:Destroy() end
+				glowOf[lbl] = nil
+				lbl:Destroy()
+			end
+			-- Sepertiga tinggi, sama dengan papan nama-saja yang dulu:
+			-- kalau tingginya dibiarkan, namanya melayang di sepertiga atas
+			-- dan sisanya kotak kosong yang mendorong papan menjauh dari
+			-- kepalanya.
+			gui.Size = UDim2.new(0, CFG.auraKepalaW, 0, CFG.auraKepalaH * 0.34)
+			for _, lbl in ipairs({ lblNama, glowOf[lblNama] }) do
+				if lbl then
+					lbl.Position = UDim2.new(0, 0, 0, 0)
+					lbl.Size     = UDim2.new(1, 0, 1, 0)
+				end
+			end
+		end
 	end)
 end
 
@@ -1482,6 +1919,39 @@ local sfxHit = buatSfx("AuraHitSfx", CFG.auraSfxHit, CFG.auraSfxHitVol or 0.8)
 local sfxHitTinggi = buatSfx("AuraHitTinggiSfx", CFG.auraSfxHitTinggi,
 	CFG.auraSfxHitTinggiVol or 0.9)
 
+-- Bunyi mendarat KHUSUS RAKSASA. Sound keempat, berdiri sendiri seperti
+-- dua di atasnya dan dengan alasan yang sama.
+--
+-- Dia MENGGANTI dua-duanya, tidak menambah. Raksasa selalu 10.000%
+-- (AURA_RAKSASA di server), jadi tanpa dia yang berbunyi selalu
+-- hentakan "angka besar" -- yang sama persis dengan milik penonton
+-- gratisan yang kebetulan dapat 950, untuk angka yang sepuluh kali
+-- lipat di atas apa pun yang bisa didapat orang lain.
+--
+-- Nadanya yang mengerjakan pekerjaannya: server mengirim 0,35, dan di
+-- nada itu berkas mendarat bawaan Roblox turun satu setengah oktaf --
+-- dia berhenti terdengar seperti orang mendarat dan jadi dentuman
+-- rendah yang panjang.
+local sfxHitRaksasa = buatSfx("AuraHitRaksasaSfx", CFG.auraSfxHitRaksasa,
+	CFG.auraSfxHitRaksasaVol or 1.0)
+
+-- Bunyi PUTARAN khusus raksasa: berkas yang sama dengan putaran biasa, nada
+-- lebih rendah. Sound sendiri, bukan PlaybackSpeed yang ditukar pada
+-- sfxAura: undian raksasa dan undian orang lain bisa menempel, dan menukar
+-- nada Sound yang sedang berbunyi membuat putaran orang lain ikut berubah
+-- nada di tengah jalan.
+local sfxAuraRaksasa = buatSfx("AuraRollRaksasaSfx", CFG.auraSfx,
+	CFG.auraSfxVol or 0.7)
+if sfxAuraRaksasa then
+	sfxAuraRaksasa.PlaybackSpeed = math.max(CFG.auraSfxSpeed or 1, 0.1)
+		* math.max(tonumber(CFG.auraSfxRollRaksasaNada) or 1, 0.1)
+	sfxAuraRaksasa.Looped = (CFG.auraSfxLoop and CFG.auraSfxRoll) and true or false
+end
+if sfxHitRaksasa then
+	sfxHitRaksasa.PlaybackSpeed =
+		math.max(tonumber(CFG.auraSfxHitRaksasaNada) or 1, 0.1)
+end
+
 -- --- BUNYI KEDATANGAN PER TIER ---
 --
 -- Satu Sound per tier, dibuat sekali di awal. Daftar kandidatnya dari
@@ -1599,8 +2069,9 @@ local function tuntaskanHit(p)
 	-- ini. Kalau undian berikutnya sudah mulai, Sound yang sama sedang
 	-- memainkan putaran MILIK DIA -- memotongnya di sini berarti
 	-- undian yang baru berbunyi sepersekian detik lalu hening.
-	if p.gen == sfxGen and sfxAura and CFG.auraSfxRoll and sfxAura.IsPlaying then
-		sfxAura:Stop()
+	local putaran = p.roll or sfxAura
+	if p.gen == sfxGen and putaran and CFG.auraSfxRoll and putaran.IsPlaying then
+		putaran:Stop()
 	end
 
 	if p.sfx then
@@ -1609,7 +2080,7 @@ local function tuntaskanHit(p)
 	end
 end
 
-local function bunyiAura(roll, persen, tundaS)
+local function bunyiAura(roll, persen, tundaS, raksasa)
 	-- Mana bunyi mendarat yang dipakai undian ini.
 	--
 	-- MENGGANTI, bukan menumpuk: kalau keduanya dibunyikan, yang
@@ -1618,11 +2089,23 @@ local function bunyiAura(roll, persen, tundaS)
 	-- 200. Kalau bunyi khususnya tidak ada (id kosong / gagal dimuat),
 	-- jatuh kembali ke yang biasa -- lebih baik ada hentakan daripada
 	-- angka besar yang mendarat tanpa suara.
+	--
+	-- Tiga tingkat, dibaca dari yang paling khusus: raksasa, lalu angka
+	-- besar, lalu semua orang. Raksasa dikenali dari PENANDA yang
+	-- dikirim server, bukan dari besarnya angka -- ambang angka di sini
+	-- akan jadi jawaban kedua untuk "siapa yang raksasa", dan jawaban
+	-- kedua itu yang diam-diam bisa tidak sepakat dengan yang pertama.
 	local ambang = tonumber(CFG.auraTinggiMin) or 900
 	local tinggi = sfxHitTinggi and (tonumber(persen) or 0) >= ambang
-	local sfxMendarat = tinggi and sfxHitTinggi or sfxHit
+	local sfxMendarat = (raksasa and sfxHitRaksasa)
+		or (tinggi and sfxHitTinggi)
+		or sfxHit
+	-- Putarannya juga punya versi raksasa. Jatuh ke yang biasa kalau
+	-- Sound-nya tidak ada -- putaran tanpa bunyi lebih buruk daripada
+	-- putaran dengan bunyi yang sama dengan orang lain.
+	local sfxPutar = (raksasa and sfxAuraRaksasa) or sfxAura
 
-	if not sfxAura and not sfxMendarat then return end
+	if not sfxPutar and not sfxMendarat then return end
 
 	sfxGen += 1
 	local gen = sfxGen
@@ -1645,9 +2128,18 @@ local function bunyiAura(roll, persen, tundaS)
 		-- tidak pernah terdengar mendarat sama sekali.
 		if hitTertunda then tuntaskanHit(hitTertunda) end
 
-		if sfxAura then
-			sfxAura.TimePosition = 0
-			sfxAura:Play()
+		-- Putaran undian SEBELUMNYA dihentikan dulu. Dulu ini gratis:
+		-- semua undian memakai satu Sound yang sama, dan Play() dari awal
+		-- sekaligus memotong yang lama. Sekarang raksasa punya Sound
+		-- sendiri, jadi putaran biasa yang masih jalan harus dipotong
+		-- dengan tangan -- kalau tidak, dua putaran berbunyi bertumpuk.
+		for _, lain in ipairs({ sfxAura, sfxAuraRaksasa }) do
+			if lain and lain ~= sfxPutar and lain.IsPlaying then lain:Stop() end
+		end
+
+		if sfxPutar then
+			sfxPutar.TimePosition = 0
+			sfxPutar:Play()
 		end
 
 		-- Tidak ada yang perlu dikerjakan di akhir putaran: tidak ada
@@ -1665,7 +2157,7 @@ local function bunyiAura(roll, persen, tundaS)
 		-- tidak masuk akal, tapi 0 di sini berarti task ini jalan di
 		-- frame yang sama dengan Play dan putarannya tidak sempat
 		-- berbunyi.
-		local tertunda = { gen = gen, sfx = sfxMendarat }
+		local tertunda = { gen = gen, sfx = sfxMendarat, roll = sfxPutar }
 		hitTertunda = tertunda
 
 		task.delay(math.max(roll or 0.6, 0.05), function()
@@ -1692,7 +2184,7 @@ end
 
 -- ============ MUTU VISUAL PER PERANGKAT ============
 --
--- Pencahayaan dan efeknya dipasang server (my_scrip_lua_v2, bagian
+-- Pencahayaan dan efeknya dipasang server (AvatarQueueV2, bagian
 -- VISUAL) dan direplikasi ke semua orang. Yang tidak bisa dilakukan
 -- server: tahu penontonnya menonton dari PC atau dari HP tahun 2019.
 --
@@ -1961,6 +2453,1010 @@ local function siapkanCakram(p)
 	end)
 end
 
+-- ============ KARAKTER PENONTON DISEMBUNYIKAN ============
+--
+-- Siaran ini direkam dengan MASUK ke room-nya lalu meng-capture layar,
+-- dan begitu masuk Roblox men-spawn avatar penontonnya di panggung --
+-- ikut terekam, berdiri di tengah kerumunan dengan nama di atas
+-- kepalanya, dan tidak pernah menari.
+--
+-- Sampai sekarang karakter penonton sengaja DILEWATI di mana-mana
+-- (lihat penjaga GetPlayerFromCharacter di ChildAdded), supaya dia tidak
+-- ikut disembunyikan gerbang "muncul utuh" lalu penontonnya memandang
+-- dirinya sendiri lenyap tiap respawn. Yang di sini kebalikannya, dan
+-- disengaja: dia disembunyikan SELAMANYA, bukan sebentar.
+--
+-- SEMUANYA LOKAL. LocalTransparencyModifier tidak direplikasi, jadi
+-- tidak ada satu pun baris di sini yang mengubah apa yang dilihat orang
+-- lain -- kalau nanti ada dua orang yang masuk, masing-masing cuma
+-- menyembunyikan dirinya sendiri.
+local function sembunyikanPenonton(karakter)
+	if not CFG.sembunyiPenonton then return end
+	if not karakter then return end
+
+	local function sembunyi(d)
+		if d:IsA("BasePart") then
+			d.LocalTransparencyModifier = 1
+			-- BAYANGANNYA ikut dimatikan, dan ini yang paling gampang
+			-- terlewat: part yang ditembuskan secara lokal TETAP
+			-- menjatuhkan bayangan. Bayangan orang yang tidak ada,
+			-- bergerak di lantai panggung, justru lebih aneh daripada
+			-- orangnya sendiri -- dan jauh lebih sulit ditebak asalnya.
+			d.CastShadow = false
+		elseif KELAS_MATIKAN[d.ClassName] and d.Enabled then
+			-- Topi berpartikel dan aksesori bercahaya: badannya hilang
+			-- tapi partikelnya tetap mengambang di udara.
+			d.Enabled = false
+		end
+	end
+
+	for _, d in ipairs(karakter:GetDescendants()) do sembunyi(d) end
+	-- Aksesori diunduh belakangan (rambut, topi) -- lihat catatan
+	-- panjang di siapkanAvatar soal kenapa. Tanpa baris ini merekalah
+	-- yang muncul satu per satu di panggung, tanpa badan.
+	karakter.DescendantAdded:Connect(sembunyi)
+
+	local hum = karakter:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+		hum.HealthDisplayType   = Enum.HumanoidHealthDisplayType.AlwaysOff
+	end
+
+	-- Badannya diparkir. URUTANNYA PENTING: anchor DULU, baru
+	-- CanCollide dimatikan.
+	--
+	-- Dibalik, dia jatuh menembus lantai sampai FallenPartsDestroyHeight,
+	-- Roblox men-spawn-nya lagi, dan begitu terus -- gelung respawn yang
+	-- tidak terlihat sama sekali karena badannya memang sudah tembus
+	-- pandang. Yang terlihat cuma FPS yang turun pelan-pelan.
+	local akar = karakter:FindFirstChild("HumanoidRootPart")
+	if akar then
+		akar.Anchored = true
+		for _, d in ipairs(karakter:GetDescendants()) do
+			if d:IsA("BasePart") then d.CanCollide = false end
+		end
+	end
+end
+
+sembunyikanPenonton(pemain.Character)
+pemain.CharacterAdded:Connect(sembunyikanPenonton)
+
+-- ============ NOVA TIER 3 ============
+--
+-- Server cuma mengirim "nova": model, seed, palet, dan setelan. Yang
+-- terjadi di sini:
+--
+--   1. avatar ASLI ditahan tersembunyi (sejak ChildAdded, lewat atribut
+--      TierNova yang dipasang server sebelum model masuk workspace)
+--   2. asetnya ditunggu, sama batasnya dengan siapkanAvatar
+--   3. SALINAN lokalnya memainkan seluruh adegan lewat TierNova, mulai
+--      dari slot avatar aslinya
+--   4. salinannya dihapus dan yang asli dimunculkan di titik salinan
+--      itu MENDARAT (d.tujuan) -- server memindahkan avatar aslinya ke
+--      sana di detik hantaman, jadi keduanya berdiri di titik yang sama
+--
+-- Kenapa salinan, bukan avatar aslinya yang digerakkan: posisi yang asli
+-- milik server dan dipegang BodyPosition. CFrame yang ditulis client ke
+-- badan itu ditimpa lagi oleh replikasi tiap frame -- dan kalaupun tidak,
+-- dia cuma melayang di layar ini sambil ditarik pegas balik ke slotnya.
+-- Salinan lokal tidak punya satu pun dari keduanya.
+--
+-- Nova juga BERPINDAH -- dia mendarat di slot 1, barisan yang baru saja
+-- dikosongkan hantamannya sendiri. Pergantian salinan-ke-asli tetap
+-- tidak bisa terlihat, dan syaratnya dua: salinannya sudah kembali
+-- menyentuh tanah (dijamin fase IMPACT, 3,2 detik sesudah mendarat), dan
+-- titik mendaratnya dihitung SATU tempat saja -- server, lewat `tujuan`,
+-- yang dipakai bersama oleh bantingan salinan di sini dan pemindahan
+-- avatar aslinya di sana.
+--
+-- Salinannya diparent ke folder, bukan langsung ke workspace: kalau
+-- langsung, ChildAdded di bawah menangkapnya sebagai avatar baru, dan
+-- penyamaan tarian ikut menghitungnya sebagai anggota kerumunan.
+local NOVA_FOLDER       = "NovaSalinan"
+
+-- Berapa lama avatar bertanda TierNova boleh ditahan tanpa pesan "nova"
+-- datang. Jaring pengaman, bukan setelan: pesannya hampir selalu tiba di
+-- frame yang sama dengan modelnya. Yang ditangkap angka ini kasus pesan
+-- yang hilang -- tanpa dia, avatarnya tersembunyi selamanya.
+local NOVA_TAHAN_MAKS_S = 4
+
+-- Berapa lama pesan nova boleh menunggu modelnya datang lewat
+-- ChildAdded. Lihat novaCariModel.
+local NOVA_TUNGGU_MODEL_S = 2
+
+-- Model bertanda TierNova yang sedang ditahan, dicari lewat nomor
+-- adegannya (NovaId). Nilainya lemah: model yang dihapus panggung tidak
+-- ditahan hidup oleh tabel ini.
+local novaModel = setmetatable({}, { __mode = "v" })
+
+local tierNovaModul = nil
+local tierNovaGagal = false
+
+local function muatTierNova()
+	if tierNovaModul or tierNovaGagal then return tierNovaModul end
+
+	local skrip = ReplicatedStorage:WaitForChild("TierNova", 5)
+	if not skrip then
+		tierNovaGagal = true
+		warn("[nova] ModuleScript 'TierNova' tidak ada di ReplicatedStorage " ..
+			"-- nova (Bouquet Flower) muncul tanpa efek. Buat ModuleScript bernama TierNova " ..
+			"di sana (atau `make rojo` lalu Connect).")
+		return nil
+	end
+
+	local ok, modul = pcall(require, skrip)
+	if not ok then
+		tierNovaGagal = true
+		warn("[nova] TierNova gagal di-require -- nova muncul tanpa efek:",
+			modul)
+		return nil
+	end
+
+	tierNovaModul = modul
+	return modul
+end
+
+local novaTahan = setmetatable({}, { __mode = "k" })
+
+-- Sembunyikan avatar asli sampai adegannya selesai. Mengembalikan catatan
+-- yang punya `buka()`. Dipanggil dua kali untuk model yang sama (dari
+-- ChildAdded DAN dari pesan nova) aman: yang kedua mendapat catatan yang
+-- sama.
+local function tahanUntukNova(m)
+	if novaTahan[m] then return novaTahan[m] end
+
+	local rec = { dimatikan = {}, dibuka = false, mulai = false }
+
+	local function sembunyi(d)
+		if d:IsA("BasePart") then
+			d.LocalTransparencyModifier = 1
+		elseif KELAS_MATIKAN[d.ClassName] and d.Enabled then
+			d.Enabled = false
+			rec.dimatikan[d] = true
+		end
+	end
+
+	for _, d in ipairs(m:GetDescendants()) do sembunyi(d) end
+	rec.sambung = m.DescendantAdded:Connect(function(d)
+		if not rec.dibuka then sembunyi(d) end
+	end)
+
+	function rec.buka()
+		if rec.dibuka then return end
+		rec.dibuka = true
+		rec.sambung:Disconnect()
+		novaTahan[m] = nil
+		for _, d in ipairs(m:GetDescendants()) do
+			if d:IsA("BasePart") then
+				d.LocalTransparencyModifier = 0
+			elseif rec.dimatikan[d] then
+				d.Enabled = true
+			end
+		end
+	end
+
+	novaTahan[m] = rec
+	task.delay(NOVA_TAHAN_MAKS_S, function()
+		if not rec.mulai then rec.buka() end
+	end)
+	return rec
+end
+
+-- Model untuk sebuah pesan "nova".
+--
+-- Jalur normalnya d.model, dan itu yang hampir selalu terjadi. Yang
+-- ditangani di sini satu kegagalan yang tidak memunculkan satu pun
+-- error: argumen Instance di dalam pesan remote sampai sebagai NIL
+-- kalau modelnya belum selesai direplikasi ke client ini. Yang terlihat
+-- waktu itu terjadi: kamera menjalankan adegannya di atas panggung
+-- kosong -- pesan `fokus` tidak membawa Instance apa pun, jadi dia
+-- tetap sampai utuh, sementara avatarnya tinggal tersembunyi sampai
+-- NOVA_TAHAN_MAKS_S dan baru muncul sesudah semuanya lewat.
+--
+-- NovaId dipasang server SEBELUM modelnya masuk workspace, jadi atribut
+-- itu ikut di dalam replikasi modelnya sendiri dan tidak bisa datang
+-- terpisah darinya. Menunggu nomornya = menunggu modelnya.
+local function novaCariModel(d)
+	if d.model and d.model.Parent then return d.model end
+
+	local id = d.novaId
+	if not id then return nil end
+
+	local t0 = os.clock()
+	repeat
+		local m = novaModel[id]
+		if m and m.Parent then
+			warn(("[nova] model adegan %d telat %.2f detik -- ditemukan " ..
+				"lewat NovaId, adegannya tetap jalan")
+				:format(id, os.clock() - t0))
+			return m
+		end
+		RunService.Heartbeat:Wait()
+	until os.clock() - t0 > NOVA_TUNGGU_MODEL_S
+
+	warn(("[nova] model adegan %d tidak pernah sampai ke client ini -- " ..
+		"kameranya bergerak tapi tidak ada yang melayang"):format(id))
+	return nil
+end
+
+-- --- LAYAR SINEMATIK SELAMA SOROTAN (Rosa) ---
+--
+-- Versi ringan dari layar nova: letterbox, dan sesuai pilihannya warna
+-- yang lebih hangat serta sekejap abu-abu + buram. Pilihannya dikirim
+-- server lewat pesan `fokus` (LAYAR di AvatarQueueV2); di sini cuma
+-- dijalankan.
+--
+-- Nama benda-bendanya SENDIRI (awalan "Rosa"), bukan milik nova: kalau
+-- keduanya pernah bertemu, satu tidak boleh menghapus milik yang lain.
+--
+-- Satu adegan layar pada satu waktu. Yang baru membersihkan yang lama
+-- SEKETIKA -- dua letterbox bertumpuk jadi bilah setebal dua kali.
+local layarGen = 0
+local layarBenda = {}
+
+local function layarBersihkan()
+	for _, b in ipairs(layarBenda) do
+		pcall(function() b:Destroy() end)
+	end
+	layarBenda = {}
+end
+
+local function layarSinema(opsi, lama, model, kilatDi, warnaLayar)
+	if type(opsi) ~= "table" then return end
+	lama = tonumber(lama) or 0
+	if lama <= 0 then return end
+
+	layarGen += 1
+	local gen = layarGen
+	layarBersihkan()
+
+	local masuk  = math.max(tonumber(opsi.masuk) or 0.5, 0.05)
+	local keluar = math.max(tonumber(opsi.keluar) or 0.5, 0.05)
+	local tebal  = math.clamp(tonumber(opsi.letterbox) or 0, 0, 0.3)
+	-- Kapan mulai keluar. Dijepit supaya adegan yang lebih pendek dari
+	-- masuk + keluar tetap sempat keluar sebelum sorotannya habis.
+	local mulaiKeluar = math.max(lama - keluar, masuk)
+
+	local function tw(obj, detik, props)
+		local t = TweenService:Create(obj, TweenInfo.new(detik,
+			Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
+		t:Play()
+		return t
+	end
+
+	-- --- letterbox ---
+	local induk = pemain and pemain:FindFirstChildOfClass("PlayerGui")
+	local bilah = {}
+	if tebal > 0 and induk then
+		local gui = Instance.new("ScreenGui")
+		gui.Name = "RosaLetterbox"
+		gui.IgnoreGuiInset, gui.ResetOnSpawn = true, false
+		-- Di bawah letterbox nova (50): kalau keduanya sempat bertemu,
+		-- yang lebih besar tetap di depan.
+		gui.DisplayOrder = 49
+		for i, jangkar in ipairs({ 0, 1 }) do
+			local f = Instance.new("Frame")
+			f.BackgroundColor3, f.BorderSizePixel = Color3.new(0, 0, 0), 0
+			f.AnchorPoint = Vector2.new(0, jangkar)
+			f.Position = UDim2.fromScale(0, jangkar)
+			f.Size = UDim2.fromScale(1, 0)
+			f.Parent = gui
+			bilah[i] = f
+		end
+		gui.Parent = induk
+		table.insert(layarBenda, gui)
+		for _, b in ipairs(bilah) do
+			tw(b, masuk, { Size = UDim2.fromScale(1, tebal) })
+		end
+	end
+
+	-- --- warna ---
+	local cc, bloom
+	if opsi.warna then
+		cc = Instance.new("ColorCorrectionEffect")
+		cc.Name = "RosaColorCorrection"
+		cc.Parent = Lighting
+		bloom = Instance.new("BloomEffect")
+		bloom.Name = "RosaBloom"
+		bloom.Intensity, bloom.Size, bloom.Threshold = 0, 24, 0.95
+		bloom.Parent = Lighting
+		table.insert(layarBenda, cc)
+		table.insert(layarBenda, bloom)
+		-- Warna tema Rosa kalau server mengirimnya (ROSA.TEMA), kalau
+		-- tidak hangat seperti sebelumnya.
+		local tint = Color3.fromRGB(255, 238, 220)
+		if type(warnaLayar) == "table" and warnaLayar[1] then
+			tint = Color3.fromRGB(warnaLayar[1], warnaLayar[2], warnaLayar[3])
+		end
+		tw(cc, masuk, { TintColor = tint, Contrast = 0.1, Saturation = 0.2 })
+		tw(bloom, masuk, { Intensity = 0.5 })
+	end
+
+	-- --- sekejap abu-abu + buram di tengah ---
+	if opsi.beku then
+		local blur = Instance.new("BlurEffect")
+		blur.Name = "RosaBlur"
+		blur.Size = 0
+		blur.Parent = Lighting
+		table.insert(layarBenda, blur)
+		local cBeku = cc
+		if not cBeku then
+			cBeku = Instance.new("ColorCorrectionEffect")
+			cBeku.Name = "RosaColorCorrection"
+			cBeku.Parent = Lighting
+			table.insert(layarBenda, cBeku)
+		end
+		-- Mulai di sepertiga sorotan, sesudah kamera berhenti merapat:
+		-- abu-abu di detik kedatangan menutupi wajah orangnya persis
+		-- di detik yang paling perlu terlihat.
+		local mulai = lama * 0.33
+		task.delay(mulai, function()
+			if gen ~= layarGen then return end
+			tw(cBeku, 0.3, { Saturation = -1, Contrast = 0.3 })
+			tw(blur, 0.3, { Size = 6 })
+			task.delay(0.9, function()
+				if gen ~= layarGen then return end
+				tw(cBeku, 0.4, { Saturation = opsi.warna and 0.2 or 0,
+					Contrast = opsi.warna and 0.1 or 0 })
+				tw(blur, 0.4, { Size = 0 })
+			end)
+		end)
+	end
+
+	-- --- kilatan saat angka auranya mendarat ---
+	--
+	-- Bloom dan terang disentak naik lalu dilepas pelan, di detik yang
+	-- sama dengan hentakan mendarat. Tanpa bloom `warna`, dibuat sendiri.
+	kilatDi = tonumber(kilatDi)
+	if opsi.kilat and kilatDi and kilatDi > 0 and kilatDi < lama then
+		local bKilat = bloom
+		if not bKilat then
+			bKilat = Instance.new("BloomEffect")
+			bKilat.Name = "RosaBloom"
+			bKilat.Intensity, bKilat.Size, bKilat.Threshold = 0, 24, 0.95
+			bKilat.Parent = Lighting
+			table.insert(layarBenda, bKilat)
+		end
+		local cKilat = cc
+		if not cKilat then
+			cKilat = Instance.new("ColorCorrectionEffect")
+			cKilat.Name = "RosaColorCorrection"
+			cKilat.Parent = Lighting
+			table.insert(layarBenda, cKilat)
+		end
+		task.delay(kilatDi, function()
+			if gen ~= layarGen then return end
+			local dasarB = opsi.warna and 0.5 or 0
+			tw(bKilat, 0.08, { Intensity = 1.6 })
+			tw(cKilat, 0.08, { Brightness = 0.18 })
+			task.delay(0.1, function()
+				if gen ~= layarGen then return end
+				tw(bKilat, 0.7, { Intensity = dasarB })
+				tw(cKilat, 0.7, { Brightness = 0 })
+			end)
+		end)
+	end
+
+	-- --- garis tepi yang berdenyut ---
+	--
+	-- Highlight milik server (BorderTier), diubah LOKAL: tidak ada yang
+	-- terkirim balik, dan server tidak menulis transparansinya selama
+	-- sorotan. Nilai aslinya dicatat dulu dan dikembalikan di akhir --
+	-- tanpa itu garisnya tertinggal di fase denyut terakhirnya.
+	--
+	-- Highlight tidak bisa di-tween, jadi ditulis per frame.
+	if opsi.garis and model then
+		local h = model:FindFirstChild("BorderTier")
+		if h and h:IsA("Highlight") then
+			local asliGaris, asliIsi = h.OutlineTransparency, h.FillTransparency
+			task.spawn(function()
+				local t0 = os.clock()
+				while gen == layarGen and h.Parent do
+					local e = os.clock() - t0
+					if e >= mulaiKeluar then break end
+					-- 0..1..0 sekitar 1,2 kali per detik.
+					local u = (1 - math.cos(e * math.pi * 2.4)) / 2
+					h.OutlineTransparency = asliGaris + (0.6 - asliGaris) * u
+					h.FillTransparency = asliIsi - (asliIsi - 0.7) * (1 - u)
+					RunService.RenderStepped:Wait()
+				end
+				if h.Parent then
+					h.OutlineTransparency = asliGaris
+					h.FillTransparency = asliIsi
+				end
+			end)
+		end
+	end
+
+	-- --- keluar, lalu bersih ---
+	task.delay(mulaiKeluar, function()
+		if gen ~= layarGen then return end
+		for _, b in ipairs(bilah) do
+			if b.Parent then tw(b, keluar, { Size = UDim2.fromScale(1, 0) }) end
+		end
+		if cc and cc.Parent then
+			tw(cc, keluar, { TintColor = Color3.new(1, 1, 1),
+				Contrast = 0, Saturation = 0 })
+		end
+		if bloom and bloom.Parent then tw(bloom, keluar, { Intensity = 0 }) end
+		task.delay(keluar + 0.05, function()
+			-- Dicek lagi: adegan berikutnya bisa sudah mulai dan
+			-- memasang benda-bendanya sendiri di daftar yang sama.
+			if gen == layarGen then layarBersihkan() end
+		end)
+	end)
+end
+
+-- --- PANGGUNG ROSA: latar sinematik + tetangga disembunyikan ---
+--
+-- Memasang jalur kameranya (rosaKam), lalu selama adegannya:
+--   - panggung diredupkan (ExposureCompensation), orangnya disiram lampu
+--     sorot dari atas dan cahaya dari belakang
+--   - partikel cahaya melayang di sekitarnya
+--   - avatar tetangga dan cakramnya dalam radius `sepi` disembunyikan
+--
+-- SEMUANYA LOKAL: LocalTransparencyModifier, Enabled, dan Lighting yang
+-- ditulis client tidak terkirim ke server atau ke penonton lain.
+--
+-- Tetangga yang datang SELAGI adegannya jalan ikut disembunyikan: slot
+-- berikutnya persis di sebelahnya, dan kamera keliling lewat di sana.
+--
+-- Transparansinya DITULIS TIAP FRAME selama adegan, bukan sekali. Gerbang
+-- "muncul utuh" (siapkanAvatar) juga menulis properti yang sama untuk
+-- kedatangan baru, dan tanpa penulisan tiap frame gerbang itu yang menang
+-- -- tetangga yang baru datang muncul di tengah putaran kamera.
+local panggungGen = 0
+
+-- Terang panggung SEBELUM panggung Rosa mana pun meredupkannya. Dibaca
+-- sekali dan dipakai semua panggung yang menumpuk: kalau tiap panggung
+-- membaca Lighting sendiri, yang kedua membaca angka yang SUDAH
+-- diredupkan yang pertama -- dan itu yang dia kembalikan di akhir,
+-- jadi panggungnya tertinggal gelap sampai server di-restart.
+local exposDasar = nil
+
+local function panggungRosa(d)
+	local model = d.model
+	local J = d.jalur
+	if type(J) ~= "table" or not model or not model.Parent then return end
+	local lama = tonumber(d.lama) or 0
+	if lama <= 0 then return end
+
+	local root = model:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+
+	panggungGen += 1
+	local gen = panggungGen
+
+	-- Titik lantai dan tinggi badannya, dicatat SEKALI di awal: dia
+	-- sedang menari, dan kamera yang mengikuti goyangan tiap frame
+	-- terbaca sebagai kamera yang gemetar.
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	local kaki = 3
+	if hum then
+		local okH, h = pcall(function() return hum.HipHeight + root.Size.Y / 2 end)
+		if okH and h and h > 0 then kaki = h end
+	end
+	local p = root.Position
+	local tanah = Vector3.new(p.X, p.Y - kaki, p.Z)
+	local tinggi = 5.5
+	local kepala = model:FindFirstChild("Head")
+	if kepala and kepala:IsA("BasePart") then
+		tinggi = math.max(kepala.Position.Y + kepala.Size.Y / 2 - tanah.Y, 2)
+	end
+
+	rosaKam = { j = J, mulai = os.clock(), tanah = tanah, tinggi = tinggi }
+
+	local naik   = tonumber(J.naik) or 2.6
+	local orbit  = tonumber(J.orbit) or 3.4
+	local potret = tonumber(J.potret) or 2.6
+	local lepas  = math.max(tonumber(J.lepas) or 1.4, 0.05)
+	local mulaiLepas = naik + orbit + potret
+	local total = mulaiLepas + lepas
+
+	local tema = type(d.tema) == "table" and d.tema or {}
+	local function warna(tr, cadangan)
+		if type(tr) == "table" and tr[1] then
+			return Color3.fromRGB(tr[1], tr[2], tr[3])
+		end
+		return cadangan
+	end
+
+	local function tw(obj, detik, props)
+		local t = TweenService:Create(obj, TweenInfo.new(detik,
+			Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
+		t:Play()
+		return t
+	end
+
+	local benda = {}
+	local function bagianTakKasatMata(cf)
+		local b = Instance.new("Part")
+		b.Anchored, b.CanCollide, b.CanQuery, b.CanTouch = true, false, false, false
+		b.Transparency, b.CastShadow = 1, false
+		b.Size = Vector3.one
+		b.CFrame = cf
+		b.Name = "RosaPanggung"
+		b.Parent = workspace
+		table.insert(benda, b)
+		return b
+	end
+
+	-- --- lampu sorot dari atas ---
+	local atasPart = bagianTakKasatMata(CFrame.new(tanah + Vector3.new(0, tinggi + 9, 0)))
+	local sorot = Instance.new("SpotLight")
+	sorot.Face, sorot.Angle, sorot.Range = Enum.NormalId.Bottom, 40, 26
+	sorot.Brightness, sorot.Shadows = 0, true
+	sorot.Color = warna(tema.sorot, Color3.fromRGB(255, 225, 180))
+	sorot.Parent = atasPart
+	tw(sorot, 0.6, { Brightness = 6 })
+
+	-- --- cahaya dari belakang: memisahkan siluetnya dari latar gelap ---
+	local belakangPart = bagianTakKasatMata(CFrame.new(
+		tanah + Vector3.new(0, tinggi * 0.6, 3)))
+	local belakang = Instance.new("PointLight")
+	belakang.Range, belakang.Brightness = 11, 0
+	belakang.Color = warna(tema.belakang, Color3.fromRGB(120, 170, 255))
+	belakang.Parent = belakangPart
+	tw(belakang, 0.6, { Brightness = 2.5 })
+
+	-- --- partikel cahaya yang melayang ---
+	local partikelPart = bagianTakKasatMata(CFrame.new(
+		tanah + Vector3.new(0, tinggi * 0.5, 0)))
+	partikelPart.Size = Vector3.new(7, tinggi, 7)
+	local debu = Instance.new("ParticleEmitter")
+	debu.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	debu.Color = ColorSequence.new(warna(tema.partikel, Color3.new(1, 1, 1)))
+	debu.LightEmission = 1
+	debu.Rate = 14
+	debu.Lifetime = NumberRange.new(2, 3.2)
+	debu.Speed = NumberRange.new(0.3, 1.2)
+	debu.SpreadAngle = Vector2.new(180, 180)
+	debu.Acceleration = Vector3.new(0, 0.6, 0)
+	debu.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.3, 0.28),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	debu.Transparency = NumberSequence.new(0.2, 1)
+	debu.Parent = partikelPart
+
+	-- --- panggung diredupkan ---
+	if exposDasar == nil then exposDasar = Lighting.ExposureCompensation end
+	local exposAsli = exposDasar
+	tw(Lighting, 0.6, { ExposureCompensation = exposAsli - (tonumber(J.redup) or 0.7) })
+
+	-- --- tetangga disembunyikan ---
+	local radius = tonumber(J.sepi) or 14
+	local datar = Vector3.new(tanah.X, 0, tanah.Z)
+	local dilacak = {}   -- BasePart -> true
+	local dimatikan = {} -- benda ber-Enabled yang KITA matikan -> true
+	local modelDilacak = {} -- Model tetangga -> true
+
+	local function dekat(pos)
+		return (Vector3.new(pos.X, 0, pos.Z) - datar).Magnitude <= radius
+	end
+
+	-- Dipanggil ulang tiap SAPU_ULANG_S, bukan cuma sekali di awal.
+	-- Tetangga yang BARU datang di tengah adegan belum lengkap waktu
+	-- pertama dilacak: server memasang papan nama, border, dan aura VFX
+	-- sesudah modelnya masuk workspace, dan siapkanAvatar menyalakan
+	-- kembali semua yang dia matikan begitu asetnya siap. Tanpa sapuan
+	-- ulang, yang terlihat selama sorotan Rosa justru papan nama dan
+	-- partikel mengambang tanpa badan di sebelahnya.
+	local function sapuModel(m)
+		for _, x in ipairs(m:GetDescendants()) do
+			if x:IsA("BasePart") then
+				dilacak[x] = true
+			elseif KELAS_MATIKAN[x.ClassName] and x.Enabled then
+				x.Enabled = false
+				dimatikan[x] = true
+			end
+		end
+	end
+
+	local function lacak(m)
+		if gen ~= panggungGen then return end
+		if m:IsA("BasePart") and m.Name == "CakramTier" then
+			-- Cakram MILIKNYA sendiri tetap menyala.
+			if dekat(m.Position)
+				and (Vector3.new(m.Position.X, 0, m.Position.Z) - datar).Magnitude > 1 then
+				dilacak[m] = true
+				for _, x in ipairs(m:GetDescendants()) do
+					if x:IsA("Light") and x.Enabled then
+						x.Enabled = false
+						dimatikan[x] = true
+					end
+				end
+			end
+			return
+		end
+		if m == model or not m:IsA("Model") then return end
+		if Players:GetPlayerFromCharacter(m) then return end
+		-- Avatar asli nova sedang ditahan tahanUntukNova. Kalau ikut
+		-- dilacak, tutup() di bawah memunculkannya di tengah adegannya.
+		if novaTahan[m] then return end
+		if not m:FindFirstChildOfClass("Humanoid") then return end
+		local okP, pv = pcall(function() return m:GetPivot().Position end)
+		if not okP or not dekat(pv) then return end
+		modelDilacak[m] = true
+		sapuModel(m)
+	end
+
+	for _, m in ipairs(workspace:GetChildren()) do lacak(m) end
+	-- Ditunda satu langkah: bagian-bagian model yang baru datang belum
+	-- tentu sudah lengkap di frame ChildAdded.
+	local sambungBaru = workspace.ChildAdded:Connect(function(m)
+		task.defer(lacak, m)
+	end)
+
+	local selesai = false
+	local function tutup()
+		if selesai then return end
+		selesai = true
+		sambungBaru:Disconnect()
+		for part in pairs(dilacak) do
+			if part.Parent then part.LocalTransparencyModifier = 0 end
+		end
+		for x in pairs(dimatikan) do
+			if x.Parent then x.Enabled = true end
+		end
+		Lighting.ExposureCompensation = exposAsli
+		if gen == panggungGen then exposDasar = nil end
+		for _, b in ipairs(benda) do pcall(function() b:Destroy() end) end
+	end
+
+	local t0 = os.clock()
+	local lepasMulai = false
+	local SAPU_ULANG_S = 0.25
+	local sapuBerikut = SAPU_ULANG_S
+	local kon
+	kon = RunService.RenderStepped:Connect(function()
+		-- Panggung Rosa berikutnya sudah mulai: yang ini pergi SEKARANG,
+		-- termasuk mengembalikan terang panggung -- kalau tidak, dua
+		-- peredupan bertumpuk dan panggungnya tertinggal gelap.
+		if gen ~= panggungGen then
+			kon:Disconnect()
+			tutup()
+			return
+		end
+		local e = os.clock() - t0
+
+		-- Berhenti begitu tetangganya mulai dimunculkan kembali.
+		if e >= sapuBerikut and e < mulaiLepas then
+			sapuBerikut = e + SAPU_ULANG_S
+			for m in pairs(modelDilacak) do
+				if m.Parent and not novaTahan[m] then sapuModel(m) end
+			end
+		end
+
+		local a
+		if e < 0.5 then
+			a = e / 0.5
+		elseif e < mulaiLepas then
+			a = 1
+		else
+			a = 1 - math.clamp((e - mulaiLepas) / lepas, 0, 1)
+		end
+		for part in pairs(dilacak) do
+			if part.Parent then part.LocalTransparencyModifier = a end
+		end
+
+		if not lepasMulai and e >= mulaiLepas then
+			lepasMulai = true
+			tw(sorot, lepas, { Brightness = 0 })
+			tw(belakang, lepas, { Brightness = 0 })
+			debu.Rate = 0
+			tw(Lighting, lepas, { ExposureCompensation = exposAsli })
+		end
+
+		if e >= total then
+			kon:Disconnect()
+			tutup()
+		end
+	end)
+
+	print(("[rosa] panggung %s -- tema %s, %d bagian tetangga disembunyikan")
+		:format(model.Name, tostring(tema.nama or "?"), (function()
+			local n = 0
+			for _ in pairs(dilacak) do n += 1 end
+			return n
+		end)()))
+end
+
+-- Tiap jalan keluar dari jalankanNova yang membuat avatarnya berdiri
+-- TANPA adegan dicatat lewat sini.
+--
+-- Dulu empat dari jalan itu diam total, dan keempatnya menghasilkan gejala
+-- yang sama persis di layar: avatarnya muncul, efeknya tidak ada, Output
+-- bersih. "Kadang nova tidak muncul" tanpa satu baris pun untuk dibaca
+-- tidak bisa dibedakan antara bug, modul yang belum ditempel, dan
+-- koneksi. Sekarang tiap jalan menyebut alasannya sendiri.
+local function novaGagal(asli, alasan)
+	warn(("[nova] %s muncul TANPA efek -- %s")
+		:format(asli and asli.Name or "?", alasan))
+end
+
+local function jalankanNova(d)
+	if not d then return end
+	local asli = novaCariModel(d)
+	if not asli then return end   -- novaCariModel sudah mencetak alasannya
+	if not asli.Parent then
+		novaGagal(asli, "avatarnya sudah tidak ada di workspace client ini " ..
+			"waktu pesan novanya tiba")
+		return
+	end
+
+	local rec = tahanUntukNova(asli)
+	rec.mulai = true
+
+	local modul = muatTierNova()
+	if not modul then
+		-- muatTierNova cuma mencetak alasannya SEKALI (hasilnya di-cache),
+		-- jadi tanpa baris ini nova kedua dan seterusnya diam.
+		novaGagal(asli, "ModuleScript TierNova tidak termuat (lihat pesan " ..
+			"[nova] pertama di Output)")
+		rec.buka()
+		return
+	end
+
+	-- Tunggu asetnya, dengan batas yang sama dengan siapkanAvatar. Salinan
+	-- yang dibuat sebelum rambut dan bajunya siap melayang POLOS selama
+	-- sepuluh detik, dan itu tepat sepuluh detik yang paling ditonton.
+	local maks = math.max(tonumber(CFG.spawnSiapMaks) or 0.6, 0)
+	if bolehBerat and maks > 0 then
+		local siap = false
+		task.spawn(function()
+			pcall(function() ContentProvider:PreloadAsync({ asli }) end)
+			siap = true
+		end)
+		local t0 = os.clock()
+		while not siap and os.clock() - t0 < maks do
+			RunService.Heartbeat:Wait()
+		end
+	end
+	if not asli.Parent then
+		novaGagal(asli, "avatarnya dicabut dari workspace client selagi " ..
+			"asetnya ditunggu (StreamingEnabled menyala?)")
+		rec.buka()
+		return
+	end
+
+	local folder = workspace:FindFirstChild(NOVA_FOLDER)
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = NOVA_FOLDER
+		folder.Parent = workspace
+	end
+
+	local arsip = asli.Archivable
+	asli.Archivable = true
+	local ok, salinan = pcall(function() return asli:Clone() end)
+	asli.Archivable = arsip
+	if not ok or not salinan then
+		novaGagal(asli, "salinan avatarnya gagal dibuat: " ..
+			tostring(ok and "Clone() mengembalikan nil" or salinan))
+		rec.buka()
+		return
+	end
+
+	-- Salinan tanpa root part tidak bisa melayang sama sekali, dan TierNova
+	-- akan berhenti di frame pertamanya. Paling sering terjadi kalau
+	-- avatarnya baru terkirim SEBAGIAN ke client ini -- StreamingEnabled
+	-- mengirim model sepotong-sepotong kecuali modelnya Persistent.
+	if not salinan:FindFirstChild("HumanoidRootPart") then
+		novaGagal(asli, ("avatarnya baru sebagian sampai di client ini " ..
+			"(%d part, tanpa HumanoidRootPart) -- StreamingEnabled menyala?")
+			:format(#salinan:GetDescendants()))
+		salinan:Destroy()
+		rec.buka()
+		return
+	end
+
+	-- Pengunci posisi server (BodyPosition/BodyGyro) HARUS dibuang: dia
+	-- ikut tersalin dan akan menarik salinannya balik ke lantai di setiap
+	-- frame dia melayang. Papan, border, dan efek juga -- salinan ini cuma
+	-- badan, dan outline putihnya dipasang TierNova sendiri.
+	for _, x in ipairs(salinan:GetDescendants()) do
+		if x:IsA("BodyMover") or x:IsA("LuaSourceContainer")
+			or KELAS_MATIKAN[x.ClassName] then
+			x:Destroy()
+		elseif x:IsA("BasePart") then
+			x.LocalTransparencyModifier = 0
+			x.CanCollide = false
+			x.CanQuery   = false
+			x.CanTouch   = false
+		end
+	end
+	salinan.Name = asli.Name .. "_nova"
+
+	-- Ditaruh persis di tempat avatar aslinya berdiri, sebelum dia masuk
+	-- folder: satu frame di titik lain berarti satu frame avatarnya
+	-- meloncat.
+	pcall(function() salinan:PivotTo(asli:GetPivot()) end)
+	salinan.Parent = folder
+
+	local kam = workspace.CurrentCamera
+	local lepasFov = kam and novaAmbilFov(kam) or nil
+
+	local config = {}
+	if type(d.config) == "table" then
+		for k, v in pairs(d.config) do config[k] = v end
+	end
+	config.seed  = d.seed
+	config.palet = d.palet
+	-- Bunyi per fase (NOVA.SFX). Diteruskan apa adanya: modulnya yang
+	-- memainkannya, karena cuma dia yang tahu kapan tiap fase benar-benar
+	-- mulai -- bunyi yang dijadwalkan dari sini meleset sebanyak tunggu
+	-- aset avatarnya.
+	config.sfx   = d.sfx
+	-- Di mana dia membanting diri. Server yang menghitungnya (slot 1,
+	-- yang dikosongkan gempa di detik yang sama) supaya bantingan
+	-- salinan di sini dan pemindahan avatar aslinya di server jatuh di
+	-- satu titik yang sama persis.
+	config.tujuan = d.tujuan
+	-- Letterbox butuh tempat menggantung. Diambil di sini, bukan di dalam
+	-- modul: modul itu tidak tahu (dan tidak boleh tahu) siapa pemain
+	-- lokalnya.
+	config.induk = pemain and pemain:FindFirstChildOfClass("PlayerGui")
+
+	-- Ketiga callback kamera. Lihat catatan panjang di atas novaFov soal
+	-- kenapa kamera tidak diserahkan begitu saja ke modulnya.
+	config.fov   = novaFov
+	config.getar = novaGetar
+	config.pandang = function(pos)
+		-- Disimpan, bukan dipakai langsung: yang membidik keempat
+		-- bidikan di kameraNova, dan mereka butuh tahu badannya di mana
+		-- SEKARANG -- bukan diseret pelan-pelan seperti fokusTarget.
+		--
+		-- fokusTarget sengaja TIDAK disentuh sama sekali. Dia masih
+		-- berisi titik slot yang dikirim server, dan di situlah kamera
+		-- biasa sudah menunggu waktu jalur nova melepaskannya -- jadi
+		-- pergantiannya jatuh ke sorotan tarian yang sudah benar.
+		if novaKam then novaKam.badan = pos end
+	end
+
+	-- Jalur kamera adegannya. Dipasang SEBELUM Play supaya frame
+	-- pertamanya sudah dikemudikan jalur ini -- kalau sesudah,
+	-- kedip pertama masih memakai kamera sorotan biasa.
+	--
+	-- Titik berdirinya diturunkan ke LANTAI: seluruh angka di
+	-- NOVA.KAMERA diukur dari lantai (naikBawah 2 = dua stud di atas
+	-- tanah), dan pivot avatar ada sekitar tiga stud di atasnya.
+	if kam and type(d.kamera) == "table" then
+		local pivot = salinan:GetPivot().Position
+		local kaki  = 3
+		local hum   = salinan:FindFirstChildOfClass("Humanoid")
+		local root  = salinan:FindFirstChild("HumanoidRootPart")
+		if hum and root then
+			local okH, h = pcall(function()
+				return hum.HipHeight + root.Size.Y / 2
+			end)
+			if okH and h and h > 0 then kaki = h end
+		end
+
+		local tujuanPos = typeof(d.tujuan) == "CFrame" and d.tujuan.Position
+			or (typeof(d.tujuan) == "Vector3" and d.tujuan or nil)
+
+		novaKam = {
+			k     = d.kamera,
+			j     = modul.Jadwal and modul.Jadwal(config) or nil,
+			mulai = os.clock(),
+			tanah = Vector3.new(pivot.X, pivot.Y - kaki, pivot.Z),
+			-- nil kalau dia mendarat di tempat dia mulai: kameraNova
+			-- melewati seluruh perhitungan gesernya kalau begitu.
+			tanahAkhir = tujuanPos
+				and Vector3.new(tujuanPos.X, tujuanPos.Y - kaki, tujuanPos.Z)
+				or nil,
+			badan = pivot,
+		}
+		-- Modul versi lama tidak punya Jadwal: tanpa jadwalnya tidak ada
+		-- fase yang bisa dibedakan, jadi adegannya jalan tanpa jalur
+		-- kamera alih-alih dengan jalur yang salah.
+		if not novaKam.j then
+			novaKam = nil
+			warn("[nova] ModuleScript TierNova versi lama (tidak ada " ..
+				"Jadwal) -- sinkron ulang lewat Rojo. Adegannya " ..
+				"jalan tanpa jalur kamera.")
+		end
+	end
+
+	local janji = modul.Play(salinan, config)
+	print(("[nova] %s mulai (seed %s, palet %s)")
+		:format(asli.Name, tostring(d.seed),
+			type(d.palet) == "table" and tostring(d.palet.nama) or "?"))
+
+	-- Adegan yang BATAL melepas jalur kameranya SEKARANG.
+	--
+	-- Jalur kamera dipasang sebelum Play dan punya jadwal sepuluh detiknya
+	-- sendiri. Dulu dia jalan terus walaupun adegannya berhenti di detik
+	-- pertama -- yang terlihat persis "kameranya bergerak, VFX dan SFX-nya
+	-- tidak ada": kamera mengorbit, naik, dan menukik di atas panggung yang
+	-- tidak berisi apa pun.
+	--
+	-- Dicek ke `jalurIni`, bukan asal dikosongkan: kalau nova berikutnya
+	-- sudah memasang jalurnya sendiri, yang itu tidak boleh ikut hilang.
+	local jalurIni = novaKam
+	local function lepasJalur(berhasil)
+		if not berhasil and novaKam and novaKam == jalurIni then
+			novaKam = nil
+		end
+	end
+	janji.Completed:Connect(lepasJalur)
+	-- Play menjalankan adegannya lewat task.spawn, yang jalan SEKETIKA sampai
+	-- yield pertama. Error sebelum yield itu menyalakan Completed di dalam
+	-- Play sendiri -- sebelum baris Connect di atas sempat ada.
+	if janji.Done then lepasJalur(janji.Success) end
+
+	-- Bunyi kedatangannya saat dia MEMBANTING DIRI ke tanah, bukan
+	-- sekarang: sekarang dia baru mulai mengumpulkan tenaga, dan bunyi
+	-- jatuh di detik itu tidak menjelaskan apa pun.
+	local tierNova = tonumber(d.tier)
+	if tierNova then
+		local jadwal = modul.Jadwal and modul.Jadwal(config) or nil
+		local tunda  = jadwal and jadwal.slam or 0
+		task.delay(tunda, function()
+			if not janji.Done then bunyiTier(tierNova) end
+		end)
+	end
+
+	-- Panggung di-reset di tengah adegan: yang asli dihapus server, jadi
+	-- salinan dan seluruh VFX-nya harus ikut pergi SEKARANG, bukan
+	-- meledak di atas slot yang sudah kosong.
+	local dicabut = false
+	local putus = asli.AncestryChanged:Connect(function()
+		if not asli:IsDescendantOf(workspace) then
+			dicabut = true
+			janji:Cancel()
+		end
+	end)
+
+	local berhasil = janji:Await()
+	putus:Disconnect()
+	-- Batal di tengah jalan. Error di dalam modulnya sudah dicetak sendiri
+	-- ([TierNova] berhenti: ...), jadi yang dicatat di sini cuma pembatalan
+	-- yang tidak membawa alasan apa pun.
+	if not berhasil and dicabut then
+		novaGagal(asli, "avatar aslinya dicabut dari workspace client di " ..
+			"tengah adegan (dihapus server, atau StreamingEnabled)")
+	elseif not berhasil then
+		novaGagal(asli, "adegannya berhenti di tengah jalan -- alasannya di " ..
+			"baris [TierNova] berhenti tepat di atas ini")
+	else
+		print(("[nova] %s selesai"):format(asli.Name))
+	end
+	if lepasFov then lepasFov() end
+	novaGetar(0, 0)
+	-- Jalur kameranya sengaja TIDAK dilepas di sini. Dia punya fase
+	-- lepasnya sendiri (NOVA.KAMERA.lepas) yang meluncur balik ke kamera
+	-- sorotan biasa, dan gelung render yang mengosongkan novaKam begitu
+	-- fase itu habis. Memotongnya sekarang berarti satu frame yang
+	-- meloncat -- tepat di frame avatar aslinya muncul kembali.
+	salinan:Destroy()
+	rec.buka()
+end
+
+-- --- PRA-MUAT AVATAR ---
+--
+-- Server menaruh tiap avatar di ReplicatedStorage.AvatarPramuat selama
+-- SPAWN_PRAMUAT_S sebelum memindahkannya ke panggung. Di sini asetnya
+-- mulai diunduh selagi dia masih tersembunyi, jadi waktu dia masuk
+-- panggung, siapkanAvatar mendapati semuanya sudah siap -- tanpa kaki
+-- yang bolong dan tanpa rambut yang menyusul belakangan.
+--
+-- WaitForChild tanpa batas di task sendiri: server versi lama tidak
+-- membuat foldernya, dan menunggu selamanya di task terpisah tidak
+-- menahan apa pun.
+task.spawn(function()
+	local folder = ReplicatedStorage:WaitForChild("AvatarPramuat")
+	local function pramuat(m)
+		task.spawn(function()
+			pcall(function() ContentProvider:PreloadAsync({ m }) end)
+		end)
+	end
+	for _, m in ipairs(folder:GetChildren()) do pramuat(m) end
+	folder.ChildAdded:Connect(pramuat)
+end)
+
 workspace.ChildAdded:Connect(function(anak)
 	if anak:IsA("BasePart") and anak.Name == "CakramTier" then
 		siapkanCakram(anak)
@@ -1979,6 +3475,19 @@ workspace.ChildAdded:Connect(function(anak)
 	if Players:GetPlayerFromCharacter(anak) then return end
 	if Players:FindFirstChild(anak.Name) then return end
 
+	-- Avatar nova tidak lewat gerbang "muncul utuh": dia ditahan
+	-- tersembunyi sampai adegan novanya selesai, dan jalankanNova yang
+	-- memunculkannya kembali di slotnya.
+	if anak:GetAttribute("TierNova") then
+		tahanUntukNova(anak)
+		-- Dicatat supaya pesan novanya tetap bisa menemukan modelnya
+		-- kalau referensi Instance di dalam pesan itu sampai nil. Lihat
+		-- novaCariModel.
+		local id = anak:GetAttribute("NovaId")
+		if id then novaModel[id] = anak end
+		return
+	end
+
 	siapkanAvatar(anak)
 end)
 
@@ -1986,6 +3495,12 @@ end)
 
 V2Event.OnClientEvent:Connect(function(jenis, d)
 	if jenis == "fokus" then
+		-- Tinggi mundur penuh ikut tiap pesan, bukan cuma pesan
+		-- berbayar: yang mengubahnya bukan tier yang datang, tapi ada
+		-- atau tidaknya raksasa di panggung -- dan raksasa berdiri
+		-- melewati kedatangan gratisan berikutnya.
+		upJauhKini = tonumber(d.upJauh) or CFG.upJauh or CFG.up
+
 		if d.sinema and d.lama and d.lama > 0 then
 			-- Adegan berbayar. Selalu merebut kamera, termasuk dari
 			-- adegan lain yang belum habis -- yang baru bayar yang
@@ -1996,12 +3511,27 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 			-- sama, dan selisih satu detik di sini berarti kamera
 			-- pulang ke ayunan sedetik sebelum orangnya mendarat.
 			fokusTarget  = d.pos or fokusTarget
+			-- Letterbox dan kawan-kawannya, kalau tier ini punya (Rosa).
+			-- Tier tanpa `layar` tidak menyentuh apa pun -- termasuk
+			-- tidak membersihkan milik adegan sebelumnya, yang punya
+			-- jadwal keluarnya sendiri.
+			if d.layar then
+				layarSinema(d.layar, d.lama, d.model, d.layarKilat,
+					type(d.tema) == "table" and d.tema.layar or nil)
+			end
+			-- Jalur kamera sendiri + latar sinematik (Rosa).
+			if d.jalur then panggungRosa(d) end
 			sinemaSampai = os.clock() + d.lama
 			sinemaLama   = d.lama
 			sinemaOrbit  = (d.orbit == true)
 			sinemaJauh   = tonumber(d.jauh) or 1
+			-- Jatuh ke sinemaJauh, BUKAN ke 1: tier selain raksasa tidak
+			-- mengirim jauhY sama sekali, dan untuk mereka tingginya
+			-- memang harus ikut jaraknya seperti sebelumnya.
+			sinemaJauhY  = tonumber(d.jauhY) or sinemaJauh
 			zoomMulai    = os.clock()
 			zoomKeluar   = tonumber(d.zoomKeluar) or CFG.zoomKeluar or 1.8
+			zoomMasuk    = tonumber(d.zoomMasuk) or CFG.zoomMasuk or 0.45
 			zoomMaks     = tonumber(d.zoomMaks) or 1
 			-- Busur depan. Derajat di server, radian di sini -- diubah
 			-- di satu tempat saja supaya sisa file tidak perlu tahu
@@ -2025,7 +3555,11 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 			-- bunyi kedatangan untuk tiap satu dari mereka akan jadi
 			-- derau yang terus-menerus -- lalu yang berbayar kehilangan
 			-- satu-satunya penanda telinganya.
-			bunyiTier(tonumber(d.tier))
+			--
+			-- bunyiNanti: nova membunyikannya sendiri saat dia membanting
+			-- diri ke tanah (jalankanNova). Di detik ini dia baru mulai
+			-- mengumpulkan tenaga.
+			if not d.bunyiNanti then bunyiTier(tonumber(d.tier)) end
 			-- Adegan berbayar juga dimulai dari depan, dan busurnya
 			-- memang berangkat dari 0 (depan) -- jadi keduanya sepakat.
 			--
@@ -2048,6 +3582,7 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 		elseif os.clock() >= sinemaSampai then
 			fokusTarget = d.pos or fokusTarget
 			sinemaJauh  = 1
+			sinemaJauhY = 1
 			zoomMulai   = os.clock()
 			zoomKeluar  = tonumber(d.zoomKeluar) or CFG.zoomKeluar or 1.8
 			zoomTahan   = tonumber(d.zoomTahan) or CFG.zoomTahan or 1.6
@@ -2060,6 +3595,7 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 			-- berbayar -- tier 1 seharusnya cuma dapat ayunan panggung
 			-- yang biasa.
 			zoomMaks    = tonumber(d.zoomMaks) or 1
+			zoomMasuk   = tonumber(d.zoomMasuk) or CFG.zoomMasuk or 0.45
 			arcRad      = math.rad(tonumber(d.arcDeg) or 0)
 			arcPutar    = tonumber(d.arcPutar) or 1
 			naikAmp     = tonumber(d.naikAmp) or 0
@@ -2101,10 +3637,15 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 		-- fungsi -- dan bunyinya akan diulang dari nol dua kali dalam
 		-- satu frame.
 		if CFG.auraKepala or CFG.auraLayar then
-			bunyiAura(d.roll or CFG.auraRoll, d.persen, d.tunda)
+			bunyiAura(d.roll or CFG.auraRoll, d.persen, d.tunda, d.raksasa)
 		end
 		if CFG.auraKepala then auraDiKepala(d) end
 		if CFG.auraLayar  then tampilkanAura(d) end
+	elseif jenis == "nova" then
+		-- task.spawn: jalankanNova menunggu aset dan animasinya sendiri,
+		-- dan handler ini tidak boleh tertahan -- pesan "fokus" dan "aura"
+		-- berikutnya harus tetap diproses selama adegannya berjalan.
+		task.spawn(jalankanNova, d)
 	elseif jenis == "musik" then
 		tampilkanLagu(d)
 	end
@@ -2118,3 +3659,4 @@ if camera then
 	camera.CameraType = Enum.CameraType.Scriptable
 	camera.CFrame = CFrame.new(fokusKini + offsetDasar, fokusKini)
 end
+ 

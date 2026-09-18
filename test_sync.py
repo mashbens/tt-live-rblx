@@ -1,6 +1,6 @@
 """Uji penyamaan tarian v2 dengan Lua sungguhan.
 
-Fungsinya diambil APA ADANYA dari kamera_client_lua_v2 lewat penanda
+Fungsinya diambil APA ADANYA dari KameraClientV2 lewat penanda
 baris, jadi yang diuji benar-benar kode yang jalan di Studio.
 
 Yang diuji dua bug yang SAMA-SAMA terlihat sebagai "tariannya
@@ -21,7 +21,7 @@ Output:
 import io, re, sys
 from lupa import LuaRuntime
 
-src = io.open("kamera_client_lua_v2", encoding="utf-8").read().split("\n")
+src = io.open("src/StarterPlayer/StarterPlayerScripts/KameraClientV2.client.luau", encoding="utf-8").read().split("\n")
 
 
 def ambil(nama):

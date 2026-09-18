@@ -82,19 +82,29 @@ def _env_float(name: str, default: float) -> float:
 # dikirim tanpa menyimpan tabel apa pun sendiri. Mau menyetel ukuran atau efek?
 # Cukup ubah di sini (atau lewat .env), tidak perlu menyentuh Studio.
 #
-# Tangganya dibangun dari TIGA hal yang berbeda, bukan dari "efek yang
-# makin banyak". Tiap naik satu tier, yang berubah JENISNYA:
+# LIMA tier, ditentukan NAMA GIFT (tier_dari_gift di tiktok_listener.py):
 #
-#   tier 1  komentar biasa   -- ikut antre, tidak ada apa-apa
-#   tier 2  >= 1 koin        -- PERHATIAN: border, dan kamera berhenti
-#                               di dia beberapa detik tanpa mengorbit
-#   tier 3  >= 10 koin       -- UKURAN: raksasa 10x berdiri di belakang
-#                               barisan, tidak menari, cuma melambai
+#   tier 1  komentar biasa     -- ikut antre, tidak ada apa-apa
+#   tier 2  Rose               -- skip lane + cakram biru di kakinya,
+#                                 sorotan 3 detik, TANPA efek VFX acak
+#   tier 3  Rosa / 1.000 tap   -- AURA: border + efek VFX acak 1 dari 3 di
+#                                 badannya, kamera pelan 4 detik
+#   tier 4  Bouquet Flower     -- NOVA: melayang naik, waktu berhenti, lalu
+#                                 membanting diri ke tanah dan menyapu
+#                                 barisan. Lalu menari 3 detik dengan aura
+#                                 VFX acak (undian kedua, terpisah)
+#   tier 5  Doughnut           -- UKURAN: raksasa 4x di belakang barisan,
+#                                 tidak menari, cuma melambai, polos
 #
-# Kenapa bukan sekadar "tier 3 tapi lebih": penonton tidak menghitung
+# Dulu EMPAT: tier "border saja" 1 koin pernah dibuang karena bedanya
+# terlalu tipis. Dia kembali (tier 2) dengan alasan yang dulu belum ada:
+# sorotan 4 detik untuk tiap gift 1 koin menguasai kamera saat live ramai,
+# dan gift yang jauh lebih mahal antre di belakangnya.
+#
+# Kenapa bukan sekadar "tier 2 tapi lebih": penonton tidak menghitung
 # efek. Yang mereka ingat cuma satu kalimat per tier -- "yang itu
-# raksasa", "yang itu bikin panggung kosong" -- dan kalimat itu harus
-# ada sebelum efeknya dipilih.
+# raksasa", "yang itu jatuh dari langit" -- dan kalimat itu harus ada
+# sebelum efeknya dipilih.
 TIER_EFFECTS = {
     1: {
         "scale": _env_float("TIER1_SCALE", 1.0),
@@ -103,101 +113,122 @@ TIER_EFFECTS = {
         "spotlight": False,
     },
     2: {
+        # Rose. Cakram biru di kaki, tanpa garis tepi dan tanpa aura VFX.
+        # Daftar ini keterangan, bukan perintah -- Lua bercabang dari
+        # `tier` -- tapi dua sisi yang bercerita beda adalah cara paling
+        # gampang menyesatkan orang yang membacanya.
         "scale": _env_float("TIER2_SCALE", 1.0),
-        "effects": ["border"],
+        "effects": ["cakram"],
         "nameStyle": "gold",
+        "spotlight": True,
         # ORBIT DIMATIKAN untuk semua tier, dan ini kolomnya.
         #
-        # Sempat True waktu tier 2 dan 3 dibedakan lewat seberapa jauh
-        # kameranya berputar. Masalahnya orbit membawa kamera ke SAMPING
-        # lalu ke BELAKANG avatarnya, dan dari belakang yang terlihat cuma
-        # punggung -- wajah, papan aura, dan border semuanya menghadap ke
-        # arah lain. Panggung ini ditonton dari depan.
-        #
-        # Penggantinya busur depan (KAMERA_TIER di Lua): kamera dikurung
-        # di kerucut +/-16 derajat untuk tier 2 dan +/-26 untuk tier 3,
-        # jadi dua tingkat masih terbaca tanpa satu pun sudut yang
-        # kehilangan wajahnya.
+        # Orbit membawa kamera ke SAMPING lalu ke BELAKANG avatarnya, dan
+        # dari belakang yang terlihat cuma punggung -- wajah, papan aura,
+        # dan cakram semuanya menghadap ke arah lain. Panggung ini ditonton
+        # dari depan. Penggantinya busur depan (KAMERA_TIER di Lua).
         #
         # Kolomnya dibiarkan ada, bukan dihapus: Lua masih membacanya,
         # jadi orbit bisa dinyalakan lagi dari sini tanpa menyentuh
         # Studio.
-        "spotlight": True,
         "orbit": False,
     },
     3: {
-        # BADAN NORMAL sekarang. Raksasanya pindah ke tier 4.
+        # Rosa, atau 1.000 tap. Aura VFX acak di badan (satu dari tiga
+        # asset, dipilih di Lua) plus border.
         "scale": _env_float("TIER3_SCALE", 1.0),
-        # Yang membedakan tier 3 dari tier 2 aura VFX acak di badannya
-        # (satu dari tiga asset, dipilih di Lua) plus busur kamera yang
-        # lebih lebar dan lebih lama. Daftar ini keterangan, bukan
-        # perintah -- Lua bercabang dari `tier` -- tapi dua sisi yang
-        # bercerita beda adalah cara paling gampang menyesatkan orang
-        # yang membacanya nanti.
         "effects": ["border", "aura-vfx"],
         "nameStyle": "gold",
         "spotlight": True,
-        # Lihat catatan orbit di tier 2.
         "orbit": False,
     },
     4: {
-        # Dibaca Lua sebagai skala raksasa. Di sini, bukan di Lua,
+        # Bouquet Flower. Badan normal; yang membuatnya terbaca UPACARANYA
+        # (TierNova, dijalankan client). Aura VFX acaknya menyala saat avatar
+        # aslinya muncul kembali.
+        #
+        # Dia dapat DUA undian yang terpisah: palet warna novanya (1 dari
+        # 3, NOVA.PALET di Lua) dan aura VFX-nya (1 dari 3) -- jadi ada
+        # sembilan kombinasi tampilan.
+        #
+        # TANPA border: Highlight di badan yang disembunyikan client
+        # selama adegannya tetap digambar -- yang terlihat jadi garis tepi
+        # kosong berdiri di slot selagi orangnya melayang di atasnya.
+        "scale": _env_float("TIER4_SCALE", 1.0),
+        "effects": ["nova", "aura-vfx"],
+        "nameStyle": "gold",
+        "spotlight": True,
+        "orbit": False,
+    },
+    5: {
+        # Doughnut. Dibaca Lua sebagai skala raksasa. Di sini, bukan di Lua,
         # supaya bisa digeser lewat .env tanpa menyentuh Studio.
-        "scale": _env_float("TIER4_SCALE", 4.0),
-        # Cuma "giant" -- TANPA border, cakram, maupun aura. Yang membuat
-        # tier 4 terbaca ukuran badannya, dan apa pun yang ditempel di
-        # kakinya cuma menyaingi satu-satunya hal yang jadi intinya.
+        #
+        # AWAS kalau .env-nya dari zaman empat tier: TIER4_SCALE=4 yang
+        # tertinggal di sana sekarang memperbesar NOVA, bukan raksasa.
+        # _cek_kunci_lama di bawah yang memperingatkannya.
+        "scale": _env_float("TIER5_SCALE", 4.0),
+        # Cuma "giant" -- TANPA border, cakram, maupun aura VFX (aura
+        # sempat dicoba, lalu dicopot). Yang membuat dia terbaca ukuran
+        # badannya, dan apa pun yang ditempel di badan atau kakinya cuma
+        # menyaingi satu-satunya hal yang jadi intinya.
         "effects": ["giant"],
         "nameStyle": "gold",
         "spotlight": True,
-        # Lihat catatan orbit di tier 2. Untuk raksasa alasannya bahkan
-        # lebih kuat: dia yang paling besar, jadi dia yang paling lama
-        # memperlihatkan punggung kalau kameranya memutar ke belakang.
+        # Untuk raksasa alasan orbit bahkan lebih kuat: dia yang paling
+        # besar, jadi dia yang paling lama memperlihatkan punggung kalau
+        # kameranya memutar ke belakang.
         "orbit": False,
     },
 }
 
-# Ambang koin per tier.}
-
-# Ambang koin per tier. HARUS sama dengan TIER2_KOIN/TIER3_KOIN di
-# tiktok_listener.py -- listener yang memutuskan tier, di sini angkanya cuma
-# dipakai buat menghitung panjang sorotan dan buat ditampilkan di
-# /api/settings supaya alat lain tidak perlu menebak.
+# Ambang koin untuk gift yang NAMANYA tidak dikenal. HARUS sama dengan
+# TIER*_KOIN di tiktok_listener.py -- listener yang memutuskan tier, di sini
+# angkanya cuma ditampilkan di /api/settings supaya alat lain tidak perlu
+# menebak. Tier 4 (nova) sengaja tidak punya: dia cuma lewat nama.
 TIER2_KOIN = int(_env_float("TIER2_KOIN", 1))
 TIER3_KOIN = int(_env_float("TIER3_KOIN", 10))
-TIER4_KOIN = int(_env_float("TIER4_KOIN", 30))
+TIER5_KOIN = int(_env_float("TIER5_KOIN", 30))
 
-# Lama sorotan tier 2 (1 koin). Sengaja DATAR: tidak ikut memanjang oleh
-# koin seperti tier 3.
+# Lama sorotan tier 2 (Rose). DATAR, dan paling pendek.
 #
-# Kenapa datar: tier 2 itu tiket masuk paling murah dan paling sering
-# dipakai. Kalau panjangnya ikut naik oleh koin, orang yang menumpuk gift
-# murah bisa menyamai lama sorotan tier 3 tanpa pernah naik podium -- dan
-# 10 koin jadi kehilangan alasannya. Yang membedakan tier 3 sekarang dua
-# hal sekaligus: podium, dan sorotan yang bisa memanjang.
+# Tiga detik: cukup untuk wajahnya terbaca dan angka auranya mendarat, dan
+# tidak lebih. Rose yang paling sering datang di antara yang berbayar, jadi
+# tiap detik di sini dikalikan dengan seberapa sering dia muncul.
 SPOTLIGHT_MS_T2 = int(_env_float("SPOTLIGHT_MS_TIER2", 3000))
 
-# Lama sorotan tier 3 (badan normal + aura VFX). Juga DATAR.
+# Lama sorotan tier 3 (Rosa, aura). SEPULUH detik: adegan sinematik --
+# kamera menyapu kanan-kiri-kanan, naik-turun dua kali, lalu mendorong masuk
+# tepat saat angka auranya mendarat. Layarnya letterbox + warna + kilatan,
+# dan garis tepi avatarnya berdenyut. Rinciannya di KAMERA_TIER[3] dan
+# LAYAR di AvatarQueueV2.
 #
-# Lima detik, turun dari tujuh. Yang dulu butuh tujuh itu putaran kamera
-# 180 derajat, dan orbit sudah dibuang. Gantinya kamera BERDENYUT --
-# masuk, mundur, masuk lagi, sambil menyapu kiri-kanan dan naik-turun
-# (denyut* dan naikPutar di KAMERA_TIER, sisi Lua). Gerakan berdenyut
-# justru rusak kalau diregangkan: lima detik yang padat terbaca lebih
-# mahal daripada tujuh detik yang melambat.
-SPOTLIGHT_MS_T3 = int(_env_float("SPOTLIGHT_MS_TIER3", 5000))
+# Naik dari 4 detik atas permintaan. Harganya: Rosa jauh lebih jarang
+# disorot saat live ramai (jedanya 12 detik), dan Rose atau Rosa yang
+# datang sesudahnya menunggu lebih lama di antrian berbayar.
+SPOTLIGHT_MS_T3 = int(_env_float("SPOTLIGHT_MS_TIER3", 10000))
 
-# Lama sorotan tier 4 (raksasa). Juga DATAR, dan alasannya sama: raksasa
-# itu pose diam -- dia melambai sekali lalu berdiri saja.
+# Lama sorotan tier 4 (nova). DATAR, dan isinya berurutan:
 #
-# Tujuh detik, turun dari sembilan. Angka sembilan dulu dipilih untuk
-# jalur tiga perhentian (serong kiri -> serong kanan -> belakang) yang
-# sudah dibuang. Yang tersisa satu busur depan plus naik-turun dari kaki
-# ke kepala, dan itu selesai jauh sebelum detik kesembilan.
+#   0,0 - ~0,6   client menunggu aset avatarnya
+#   0,0 - 4,0    charge: melayang naik 14 stud, kamera rendah mengorbit
+#   4,0 - 5,5    ascend: naik ke 45 stud sambil melintas ke atas slot 1
+#   5,5 - 6,5    freeze: orb tersedot, layar abu-abu, kamera ke depan
+#   6,5 - 7,1    slam: banting dari 45 stud, kamera meluncur ke atas
+#   7,1 - 10,3   impact: shockwave, pilar, petir, kristal -- DAN barisan
+#                tersapu, dia jadi orang pertama barisan yang baru
+#   10,3 - 13,3  menari sendirian di panggung kosong
 #
-# Tetap yang TERPANJANG dari semua tier, dan itu disengaja: badan 4x
-# butuh waktu paling lama untuk dibaca mata.
-SPOTLIGHT_MS_T4 = int(_env_float("SPOTLIGHT_MS_TIER4", 7000))
+# 15 detik: tunggu aset 0,6 + nova 10,3 + tarian 3,0 = 13,9, sisanya margin.
+# Rinciannya di NOVA di AvatarQueueV2. Uji di test_tier.py menjaga seluruh
+# adegan + tarian 3 detik tetap di dalam angka ini, DAN menjaga papan auranya
+# tidak dikirim sebelum avatar aslinya dimunculkan kembali.
+SPOTLIGHT_MS_T4 = int(_env_float("SPOTLIGHT_MS_TIER4", 15000))
+
+# Lama sorotan tier 5 (raksasa). Juga DATAR: raksasa itu pose diam -- dia
+# melambai sekali lalu berdiri saja. Tujuh detik karena badan 4x butuh
+# waktu paling lama untuk dibaca mata.
+SPOTLIGHT_MS_T5 = int(_env_float("SPOTLIGHT_MS_TIER5", 7000))
 
 # Sanity guard untuk angka yang masuk lewat /api/push. Sama dengan
 # KOIN_WARAS di tiktok_listener.py.
@@ -216,76 +247,101 @@ def _cek_sorotan_vs_jeda() -> None:
     napas di atas), jadi angka yang tertulis di .env berhenti bercerita
     jujur tentang seberapa sering tier itu muncul.
 
-    Ketiga tier sekarang panjangnya DATAR, jadi ini tinggal tiga
-    perbandingan. Dulu tier tertinggi memanjang ikut koin dan cek-nya harus
-    menghitung dulu berapa panjang yang paling mungkin; itu ikut hilang
-    bersama koin-memanjangkan-sorotan.
+    SAMA PANJANG tidak diperingatkan. Jeda 3 detik untuk sorotan 3 detik
+    artinya "susul begitu yang sebelumnya selesai", dan napas yang
+    menambahkan 1,5 detik di atasnya memang yang diharapkan.
     """
     for tier, lama, jeda, nama in (
         (2, SPOTLIGHT_MS_T2, SPOTLIGHT_GAP_T2_S, "SPOTLIGHT_GAP_TIER2_S"),
         (3, SPOTLIGHT_MS_T3, SPOTLIGHT_GAP_T3_S, "SPOTLIGHT_GAP_TIER3_S"),
         (4, SPOTLIGHT_MS_T4, SPOTLIGHT_GAP_T4_S, "SPOTLIGHT_GAP_TIER4_S"),
+        (5, SPOTLIGHT_MS_T5, SPOTLIGHT_GAP_T5_S, "SPOTLIGHT_GAP_TIER5_S"),
     ):
-        if lama >= jeda * 1000:
+        if lama > jeda * 1000:
             print(
-                f"[peringatan] sorotan tier {tier} {lama/1000:.1f}s >= "
+                f"[peringatan] sorotan tier {tier} {lama/1000:.1f}s > "
                 f"{nama} {jeda:.0f}s -- jedanya tidak terpakai; yang "
                 f"berlaku napas {lama/1000 + SPOTLIGHT_NAPAS_S:.1f}s. "
                 f"Naikkan jedanya kalau angka itu yang kamu maksud."
             )
 
 
-def durasi_sorotan(tier: int = 3) -> int:
-    """Lama sorotan (ms) untuk sebuah tier.
+# Kunci .env dari zaman EMPAT tier, yang artinya sudah bergeser.
+#
+# Yang berbahaya bukan kunci yang tidak dibaca lagi, tapi kunci yang MASIH
+# dibaca dengan arti yang sudah pindah. Contoh yang paling mahal:
+# TIER4_SCALE=4 yang tertinggal membuat NOVA jadi raksasa 4x, dan
+# SPOTLIGHT_MS_TIER3=15000 memberi aura sorotan lima belas detik.
+#
+# Yang bisa dideteksi dengan pasti cuma TIER4_KOIN: dia tidak dibaca siapa
+# pun lagi (nova tidak punya ambang koin), jadi kalau dia masih ada, .env-nya
+# belum pernah disesuaikan -- dan kunci tier 2-4 di sebelahnya hampir pasti
+# masih berarti yang lama.
+_KUNCI_LAMA = ("TIER4_KOIN",)
 
-    Tidak lagi bergantung koin. Ketiganya angka tetap, dan itu keputusan
-    yang datang dari bentuk adegannya sendiri:
 
-      tier 2  sorotan datar dan PENDEK, tiket masuk paling murah --
-              yang menentukan berapa banyak yang kebagian, bukan seberapa
-              megah satu sorotan
-      tier 3  kamera berdenyut (masuk-mundur-masuk) + aura VFX, butuh
-              waktu lebih dari tier 2 supaya dua-duanya sempat terlihat
-      tier 4  raksasa itu pose diam -- panjangnya ditentukan berapa lama
+def _cek_kunci_lama() -> None:
+    lama = [k for k in _KUNCI_LAMA if k in os.environ]
+    if lama:
+        print(
+            f"[peringatan] .env masih berisi {', '.join(lama)} -- itu setelan "
+            f"zaman empat tier dan tidak dibaca lagi. Tier sekarang lima "
+            f"(2 Rose, 3 Rosa/aura, 4 Bouquet/nova, 5 Doughnut/raksasa), "
+            f"jadi TIER*_SCALE, SPOTLIGHT_MS_TIER* dan SPOTLIGHT_GAP_TIER*_S "
+            f"ikut bergeser satu nomor -- cek semuanya."
+        )
+
+
+def durasi_sorotan(tier: int = 4) -> int:
+    """Lama sorotan (ms) untuk sebuah tier. Tidak bergantung koin.
+
+      tier 2  Rose: 3 detik, cukup untuk wajah dan angka auranya
+      tier 3  aura + adegan kamera sinematik, 10 detik
+      tier 4  adegan nova 10,3 detik, lalu menari 3 detik
+      tier 5  raksasa itu pose diam -- panjangnya ditentukan berapa lama
               badan 4x perlu untuk dibaca mata, bukan oleh gerakannya
-
-    Yang membedakan kiriman besar bukan lamanya, tapi BENTUKNYA: 1 koin
-    dapat perhatian, 10 koin dapat aura, 30 koin jadi raksasa.
     """
-    if tier < 3:
+    if tier <= 2:
         return SPOTLIGHT_MS_T2
     if tier == 3:
         return SPOTLIGHT_MS_T3
-    return SPOTLIGHT_MS_T4
+    if tier == 4:
+        return SPOTLIGHT_MS_T4
+    return SPOTLIGHT_MS_T5
 
-# Jeda khusus sorotan tier 2. Lebih pendek dari tier 3 karena sorotannya
-# sendiri lebih pendek (5 detik vs 7 detik ke atas) -- dan karena tier 2
-# datang jauh lebih sering, memakai jeda tier 3 untuknya berarti sebagian
-# besar yang bayar 1 koin tidak pernah kebagian.
+# Jeda sorotan tier 2 (Rose). Paling pendek, dan sama dengan sorotannya:
+# begitu Rose sebelumnya selesai, yang berikutnya boleh menyusul (ditambah
+# SPOTLIGHT_NAPAS_S, jadi praktisnya 4,5 detik).
+SPOTLIGHT_GAP_T2_S = _env_float("SPOTLIGHT_GAP_TIER2_S", 3.0)
+
+# Jeda sorotan tier 3 (aura).
 #
-# Batas bawahnya bukan selera: sorotan tier 2 + fade keluar (~0,6 detik di
-# Lua) harus SELESAI sebelum yang berikutnya mulai, kalau tidak Studio
-# membuang yang kedua lewat penjaga `spotlightBusy`.
-SPOTLIGHT_GAP_T2_S = _env_float("SPOTLIGHT_GAP_TIER2_S", 7.0)
+# Batas bawahnya bukan selera: sorotan + fade keluar (~0,6 detik di Lua)
+# harus SELESAI sebelum yang berikutnya mulai. SPOTLIGHT_NAPAS_S di bawah
+# yang menjaganya sekarang, tapi jeda yang lebih pendek dari sorotannya
+# sendiri berhenti bercerita jujur (lihat _cek_sorotan_vs_jeda).
+# 12 = sorotan 10 + napas. Lebih pendek dari itu tidak berarti apa-apa:
+# napas sesudah sorotan selalu menang.
+SPOTLIGHT_GAP_T3_S = _env_float("SPOTLIGHT_GAP_TIER3_S", 12.0)
 
-# Jeda tier 3. Di antara keduanya, sejalan dengan sorotannya yang juga
-# di antara keduanya (6 detik).
-SPOTLIGHT_GAP_T3_S = _env_float("SPOTLIGHT_GAP_TIER3_S", 9.0)
+# Jeda tier 4 (nova). Nova menyita kamera, panggung, DAN seluruh layar
+# sekaligus (letterbox, warna abu-abu, ledakan setinggi 300 stud), dan dua
+# nova yang menempel terbaca sebagai satu kekacauan, bukan dua kedatangan.
+# 17 = sorotan 15 + napas 2.
+SPOTLIGHT_GAP_T4_S = _env_float("SPOTLIGHT_GAP_TIER4_S", 17.0)
 
-# Jeda tier 4 (raksasa). Paling panjang karena sorotannya paling panjang;
-# syaratnya sama seperti yang lain -- harus lebih besar dari sorotannya
-# sendiri plus fade keluar, kalau tidak Studio membuang sorotan
-# berikutnya dan yang bayar 30 koin tidak dapat apa-apa.
-SPOTLIGHT_GAP_T4_S = _env_float("SPOTLIGHT_GAP_TIER4_S", 11.0)
+# Jeda tier 5 (raksasa). Dua raksasa beruntun saling mengganti di slot yang
+# sama, jadi yang pertama butuh waktu untuk sempat dilihat.
+SPOTLIGHT_GAP_T5_S = _env_float("SPOTLIGHT_GAP_TIER5_S", 11.0)
 
 # Napas SESUDAH sorotan sebelumnya benar-benar habis, detik.
 #
 # Ini yang menutup lubang yang dulu bikin sorotan saling tindih: jeda di
 # atas dipilih dari tier yang MAU disorot, bukan dari yang SEDANG
-# disorot. Tier 4 (sorotan 9 detik) diikuti tier 3 cuma menunggu jeda
-# tier 3 (9 detik) -- jadi tier 3 mulai persis waktu tier 4 belum habis,
+# disorot. Raksasa (sorotan 7 detik) diikuti tier 2 cuma menunggu jeda
+# tier 2 (6 detik) -- jadi tier 2 mulai persis waktu raksasa belum habis,
 # kameranya direbut di tengah adegan, dan salah satu dari keduanya
-# kehilangan sorotannya. Yang terlihat di siaran: "tier 3 datang tapi
+# kehilangan sorotannya. Yang terlihat di siaran: "tier 2 datang tapi
 # tidak disorot".
 #
 # Sekarang syaratnya dua-duanya (lihat _ambil_entri): jeda milik tier
@@ -302,11 +358,13 @@ SPOTLIGHT_NAPAS_S = _env_float("SPOTLIGHT_NAPAS_S", 1.5)
 
 def _jeda_sorotan(tier: int) -> float:
     """Jeda minimal yang harus dilewati sebelum tier ini boleh disorot."""
-    if tier == 2:
+    if tier <= 2:
         return SPOTLIGHT_GAP_T2_S
     if tier == 3:
         return SPOTLIGHT_GAP_T3_S
-    return SPOTLIGHT_GAP_T4_S
+    if tier == 4:
+        return SPOTLIGHT_GAP_T4_S
+    return SPOTLIGHT_GAP_T5_S
 
 # Kapan sorotan terakhir disajikan. None = belum pernah.
 last_spotlight_at: float | None = None
@@ -314,7 +372,7 @@ last_spotlight_at: float | None = None
 # Berapa lama sorotan yang terakhir disajikan itu, detik. Dipakai
 # _ambil_entri untuk tahu kapan dia habis -- tanpa ini yang berikutnya
 # cuma bisa menebak lewat jedanya sendiri, dan tebakan itu yang dulu
-# salah untuk pasangan tier 4 -> tier 3.
+# salah untuk pasangan raksasa -> tier 2.
 last_spotlight_lama_s: float = 0.0
 
 # Cache displayName supaya tidak bolak-balik memanggil API Roblox
@@ -329,6 +387,7 @@ display_cache: dict[str, tuple[str, int | None]] = {}
 
 
 _cek_sorotan_vs_jeda()
+_cek_kunci_lama()
 
 
 class PushRequest(BaseModel):
@@ -415,26 +474,18 @@ def push(req: PushRequest):
     # uangnya sudah keluar -- ditolak karena "antrian penuh" itu tidak bisa
     # diterima. Yang gratisan yang mengalah.
     if tier >= 2:
-        # Kiriman berikutnya dari orang yang sama untuk nama yang sama
-        # DIGABUNG, bukan ditambahkan sebagai entri kedua.
+        # TIDAK digabung dengan kiriman lain dari orang yang sama.
         #
-        # Tanpa ini, "rosa x10" lalu "rosa x20" jadi dua entri. Keduanya
-        # masuk lewat appendleft, jadi yang keluar duluan justru yang
-        # TERBARU -- penonton melihat x20 dulu, lalu x10 menggantikannya
-        # beberapa detik kemudian. Terbaca seperti angkanya turun.
-        for lama in queue:
-            if (lama["tier"] >= 2
-                    and lama["username"] == name
-                    and lama.get("tiktokUser") == req.tiktokUser):
-                lama["tier"] = max(lama["tier"], tier)
-                # Diambil yang TERBESAR, bukan dijumlah: listener sudah
-                # mengirim total kumulatifnya. Menjumlah lagi di sini
-                # membuat kiriman yang sama dihitung dua kali.
-                lama["koin"] = max(lama.get("koin", 0), koin)
-                return {
-                    "ok": True, "queued": name, "tier": lama["tier"],
-                    "koin": lama["koin"], "merged": True, "size": len(queue),
-                }
+        # Dulu kiriman berikutnya untuk nama yang sama digabung ke entri
+        # yang sudah menunggu, dengan tier diambil yang TERTINGGI. Itu
+        # separuh dari bug "Doughnut lalu Rose jadi raksasa lagi": Rose-nya
+        # dilebur ke entri raksasa dan tidak pernah tampil sendiri.
+        #
+        # Sekarang tiap gift = satu spawn, dan listener mengirimnya satu
+        # per satu. Alasan penggabungan yang dulu (entri yang lebih baru
+        # keluar duluan dan angkanya terbaca "turun") sudah tidak berlaku:
+        # sisipan di bawah menjaga urutan kirim, jadi yang duluan dikirim
+        # yang duluan tampil.
 
         # Disisipkan SESUDAH gift-gift yang sudah menunggu, bukan di paling
         # depan.
@@ -468,7 +519,7 @@ def push(req: PushRequest):
 def _ambil_entri() -> dict | None:
     """Pilih entri yang disajikan berikutnya, dengan menjaga jarak antar sorotan.
 
-    Entri tier 2/3/4 memicu sorotan yang memakai kamera beberapa detik.
+    Entri tier 2-5 memicu sorotan yang memakai kamera beberapa detik.
     Selama sorotan sebelumnya BELUM HABIS -- atau jedanya belum lewat --
     entri itu DITAHAN di tempatnya dan entri biasa yang disajikan lebih dulu,
     jadi sorotan tersebar sendiri tanpa ada yang diturunkan tiernya dan tanpa
@@ -557,8 +608,8 @@ def next_username():
         "effects": efek["effects"],
         "nameStyle": efek["nameStyle"],
         "spotlight": efek["spotlight"],
-        # Apakah kameranya MENGORBIT atau cuma menahan dekat. Ini yang
-        # membedakan sorotan tier 2 dari tier 3/4 -- lihat TIER_EFFECTS.
+        # Apakah kameranya MENGORBIT. Dimatikan untuk semua tier -- lihat
+        # TIER_EFFECTS.
         "orbit": efek.get("orbit", False),
         "spotlightMs": durasi_sorotan(tier) if efek["spotlight"] else 0,
         "koin": koin,
@@ -580,14 +631,18 @@ def settings():
         "spotlightGapTier2S": SPOTLIGHT_GAP_T2_S,
         "spotlightGapTier3S": SPOTLIGHT_GAP_T3_S,
         "spotlightGapTier4S": SPOTLIGHT_GAP_T4_S,
+        "spotlightGapTier5S": SPOTLIGHT_GAP_T5_S,
         # Napas wajib sesudah sorotan sebelumnya habis. mock_comments
         # memakai jeda di atas untuk mengatur lajunya, dan sejak ada
         # angka ini jeda itu bukan lagi satu-satunya yang menentukan.
         "spotlightNapasS": SPOTLIGHT_NAPAS_S,
         "spotlightMsTier2": SPOTLIGHT_MS_T2,
         "spotlightMsTier3": SPOTLIGHT_MS_T3,
+        "spotlightMsTier4": SPOTLIGHT_MS_T4,
+        "spotlightMsTier5": SPOTLIGHT_MS_T5,
         "koinTier2": TIER2_KOIN,
         "koinTier3": TIER3_KOIN,
+        "koinTier5": TIER5_KOIN,
         "tiers": {str(k): v for k, v in TIER_EFFECTS.items()},
     }
 

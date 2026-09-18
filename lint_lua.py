@@ -70,7 +70,7 @@ def periksa(path: str) -> list[str]:
 
 
 gagal = False
-for p in ("my_scrip_lua_v2", "kamera_client_lua_v2"):
+for p in ("src/ServerScriptService/AvatarQueueV2.server.luau", "src/StarterPlayer/StarterPlayerScripts/KameraClientV2.client.luau", "src/ReplicatedStorage/TierNova.luau"):
     hilang = periksa(p)
     if hilang:
         gagal = True

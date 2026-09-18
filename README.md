@@ -10,8 +10,15 @@ koinnya, makin menonjol tempatnya.
 ├── tiktok_listener.py # baca komentar & gift TikTok Live -> isi antrian
 ├── mock_comments.py   # simulasi komentar live, buat tes tanpa siaran
 ├── roblox_ssl.py      # cara memanggil API Roblox tanpa request menggantung
-├── my_sscript_lua     # SKRIP ROBLOX STUDIO -- paste ke ServerScriptService
-├── test_podium.py     # uji pembukuan slot podium (`make test-podium`)
+├── src/               # SKRIP ROBLOX STUDIO -- foldernya meniru Explorer di Studio
+│   ├── ServerScriptService/AvatarQueueV2.server.luau                 # Script
+│   ├── StarterPlayer/StarterPlayerScripts/KameraClientV2.client.luau # LocalScript
+│   └── ReplicatedStorage/TierNova.luau                               # ModuleScript
+├── default.project.json # peta Rojo: src/ -> Studio
+├── aftman.toml        # versi Rojo (dipasang lewat Aftman)
+├── test_tier.py       # uji fungsi tier di AvatarQueueV2 (`make test-tier`)
+├── test_sync.py       # uji penyamaan tarian di KameraClientV2 (`make test-sync`)
+├── lint_lua.py        # cari nil global di ketiga file src/ (`make lint`)
 ├── Makefile           # semua perintah; `make` saja menampilkan daftarnya
 ├── requirements.txt
 └── README.md
@@ -22,9 +29,9 @@ Tiga proses: **server antrian** (`make server`), **tunnel** (`make tunnel`),
 `https://rblx.buanaglobalcipta.com`, bukan localhost — Studio tidak bisa
 memanggil 127.0.0.1.
 
-`my_sscript_lua` tidak dijalankan dari sini: isinya di-paste ke
-ServerScriptService di Roblox Studio, dan `URL` di baris atasnya diarahkan ke
-`PUBLIC_URL` di Makefile.
+Skrip Studio di `src/` tidak di-paste lagi: `make rojo`, lalu di Studio
+Plugins > Rojo > Connect -- tiap kali file di `src/` disimpan, Studio ikut
+berubah. `URL` di atas `AvatarQueueV2` diarahkan ke `PUBLIC_URL` di Makefile.
 
 ### Tunnel (pengganti ngrok)
 
@@ -167,43 +174,270 @@ Semua angka di atas bisa ditimpa lewat `.env`: `USER_COOLDOWN_S`,
 
 ### Tier: gift bikin avatar beda
 
-Tier ditentukan **harga gift dalam koin**, bukan nama gift. TikTok mengirim
-harganya sendiri di tiap `GiftEvent` (`gift.diamond_count`), jadi tidak ada
-gift yang "tidak dikenal": `rose` 1 koin → tier 2, `rosa` 10 koin → tier 3,
-dan gift 1.000 koin yang dulu jatuh ke tier 1 sekarang naik ke tier tertinggi.
-Ambangnya `TIER2_KOIN` (1), `TIER3_KOIN` (10), dan `TIER4_KOIN` (30) di `.env`.
+Tier ditentukan **nama gift**, dan **tiap gift = satu spawn** di tiernya
+sendiri — tidak ada yang dijumlah:
 
-> **Ada EMPAT tier sekarang, dan tabel di bawah menjelaskan yang v13.**
+| Tier | Gift | Yang didapat |
+|---|---|---|
+| 1 | komentar biasa | berdiri, menari |
+| 2 | **Rose** | skip lane + cakram biru, sorotan 3 s |
+| 3 | **Rosa** / 1.000 tap | AURA (VFX acak 1 dari 3) |
+| 4 | **Bouquet Flower** | UPACARA (nova) |
+| 5 | **Doughnut** | UKURAN (raksasa) |
+
+Rose lagi = spawn Rose lagi. Bouquet lagi = nova lagi, **tidak** naik ke
+raksasa. Dua gift sebelum dia ngetik username = dua spawn, berurutan, tidak ada
+yang dilewati.
+
+**Kenapa nama, bukan koin.** Dulu tier dihitung dari JUMLAH koin yang terus
+ditambah selama `GIFT_BOOST_TTL_S`, dan jumlah itu tidak pernah turun:
+Doughnut (30) lalu Rose (1) = 31 koin = **raksasa lagi**, padahal yang barusan
+dikirim cuma Rose. Harga juga tidak bisa lagi jadi satu-satunya penentu:
+Bouquet Flower dan Doughnut **sama-sama 30 koin**. Yang dilepas untuk ini,
+sengaja: nyicil tidak dihitung lagi — Rose dikirim sepuluh kali terpisah =
+sepuluh spawn Rose, bukan satu Rosa.
+
+**Gift yang namanya tidak dikenal** jatuh ke harga satuannya, bukan ke tier 1:
+1–9 koin = tier 2, 10–29 = tier 3, ≥30 = raksasa (`TIER2_KOIN`, `TIER3_KOIN`,
+`TIER5_KOIN` di `.env`). Nova sengaja tidak punya ambang koin — cuma lewat
+Bouquet Flower. Ejaan nama bisa ditimpa lewat
+`GIFT_TIER=rose:2,rosa:3,bouquet flower:4,doughnut:5`; nama yang sebenarnya
+dikirim TikTok selalu tercetak di log `[gift]`, jadi cocokkan dari situ.
+
+> **Tabel serta penjelasan podium di bagian ini menggambarkan v13.**
 >
-> Tabel serta penjelasan podium di bagian ini menggambarkan `my_sscript_lua`
-> (v13), tempat pembeda tier-nya TEMPAT (podium). Pasangan yang aktif
-> sekarang — `my_scrip_lua_v2` + `kamera_client_lua_v2` — memakai pembeda
-> yang berbeda, dan tier 3 di sana **bukan** raksasa:
+> Bagian podium di bawah menggambarkan skrip v13 (sudah dihapus dari repo,
+> masih ada di riwayat git), tempat
+> pembeda tier-nya TEMPAT (podium). Pasangan yang aktif sekarang —
+> `AvatarQueueV2` + `KameraClientV2` + ModuleScript
+> `TierNova` (semuanya di `src/`) — memakai pembeda yang berbeda:
 >
-> | | Tier 1 | Tier 2 (≥1 koin) | Tier 3 (≥10 koin) | Tier 4 (≥30 koin) |
-> |---|---|---|---|---|
-> | Antrian | normal | potong ke depan | potong ke depan | potong ke depan |
-> | Ukuran | 1,0× | 1,0× | 1,0× | **4,0× (raksasa)** |
-> | Border | — | biru es | oranye bara | — |
-> | Aura VFX di badan | — | — | **1 dari 3, diacak** | — (polos) |
-> | Sorotan | — | 3 detik | 5 detik | 7 detik |
-> | Busur kamera | — | ±16°, 1 sapuan | ±26°, 1,5 sapuan | ±20°, 1 sapuan |
-> | Naik-turun kamera | — | 1,5 stud, 1 gundukan | 3 stud, **2 gundukan (naik lalu turun)** | **5 stud**, 1 gundukan |
-> | Zoom | masuk→keluar | masuk→keluar | **masuk→keluar→masuk lagi (denyut)** | masuk→keluar |
-> | Membekukan panggung | — | — | — | **ya** |
+> | | Tier 1 | Tier 2 (Rose) | Tier 3 (Rosa / 1.000 tap) | Tier 4 (Bouquet Flower) | Tier 5 (Doughnut) |
+> |---|---|---|---|---|---|
+> | Antrian | normal | potong ke depan | potong ke depan | potong ke depan | potong ke depan |
+> | Ukuran | 1,0× | 1,0× | 1,0× | 1,0× | **4,0× (raksasa)** |
+> | Kedatangan | langsung berdiri | langsung berdiri | langsung berdiri | **adegan nova** (lihat bawah) | langsung berdiri |
+> | Di kakinya | — | **cakram biru saja** | cakram + garis tepi biru | — | — |
+> | Aura VFX di badan | — | — | **1 dari 3, diacak** | **1 dari 3, diacak** (menyala saat adegannya selesai) — (polos) |
+> | Warna efek | — | — | — | **1 dari 3 palet, diacak** (prisma / inferno / glasir) | — |
+> | Lantai aura | 0% (0–1000) | **900%** | **950%** | **999%** | **9.999–10.000%**, papannya jadi nama saja sesudah mendarat |
+> | Sorotan | — | 3 detik | **10 detik** (adegan sinematik) | 15 detik (0,6 aset + 10,3 nova + 3 menari) | 7 detik |
+> | Jeda sorotan | — | 3 s (praktisnya 4,5) | 12 s | 17 s | 11 s |
+> | Kamera | — | **paling tenang**: ±10°, gundukan 0,8 stud | **sinematik**: sapuan kanan-kiri-kanan ±24°, dua gundukan naik-turun, dorongan zoom saat angka mendarat; letterbox + warna + kilatan, garis tepi berdenyut | **jalur 4 bidikan**: orbit rendah 360° → depan → atas → shot lebar | ±20°, naik-turun 5 stud |
+> | Efek layar penuh | — | — | — | **letterbox, layar abu-abu, bloom, blur** | — |
+> | Bunyi | aura saja | denting ringan | bass | **6 isyarat per fase** (lihat bawah) | hentakan berat + **bunyi mendarat sendiri** |
+> | Membekukan panggung | — | — | — | **ya** | **ya** |
+> | Dampak ke panggung | — | — | — | **menyapu SELURUH barisan** saat mendarat, lalu dia sendiri berdiri di slot 1 | **kamera panggung turun** selama dia berdiri |
 >
-> Kameranya **selalu di depan** — tidak ada tier yang memutar ke samping
-> badan, apalagi ke belakang. Gerakan adegannya cuma zoom masuk-keluar,
-> sapuan kiri-kanan di dalam kerucut depan, dan naik-turun.
+> **Rose cuma cakram, tanpa garis tepi**, dan itu bukan cuma selera: Roblox
+> cuma menggambar sekitar 31 Highlight sekaligus, dan Rose yang paling sering
+> datang. Kalau dia ikut memakai jatah garis, border orang yang bayar Rosa
+> dilepas duluan untuk memberi tempat ke dia. Cakram itu Part biasa, tidak
+> punya jatah semacam itu (`BORDER_GARIS_MIN_TIER`).
+>
+> **Adegan nova tier 4** (Bouquet Flower, PRISMATIC STARFALL), urutannya:
+>
+> 1. client menunggu aset avatarnya (≤0,6 s)
+> 2. **charge 4,0 s** — letterbox masuk, FOV menyempit 12°, badannya
+>    melayang naik 14 stud. Enam orb mengorbit sambil menarik beam ke
+>    dadanya, 32 rune berputar di lantai, partikel naik dari tanah.
+>    **Kamera rendah memandang ke atas, mengorbit 360° sekali penuh**
+> 3. **ascend 1,5 s** — naik ke **45 stud** (sembilan kali tinggi badan),
+>    orb mengatup jadi mahkota di atas kepala, lingkaran rune melebar.
+>    Selagi naik dia juga **melintas ke atas slot 1** — di situ dia akan
+>    membanting diri
+> 4. **freeze 1,0 s** — orb tersedot ke dada, kilatan membesar, layar jadi
+>    abu-abu dan buram; rune hampir berhenti. **Kamera meluncur ke depan
+>    wajahnya dan diam** — satu-satunya detik tenang di seluruh adegan
+> 5. **slam 0,6 s** — banting ke tanah **di slot 1** dari 45 stud, FOV
+>    menyempit 20°.
+>    **Kamera meluncur ke atas kepalanya**, jadi dia jatuh menjauh dari
+>    lensa
+> 6. **impact 3,2 s** — shell 65 stud, tiga shockwave, pilar cahaya 300
+>    stud, delapan petir, 20 kristal melayang lalu jatuh, aftershock kedua
+>    di detik 1,4, warna pulih, letterbox keluar. **Kamera mundur ke shot
+>    lebar.** Di detik yang sama **seluruh barisan tersapu** — lihat bawah
+> 7. avatar aslinya muncul kembali **di slot 1**, aura VFX acaknya
+>    menyala, dan dia **menari 3 detik sendirian** di panggung yang sudah
+>    kosong — lalu dia **tinggal di sana**, sebagai orang pertama di
+>    barisan yang baru. Yang komentar sesudahnya berdiri di sampingnya
+>    (slot 2, 3, …), bukan menggantikannya
+>
+> **Bunyinya** (`NOVA.SFX` di server, dimainkan modulnya sendiri):
+>
+> | Fase | Bunyi | Nada |
+> |---|---|---|
+> | charge | `bass.wav`, **looped** | 0,50 → **1,15** (meluncur naik) |
+> | ascend | `action_jump.mp3` | 0,65 |
+> | freeze | `electronicpingshort.wav` | 0,35 (denting rendah menggantung) |
+> | slam | `action_falling.mp3` (lewat `SFX_TIER[4]`) | 1,40 |
+> | impact | `bass.wav` + `impact_water.mp3` **dilapis** | 0,30 / 0,45 |
+> | gempa | `action_jump_land.mp3`, +0,3 s | 0,45 |
+> | aftershock | `impact_water.mp3`, +1,4 s | 0,65 |
+>
+> Semuanya **bawaan Roblox** (`rbxasset://sounds/*`) — berkas itu ikut
+> terpasang di tiap instalasi, jadi tidak ada kemungkinan "Asset is not
+> approved for the requester" yang pernah membuat `swoosh.wav` gagal
+> diam-diam di file ini. Harganya: pilihannya cuma enam berkas, jadi yang
+> membedakan mereka **nada**, bukan berkasnya. Kalau nanti ada asset audio
+> sendiri, yang diganti cuma `id`-nya.
+>
+> Dimainkan **dari dalam modulnya**, bukan dijadwalkan pemanggil: cuma
+> modul yang tahu kapan tiap fase benar-benar mulai, dan bunyi yang
+> dijadwalkan dari luar meleset sebanyak tunggu aset avatarnya.
+>
+> **GEMPA: barisan kembali ke slot 1.** Tepat saat dia menghantam tanah,
+> semua yang sedang menari terlempar keluar dari titik hantam sambil
+> berputar dan memudar, lalu dihapus — dan `slotCount` kembali nol, jadi
+> kedatangan berikutnya mengisi dari slot 1 lagi. Yang lebih dekat ke
+> titik hantam terlempar lebih jauh.
+>
+> Lemparannya **tween di server, bukan fisika**: delapan puluh avatar yang
+> meragdoll berbarengan menjatuhkan FPS tepat di detik yang paling
+> ditonton, dan fisika Roblox tidak deterministik antar client — dengan
+> impuls, satu penonton melihat kerumunan terlempar ke kiri dan penonton
+> lain ke kanan. Angkanya `GEMPA_LAMA`, `GEMPA_JAUH`, `GEMPA_NAIK`.
+>
+> Avatar novanya sendiri **tidak ikut tersapu**: dia memegang `SLOT_NOVA`
+> (di luar jangkauan `1..slotCount`, seperti `SLOT_RAKSASA`) **sejak
+> detik pertama adegannya**, bukan mulai dari hantamannya. Tempatnya di
+> barisan tetap dipakai supaya tidak ada yang berdiri menembus badannya,
+> tapi nomornya di luar jangkauan setiap gelung barisan.
+>
+> Itu menutup satu bug yang sering terlihat waktu `make mock`: selama
+> sepuluh detik adegannya, kedatangan gratisan terus mengisi barisan, dan
+> barisan yang kebetulan **penuh** di detik-detik itu memanggil
+> `resetStage` — yang dulu menghapus avatar novanya di tengah adegan.
+> `AncestryChanged` di client membatalkan seluruh novanya tanpa satu pun
+> error, jadi yang terlihat cuma **kamera yang mengorbit panggung
+> kosong**.
+>
+> Begitu barisannya tersapu dia **pindah ke slot 1** (`novaKeBarisan`) —
+> nomor, badan, dan kunci posisinya sekaligus — dan sesudah itu dia
+> avatar biasa: yang menghapusnya nanti sama dengan yang menghapus semua
+> orang (panggung penuh, atau nova berikutnya). Titik mendaratnya dihitung
+> **sekali** di server (`tujuan`) dan dipakai bertiga: pusat gempa,
+> pemindahan avatar aslinya, dan bantingan salinan nova di client.
+>
+> **Kalau pesan novanya kehilangan modelnya.** Argumen `Instance` di dalam
+> pesan remote sampai sebagai `nil` kalau modelnya belum selesai
+> direplikasi ke client itu — dan gejalanya sama persis: kamera bergerak
+> (pesan `fokus` tidak membawa `Instance` apa pun), tidak ada yang
+> melayang. Server memberi tiap adegan nomornya sendiri (`NovaId`,
+> dipasang sebelum modelnya masuk workspace), dan client menunggu model
+> bernomor itu lewat `ChildAdded` sampai 2 detik sebelum menyerah — dengan
+> `warn` yang menyebut nomornya, jadi kejadian itu tidak lagi senyap.
+>
+> Warnanya **diundi 1 dari 3 palet** tiap kedatangan (`NOVA.PALET`), dan
+> aura VFX-nya undian kedua yang terpisah — jadi ada sembilan kombinasi
+> tampilan. Server yang mengundi keduanya, jadi satu orang tampil sama di
+> semua layar.
+>
+> **Raksasa tier 5 (Doughnut): 9.999–10.000%, dan kepalanya harus muat.**
+>
+> **Pembaruan:** angkanya sekarang diundi di rentangnya sendiri
+> (`AURA_RAKSASA_MIN`..`AURA_RAKSASA`), putarannya punya bunyi sendiri (berkas
+> putaran biasa, nada 0,8), bunyi mendaratnya diganti hentakan "angka besar"
+> pada nada 0,75 (yang lama — `action_jump_land` pada 0,35 — nyaris tidak
+> terdengar di speaker kecil), dan **2,5 detik sesudah angkanya mendarat
+> papannya menyusut jadi nama saja** (`AURA_RAKSASA_NAMA_S`). Aura VFX acak
+> untuk raksasa sempat dicoba lalu **dicopot** — dia tetap polos. Paragraf di
+> bawah menjelaskan versi sebelumnya.
+>
+> Auranya **tidak diundi sama sekali** — selalu `AURA_RAKSASA` = 10.000%.
+> Lantai 1000 yang dulu ada di sana secara teknis benar (yang paling mahal
+> tidak boleh punya lantai lebih rendah dari tier di bawahnya), tapi di layar
+> dia tidak bercerita apa-apa: 1000% itu angka yang sama yang bisa didapat
+> penonton gratisan yang beruntung. Sepuluh ribu tidak bisa dicapai siapa pun
+> dengan cara lain, dan dia **melewati `AURA_MAX`** dengan sengaja — undian
+> berhenti di 1000, raksasa tidak ikut diundi.
+>
+> Papannya sekarang **papan penuh** (nama / angka / AURA) dengan putaran angka
+> seperti tier lain, bukan lagi satu baris nama. Angkanya berwarna **putih ke
+> emas**, satu-satunya warna hangat di panggung ini, dan ambang warnanya di
+> 5.000 supaya sudah emas selagi putarannya naik. Mendaratnya punya **bunyi
+> sendiri** (`SFX_AURA.HIT_RAKSASA_ID`): berkas mendarat bawaan Roblox pada
+> nada 0,35 — turun satu setengah oktaf, jadi dentuman rendah yang panjang.
+> Bunyi itu **mengganti** hentakan "angka besar", tidak menumpuk.
+>
+> **Kepalanya di dua kamera yang berbeda**, dan dua-duanya sempat memotongnya:
+>
+> - **saat disorot** — yang menentukan JARAK, bukan tinggi kamera (menaikkan
+>   kamera ikut menambah sudut tunduk, dan keduanya hampir meniadakan satu
+>   sama lain). `GIANT_KAMERA_JAUH` 0,55 → **0,72** dan `masuk` 0,75 → **0,95**:
+>   rapatannya praktis dibuang. Raksasa memang tidak butuh merapat — badannya
+>   sudah mengisi frame di jarak penuh, dan tiap persen yang dia merapat
+>   dibayar dengan kepalanya.
+> - **sisa waktunya** — raksasa bertahan lewat reset, jadi sebagian besar
+>   umurnya dia berdiri di belakang panggung yang menjalankan kedatangan biasa.
+>   Di kamera itu sebabnya **sudut tunduk**: kamera duduk 7 stud dan membidik
+>   3,2 stud dari jarak 11, jadi menunduk 19° — dan tiap derajat tunduk
+>   dipotong dari ruang di atas frame. Kepala raksasa 4× ada di 20 stud,
+>   29 stud di depan kamera: 29° + 19° = 48°, jauh di luar setengah-FOV 35°.
+>   Selama ada raksasa berdiri, server mengirim `upJauh` =
+>   **`CAMERA_UP_JAUH_GIANT` (3,5)** bersama tiap pesan `fokus`; tunduknya
+>   tinggal 1,6° dan kepalanya masuk di 31°, sisa 4° jatah topi.
+>
+> Yang ditukar untuk yang terakhir: seluruh guna `CAMERA_UP_JAUH` adalah duduk
+> **di atas** kepala barisan (~5,8 stud) supaya baris kedua dan ketiga muncul
+> di atas bahu baris depannya. Di 3,5 stud kamera ada di bawah garis itu, jadi
+> barisan belakang kembali bersembunyi. Makanya angkanya **tidak menggantikan**
+> `CAMERA_UP_JAUH` — tanpa raksasa di panggung tidak ada satu pun frame yang
+> berubah.
+>
+> Bidikan kameranya sengaja **tidak** ikut dinaikkan, walaupun itu meratakan
+> sudut tunduk yang sama tanpa menurunkan kamera: titik bidik yang sama dipakai
+> waktu kamera sedang merapat, dan di jarak 5 stud selisih tiga stud itu 45° —
+> kedatangan biasa akan dibidik dari bawah dengan kakinya di luar frame. Tinggi
+> kamera aman untuk itu karena dia ikut diskalakan zoom; titik bidiknya tidak.
+>
+> `make test-tier` menjaga keduanya: framing sorotannya (kepala, kaki, barisan,
+> dan garis mata) dan kepala raksasa di kamera panggung biasa, termasuk syarat
+> sisa margin 3° untuk topi.
+>
+> Angkanya di `NOVA.CONFIG` dan `NOVA.TARI` di `AvatarQueueV2`.
+> `make test-tier` menjaga seluruh jadwal itu muat di `SPOTLIGHT_MS_TIER4`,
+> dan menjaga papan auranya tidak dikirim sebelum avatar aslinya muncul
+> kembali — selama adegannya, client menyembunyikan yang asli beserta
+> setiap papan yang menempel padanya.
+>
+> **Tier 4 (nova) butuh ModuleScript** bernama `TierNova` di **ReplicatedStorage**,
+> isinya `TierNova`. Adegannya dijalankan client dengan salinan
+> lokal avatarnya — server cuma mengirim model, seed, palet, dan setelan
+> lewat `V2Event`, jadi semua penonton melihat adegan yang sama. Tanpa
+> ModuleScript itu, Output client mencetak `[nova]` dan avatarnya langsung
+> berdiri.
+>
+> **Jalur kameranya** (`NOVA.KAMERA` di server, dijalankan `kameraNova`
+> di client) punya empat bidikan berurutan: orbit rendah 360° saat naik,
+> lalu depan saat dia menggantung, lalu atas saat dia jatuh, lalu shot
+> lebar saat meledak. Kamera sorotan biasa tetap dihitung di belakang
+> layar, dan jalur ini melepaskannya lewat `lepas` yang turun dari 1 ke 0
+> — jadi tariannya disorot seperti tier lain tanpa satu pun frame yang
+> meloncat.
+>
+> Dua angka di situ yang gampang salah tanpa memunculkan error, dan
+> dikunci `make test-tier`: `atasNaik` **harus** di atas `naikAscend`
+> (kalau tidak, "kamera di atas" bohong — di frame pertama dia jatuh, dia
+> justru di atas lensa), dan `naikCepat` menentukan seberapa cepat kamera
+> naik relatif orbitnya — terlalu kecil, dan orbitnya sampai ke sisi
+> belakang selagi kameranya masih setinggi kepala, lalu menembus badan
+> orang yang sedang menari.
+>
+> Yang **tidak** pernah diserahkan ke modul: `camera.CFrame` dan
+> `camera.FieldOfView` itu sendiri. FOV dan getaran dikemudikan lewat
+> callback yang dipasang `KameraClientV2`, supaya kamera tetap punya
+> satu penulis. Modul yang menulisnya sendiri akan dibatalkan gelung
+> render di frame berikutnya.
 >
 > Undian aura ≥900% milik penonton gratisan cuma mengganti **bunyi**
 > mendaratnya, bukan memberi efek — kalau tidak, aura berhenti menjadi
-> penanda tier 3. Rinciannya ada di docstring kepala `my_scrip_lua_v2`
+> penanda tier berbayar. Rinciannya ada di docstring kepala `AvatarQueueV2`
 > dan tabel `KAMERA_TIER` di file yang sama.
 
 Tangganya bertambah **kategori**, bukan bertambah angka:
 
-| | Tier 1 — komentar | Tier 2 — ≥1 koin | Tier 3 — ≥10 koin / 2.000 tap |
+| | Tier 1 — komentar | Tier 2 — ≥1 koin | Tier 3 — ≥10 koin / 1.000 tap |
 |---|---|---|---|
 | Antrian | normal | potong ke depan | potong ke depan |
 | Ukuran | 1,0× | 1,5× | 1,5× |
@@ -224,34 +458,35 @@ muncul. Untuk siaran hasilnya juga lebih kuat: "naik podium" itu bahasa status
 yang langsung dimengerti penonton, sementara "jadi besar" cuma terbaca sebagai
 efek game.
 
-**Satu koin sudah dapat kamera.** Tier 2 disorot 3 detik
-(`SPOTLIGHT_MS_TIER2`), tier 3 lima detik, tier 4 tujuh detik. Ketiganya
-**datar** — tidak satu pun ikut memanjang oleh koin. Kalau ikut memanjang,
+**Satu koin sudah dapat kamera.** Tier 2 disorot 4 detik
+(`SPOTLIGHT_MS_TIER2`), tier 3 dan tier 4 tujuh detik.
+Semuanya **datar** — tidak satu pun ikut memanjang oleh koin. Kalau ikut memanjang,
 orang yang menumpuk gift 1 koin bisa menyamai lama sorotan tier 3, dan 10 koin
 kehilangan alasannya.
 
-Yang membedakan tier bukan lamanya, tapi **bentuk gerakannya**. Tier 3 satu-
-satunya yang kameranya **berdenyut**: masuk, mundur, masuk lagi, sambil menyapu
-kiri-kanan (±26°, 1,5 sapuan) dan naik lalu turun (3 stud, 2 gundukan) — keempat
-arah terpakai dan bidikannya tidak pernah lepas dari avatarnya. Tier 2 cuma
-dapat satu zoom masuk-keluar dan satu sapuan; tier 4 tidak berdenyut sama sekali
-karena merapat ke badan 4× berarti kameranya berakhir di dalam tulang keringnya.
-Semua angkanya satu tabel di `my_scrip_lua_v2`: `KAMERA_TIER`.
+Yang membedakan tier bukan lamanya, tapi **bentuk gerakannya**. Tier 2
+kameranya **pelan**: menahan dekat, mundur panjang (2,4 detik), setengah
+sapuan ±22° dan satu gundukan naik — tanpa denyut, karena aura partikel butuh
+kamera yang tenang. Tier 3 kameranya dikemudikan adegan nova (bidikan naik
+barisan, mundur lebar, mengikuti orangnya melesat); sesudah dia mendarat baru
+sorotan tarian biasa yang terlihat. Tier 4 tidak berdenyut sama sekali karena
+merapat ke badan 4× berarti kameranya berakhir di dalam tulang keringnya; dia
+naik-turun 5 stud supaya badannya terbaca dari kaki ke kepala. Semua angkanya
+di `AvatarQueueV2`: `KAMERA_TIER` dan `NOVA.CONFIG`.
 
 Dua angka yang terikat ke panjang sorotan, dan keduanya dijaga
 `make test-tier`: `tunda` (kapan putaran angka aura mulai) dan `roll`
 (lamanya). Jumlah keduanya harus ≤ panjang sorotan, kalau tidak angkanya
 mendarat setelah kamera pergi — momen yang dibayar orangnya jatuh di luar
-sorotannya sendiri. Itu sebabnya tier 2 memakai `roll` 2,4 detik, bukan
-`AURA_ROLL` (3 detik) seperti yang lain.
+sorotannya sendiri. Tier 2 memakai tunda 1,0 + roll 2,8 = 3,8 detik di dalam
+sorotan 4 detik; tier 3 menahan papannya sampai dia mendarat (`auraMulai` 4,1).
 
-Jedanya juga dipisah: `SPOTLIGHT_GAP_TIER2_S` (7 detik) untuk tier 2,
-`SPOTLIGHT_GAP_S` (10 detik) untuk tier 3. Tier 2 datang jauh lebih sering, dan
-memakai jeda tier 3 untuknya berarti sebagian besar yang bayar 1 koin tidak
-pernah kebagian kamera. Batas bawahnya bukan selera: sorotan **plus fade
-keluar** (~0,6 detik) harus selesai sebelum jeda habis, kalau tidak Studio
-membuang sorotan berikutnya lewat penjaga `spotlightBusy`. `main.py` mencetak
-peringatan saat start kalau kombinasi setelanmu melanggar itu.
+Jedanya juga dipisah per tier: `SPOTLIGHT_GAP_TIER2_S` (6 detik),
+`SPOTLIGHT_GAP_TIER3_S` (9), `SPOTLIGHT_GAP_TIER4_S` (11). Tier 2 datang jauh
+lebih sering, dan memakai jeda tier yang lebih mahal untuknya berarti sebagian
+besar yang bayar 1 koin tidak pernah kebagian kamera. `main.py` mencetak
+peringatan saat start kalau jeda sebuah tier lebih pendek dari sorotannya
+sendiri.
 
 #### Kedatangan meteor
 
@@ -294,12 +529,30 @@ Tier 1 masih **tanpa suara** (`LAND_SOUND_MIN_TIER = 3`): hentakan tiap
 beberapa detik saat live ramai jadi berisik, bukan dramatis. Kalau mau dicoba,
 set 1 dan turunkan `LAND_VOLUME` dulu.
 
+#### Avatar bolong: kaki tidak ada, rambut telat muncul
+
+File mesh dan tekstur avatar diunduh **tiap penonton** dari CDN Roblox, dan
+unduhan itu baru mulai saat modelnya sampai. Client menahan avatar paling lama
+`SPAWN_SIAP_MAKS` (0,6 detik); yang asetnya belum pernah dimuat tidak sempat,
+dan muncul bolong.
+
+Sekarang server **mempra-muat**: model dikirim dulu ke
+`ReplicatedStorage.AvatarPramuat` selama `SPAWN_PRAMUAT_S` (1,5 detik) — client
+mulai mengunduh asetnya selagi dia tersembunyi — baru dipindah ke panggung.
+Tunggunya ada SEBELUM pesan kamera, papan aura, dan jadwal gempa nova dikirim,
+jadi seluruh jadwal itu tetap sinkron dengan badannya. Harganya: tiap avatar
+muncul 1,5 detik lebih lambat. Naikkan angkanya kalau live-mu masih sering
+bolong, turunkan kalau terasa lamban; `0` mematikan pra-muat.
+
 #### Tap-tap layar: podium gratis
 
-**2.000 tap = satu podium**, tanpa koin sama sekali (`LIKE_PODIUM` di `.env`).
-Hitungannya per penonton, akumulatif, dan berulang: tiap kelipatan 2.000
-tercapai dia dapat podium lagi, dan sisanya **tidak hangus** — 4.100 tap = dua
-podium plus 100 tap yang jalan terus ke hitungan berikutnya.
+**1.000 tap = satu kali tier 3 (setara Rosa, aura)**, tanpa koin sama sekali
+(`LIKE_PODIUM` dan `LIKE_TIER` di `.env`). Hitungannya per penonton,
+akumulatif, dan berulang: tiap kelipatan 1.000 tercapai dia dapat tier 3 lagi,
+dan sisanya **tidak hangus** — 2.100 tap = dua kali plus 100 tap yang jalan
+terus ke hitungan berikutnya. Tap tidak pernah bisa sampai ke nova (tier 4)
+atau raksasa (tier 5): dua itu cuma bisa dibeli. Hadiah tap juga spawn
+**sendiri**, tidak digabung ke gift yang kebetulan sedang menunggu.
 
 Yang dipakai `event.count` (tap dari orang itu), **bukan** `event.total` (total
 like ruangan) — kalau yang kedua, satu orang naik podium karena tap ribuan
@@ -310,7 +563,7 @@ Dua urutan yang sama-sama jalan, persis seperti gift:
 - **tap dulu, baru username** — haknya disimpan `LIKE_PODIUM_TTL_S` (90 detik),
   menunggu komentar berikutnya dari orang itu
 - **username dulu, baru tap** — avatarnya sudah berdiri di kerumunan, jadi
-  langsung didorong ulang sebagai tier 3 dan naik podium tanpa dia mengetik lagi
+  langsung di-spawn lagi sebagai tier 3 tanpa dia mengetik lagi
 
 **Koinnya tidak ikut dipalsukan.** Jalur tap mendorong tier 3 lewat penanda
 tersendiri, bukan dengan pura-pura dia mengirim 10 koin — papan namanya tetap
@@ -318,10 +571,17 @@ menampilkan koin yang benar-benar dia keluarkan (0 kalau memang cuma tap).
 Kalau tap diterjemahkan jadi koin, papan berbohong ke penonton lain tentang
 siapa yang sebenarnya membayar.
 
-Kenapa 2.000 dan bukan 200: ini jalur gratis, jadi ongkosnya usaha. 2.000 tap
-itu menit-menitan menahan jari. Gunanya bukan menyaingi gift, tapi memberi
-penonton yang tidak mau bayar satu hal yang bisa dikejar — dan tap-tap itu yang
-mendorong live-nya naik di beranda TikTok.
+**Kenapa jalur ini dulu tidak pernah jalan.** Ambangnya 2.000 tap per orang,
+padahal tiga live sungguhan mencatat **296, 641, dan 897 tap sepanjang siaran,
+dijumlah dari semua penonton**. TikTok tidak mengirim satu event per tap — tap
+digabung dan sebagian tidak pernah dikirim — jadi angka yang sampai ke listener
+jauh di bawah yang dirasakan jari penontonnya. Tidak ada satu pun orang yang
+pernah bisa mencapai 2.000.
+
+Sekarang 1.000, dan baris `[detak]` listener ikut mencetak **tap terbanyak per
+orang** (`tap terbanyak <user> 312/1000`). Kalau angka itu tetap jauh di bawah
+ambangnya sepanjang live, turunkan `LIKE_PODIUM` di `.env` sampai jalurnya
+benar-benar bisa dicapai — tanpa itu tier dari tap tetap tidak akan muncul.
 
 **Suaranya disusun jadi satu kalimat, bukan ditumpuk.** Tiga suara khusus
 tier 3 dibunyikan berurutan, karena kalau bersamaan yang terdengar cuma satu
@@ -365,52 +625,37 @@ memanggil dua username berbeda tetap satu pemilik. Push manual lewat `/docs`
 tidak punya nama TikTok, jadi username Roblox yang dipakai; kalau tidak, semua
 push manual dianggap satu orang yang sama dan saling menimpa podium.
 
-#### Combo: koinnya dijumlah, bukan bikin avatar kembar
+#### Combo: jumlah combo = jumlah spawn
 
-TikTok mendorong orang menekan tombol gift berkali-kali, jadi combo bukan kasus
-langka — itu cara mayoritas orang mengirim. Yang dilakukan combo: **koinnya
-ditambahkan**, dan tier dihitung ulang dari total itu.
+> **Bagian ini dulu bilang koin combo DIJUMLAH.** Itu sudah dibuang — dan
+> penjumlahan itu yang membuat Doughnut lalu Rose jadi raksasa lagi.
 
-Artinya `rose` 1 koin dikirim sepuluh kali dalam satu jendela = 10 koin =
-**podium**, sama persis dengan sekali `rosa`. Orang yang nyicil tidak lagi kalah
-dari orang yang sekali kirim. Yang menahan angkanya membesar sepanjang siaran
-itu jendela `GIFT_BOOST_TTL_S`: begitu lewat, hitungannya mulai dari nol lagi.
-
-Yang combo **tidak** lakukan: menambah avatar. Rose x5 tidak men-spawn lima
-avatar kembar. Alasannya tiga — `slotOf` di skrip Lua memetakan satu username ke
-satu slot (kembarannya jadi yatim saat naik tier atau saat reset), lima klon
-memakan lima dari `DELETE_AFTER` slot sehingga yang bayar justru mengusir
-penonton lain sampai memicu reset, dan lima avatar identik berjejer terbaca
-sebagai bug duplikat, bukan hadiah.
-
-Yang terlihat dari besarnya kiriman:
-
-| | Efeknya |
+| Kiriman (satu combo) | Hasil |
 |---|---|
-| **Papan nama (tier 2)** | tertulis `builderman  5 koin` |
-| **Papan podium (tier 3)** | tertulis `builderman  10 koin` |
-| **Sorotan** | 7 s → sampai 14 s (`KOIN_SPOT_PER`, dibatasi `KOIN_SPOT_MAX_MUL`) |
-| **Kembang api** | 3 letusan → sampai 8 |
+| Rose ×3 | 3 spawn Rose |
+| Rose ×10 | 1 Rosa |
+| Rose ×25 | 2 Rosa **dulu**, lalu 5 Rose |
+| Rosa ×3 | 3 spawn Rosa |
+| Bouquet Flower ×3 | 3 nova |
+| Doughnut ×3 | 3 raksasa (tiap yang baru menggantikan yang sebelumnya) |
+| gift tak dikenal ×3 | 3 spawn di tier harganya |
 
-Yang paling bekerja dari semuanya justru **angka di papan**: efek yang lebih
-ramai dinikmati si pengirim, tapi angka yang terbaca itu yang bikin penonton
-lain ikut mengirim. Angka itu **koin, bukan jumlah gift** — `x5` rose (5 koin)
-terbaca lebih besar daripada `x1` rosa (10 koin) padahal yang kedua bayar dua
-kali lipat, dan koin satu-satunya angka yang adil dibandingkan antar-gift.
+- **Cuma Rose yang ditampung** 10:1 (`GIFT_NAIK=rose:10:3` di `.env`), dan
+  naiknya mentok di Rosa — Rose ×10.000 tetap Rosa, tidak pernah nova atau
+  raksasa.
+- **Penampungan cuma di dalam SATU combo.** Rose ×5 lalu Rose ×5 (dua combo) =
+  10 Rose, bukan Rosa. Kiriman terpisah tidak pernah dijumlah.
+- Gift streakable baru diproses sekali waktu streak-nya selesai, jadi satu
+  combo = satu event dengan jumlahnya.
+- **Tidak ada batas spawn per combo** — keputusan yang disengaja. Konsekuensinya:
+  Rose ×500 = 50 Rosa yang antre satu per satu (sekitar 8 menit), dan gift
+  berbayar dari penonton lain yang datang sesudahnya **menunggu di belakangnya**.
+- **Di antrian juga tidak digabung.** Tiap spawn berbayar jadi entri sendiri,
+  disisipkan sesudah yang berbayar lain yang sudah menunggu, jadi yang duluan
+  dikirim yang duluan tampil.
 
-Batasnya bukan hiasan. `KOIN_SPOT_MAX_MUL` menjaga sorotan terpanjang tetap
-lebih pendek dari `SPOTLIGHT_GAP_S` — kalau lebih panjang, sorotan berikutnya
-mulai selagi yang sekarang masih jalan dan Studio membuangnya, jadi orang yang
-membayar tidak dapat sorotan sama sekali. `main.py` mencetak peringatan saat
-start kalau kombinasi setelanmu melanggar itu. `KOIN_SPOT_CAP` (500) membatasi
-koin yang **diperhitungkan untuk sorotan** — angka koinnya sendiri tidak
-dipangkas, jadi yang kirim 1.000 koin tetap tertulis 1.000 di papan.
-
-Kiriman berikutnya dari orang yang sama untuk nama yang sama **digabung di
-antrian**, bukan jadi entri kedua — dua entri untuk satu orang keluar terbalik
-(yang terbaru duluan, karena tier 2 ke atas masuk lewat `appendleft`), jadi
-penonton melihat angka besar dulu lalu angka kecil menggantikannya. Terbaca
-seperti angkanya turun.
+Angka koin di papan dan log adalah harga yang membeli spawn **itu** (Rosa hasil
+tampungan tertulis 10 koin), bukan total combo.
 
 **Arah panggung** (sering salah dikira terbalik): kamera berdiri di sisi **Z
 negatif** dan menghadap ke Z positif. Jadi Z makin negatif = makin dekat kamera
@@ -501,17 +746,18 @@ tempatnya berdiri — lantai untuk kerumunan, permukaan podium untuk tier 3
 membungkus aksesori, jadi rambut panjang / sayap / ekor mengangkat avatarnya
 sebanyak itu.
 
-Angka tier ditentukan `tiktok_listener.py` (`tier_dari_koin()`), arti visualnya
+Angka tier ditentukan `tiktok_listener.py` (`tier_dari_gift()`), arti visualnya
 ditentukan `main.py` (`TIER_EFFECTS`). Skrip Lua tidak menyimpan tabel apa pun
 — dia cuma membaca field yang dikirim `/api/next`. Jadi menyetel ukuran atau
-efek cukup lewat `.env` + restart server, tanpa paste ulang ke Studio.
+efek cukup lewat `.env` + restart server, tanpa sinkron ulang ke Studio.
 
 **Dua urutan sama-sama jalan**, karena orang tidak konsisten:
 
-- **gift dulu, baru username** — koinnya disimpan sampai `GIFT_BOOST_TTL_S`
-  (default 90 detik), dipakai saat orang itu mengetik username
+- **gift dulu, baru username** — tiap gift disimpan di daftar tunggu sampai
+  `GIFT_BOOST_TTL_S` (default 90 detik); saat orang itu mengetik username,
+  SEMUANYA di-spawn berurutan
 - **username dulu, baru gift** — avatarnya di-spawn LAGI sebagai avatar baru
-  bertier lebih tinggi; yang lama dibiarkan berdiri sampai reset biasa. Gift
+  di tier gift itu; yang lama dibiarkan berdiri sampai reset biasa. Gift
   jadi selalu menghasilkan sesuatu yang terlihat — pendaratan, efek, sorotan.
   Set `UPGRADE_IN_PLACE = true` di skrip Lua kalau mau perilaku lama (dinaikkan
   di tempat, tidak ada yang baru muncul).
@@ -519,8 +765,8 @@ efek cukup lewat `.env` + restart server, tanpa paste ulang ke Studio.
 Kembar di panggung karena itu normal, dan itu disengaja: rem terhadap spam ada
 di sisi listener (`NAME_DEDUPE_S`), bukan di Studio.
 
-Kirim `rose` lalu `rosa` menghasilkan tier 3 (11 koin), bukan turun ke 2 —
-koin dijumlah, jadi totalnya tidak pernah bisa turun.
+Kirim Rose lalu Rosa menghasilkan **dua** spawn — tier 2, lalu tier 3. Tidak
+ada lagi yang dijumlah. Rose ×25 menghasilkan tujuh: 2 Rosa lalu 5 Rose.
 
 **Yang bayar menembus semua rem**: cooldown, dedupe, dan batas antrian tidak
 berlaku untuk tier 2 ke atas. Ditolak karena "antrian penuh" setelah membayar
@@ -531,13 +777,13 @@ itu tidak bisa diterima.
 sampai jedanya terlewat. Syaratnya **dua**, dan yang berlaku yang paling lama:
 
 1. Jeda milik tier entri yang sedang **di depan antrian** —
-   `SPOTLIGHT_GAP_TIER2_S` (7 detik), `SPOTLIGHT_GAP_TIER3_S` (9 detik), atau
-   `SPOTLIGHT_GAP_TIER4_S` (11 detik).
+   `SPOTLIGHT_GAP_TIER2_S` (6 detik, aura), `SPOTLIGHT_GAP_TIER3_S` (9 detik,
+   nova), atau `SPOTLIGHT_GAP_TIER4_S` (11 detik, raksasa).
 2. Sorotan yang **sedang jalan** harus sudah habis, plus `SPOTLIGHT_NAPAS_S`
    (1,5 detik — napas sekaligus penutup selisih waktu muat avatar).
 
-Syarat kedua itu yang menutup kasus tier 4 → tier 3: jeda tier 3 (9 detik) sama
-panjang dengan sorotan tier 4, jadi dulu tier 3 masuk persis saat adegan tier 4
+Syarat kedua itu yang menutup kasus raksasa → tier yang lebih murah: jedanya
+dulu sama panjang dengan sorotan raksasa, jadi dia masuk persis saat adegan raksasa
 belum selesai — kameranya direbut di tengah jalan dan salah satu dari keduanya
 kehilangan sorotannya. Entri yang bukan sorotan tidak pernah ikut tertahan.
 
@@ -545,13 +791,20 @@ kehilangan sorotannya. Entri yang bukan sorotan tidak pernah ikut tertahan.
 dikosongkan tiap reset, jadi tier 1 tidak pernah kehilangan slot ke penyintas
 lama. Set `KEEP_TIER_FROM = 2` di skrip Lua kalau mau tier 2 kebal lagi.
 
-Setelan tier di `.env`: `GIFT_BOOST_TTL_S`, `SPOTLIGHT_GAP_S`, `SPOTLIGHT_MS`,
-`SPOTLIGHT_GAP_TIER2_S`, `SPOTLIGHT_MS_TIER2`, `LIKE_PODIUM`, `LIKE_LOG_EVERY`,
-`LIKE_PODIUM_TTL_S`, `TIER2_SCALE`, `TIER3_SCALE`.
+Setelan tier di `.env`: `GIFT_TIER`, `TIER2_KOIN` / `TIER3_KOIN` / `TIER5_KOIN`
+(cadangan untuk gift tak dikenal), `TIER2_SCALE`..`TIER5_SCALE`,
+`SPOTLIGHT_MS_TIER2`..`5`, `SPOTLIGHT_GAP_TIER2_S`..`5`, `SPOTLIGHT_NAPAS_S`,
+`GIFT_BOOST_TTL_S`, `LIKE_PODIUM`, `LIKE_TIER`, `LIKE_LOG_EVERY`,
+`LIKE_PODIUM_TTL_S`. **Awas `.env` dari zaman empat tier:** arti tiap nomor
+bergeser satu (`TIER4_SCALE=4` yang tertinggal membuat NOVA jadi raksasa).
+`TIER4_KOIN` tidak dibaca lagi, dan `main.py` memperingatkan kalau dia masih ada —
+itu tanda `.env`-nya belum disesuaikan.
 
 ### Sisi Roblox Studio
 
-Skrip lengkapnya ada di `my_sscript_lua` — copas ke **ServerScriptService**.
+Skripnya di `src/`, disinkron ke Studio oleh Rojo (`make rojo`):
+`AvatarQueueV2` di **ServerScriptService**, `KameraClientV2` di
+**StarterPlayerScripts**, `TierNova` di **ReplicatedStorage**.
 
 
 Yang perlu disetel di sana: `URL`, `DANCE_ID`, `FLOOR_Y` (permukaan lantai
@@ -575,6 +828,35 @@ terisi setelah fisika memproses satu langkah sesudah `Anchored` dilepas.
 | `GET /api/peek` | isi antrian tanpa menghapus (debug) |
 | `DELETE /api/clear` | kosongkan antrian |
 
+
+
+## Avatarmu sendiri tidak ikut terekam
+
+Siaran ini direkam dengan **masuk ke room-nya** lalu meng-capture layar —
+dan begitu masuk, Roblox men-spawn avatarmu di panggung. Tanpa penanganan
+khusus dia ikut terekam: berdiri di tengah kerumunan, dengan nama di atas
+kepalanya, dan tidak pernah menari.
+
+`SEMBUNYI_PENONTON` (default `true`, di `AvatarQueueV2`) mematikannya.
+Yang dikerjakan client, semuanya **lokal** — `LocalTransparencyModifier`
+tidak direplikasi, jadi tidak ada satu pun baris yang mengubah apa yang
+dilihat orang lain:
+
+1. seluruh badannya ditembuskan
+2. **bayangannya dimatikan** — part yang ditembuskan secara lokal *tetap*
+   menjatuhkan bayangan, dan bayangan orang yang tidak ada di lantai
+   panggung justru lebih aneh daripada orangnya sendiri
+3. nama dan health bar bawaannya dimatikan
+4. badannya di-**anchor dulu**, baru `CanCollide` dimatikan — dibalik, dia
+   jatuh menembus lantai sampai `FallenPartsDestroyHeight`, Roblox
+   men-spawn-nya lagi, dan begitu terus; gelung respawn yang tidak
+   terlihat sama sekali karena badannya memang sudah tembus pandang
+5. aksesori yang diunduh belakangan (rambut, topi berpartikel) ikut
+   disembunyikan, dan semuanya dipasang ulang tiap respawn
+
+Berlaku untuk **siapa pun** yang masuk, bukan cuma kamu — penonton yang
+iseng join juga tidak muncul di siaran. Kedua jebakan di nomor 2 dan 4
+dikunci `make test-tier`.
 
 ## Catatan teknis
 
@@ -630,3 +912,17 @@ make tunnel   # https://rblx.buanaglobalcipta.com
 10088609715 - rimuru aura
 
 make listener
+
+
+tier 4 Doughnut
+            "Bouquet Flower"
+tier 2 rose
+tier 3 rosa
+
+
+
+-----
+1. berikan sound roll dan sound after role untuk giant juga dan kasih ratting randome dari 9.999 sampai 10.000 
+2.setelah spwan role di gint atau text aura di giant hapus sisakan usernamenya saja(saya mau coba juga kasih random aura dari 3 pilihan aura)
+3. masalah 1 kadang avatar itu kaki tidak ada atau rambut nya telat muncu setelah spawn itu gimana ya?
+4. masalah 2 nova kadang tidak keluar hanya kamera nya saya vfx dan sfx tidak keluar itu kenapa?

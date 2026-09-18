@@ -8,6 +8,6 @@ python-dotenv>=1.0.0
 # Sudah ikut terpasang lewat TikTokLive, tapi sekarang dipakai langsung.
 websockets>=12.0
 
-# Lua sungguhan, cuma dipakai `make test-podium` buat menguji
-# pembukuan slot podium di my_sscript_lua tanpa membuka Studio.
+# Lua sungguhan, dipakai `make test-tier` dan `make test-sync` buat menguji
+# fungsi-fungsi di src/ tanpa membuka Studio.
 lupa>=2.8

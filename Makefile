@@ -48,7 +48,11 @@ TIKTOK ?= $(shell grep -E '^TIKTOK_USERNAME=' .env 2>/dev/null | cut -d= -f2- | 
 
 BASE_URL := http://127.0.0.1:$(PORT)
 
-.PHONY: help install server dev tunnel listener listener-tf watch watch-tf up mock mock-tier2 mock-tier3 mock-tier4 selftest test test-podium test-tier test-sync lint peek clear status clean
+# Rojo dipasang lewat Aftman (aftman.toml). Pakai shim-nya langsung supaya
+# jalan juga di shell yang belum memuat ~/.aftman/env.
+ROJO      ?= $(HOME)/.aftman/bin/rojo
+
+.PHONY: help install server dev tunnel listener listener-tf watch watch-tf up mock mock-tier2 mock-tier3 mock-tier4 mock-tier5 selftest test test-tier test-sync lint rojo rojo-build peek clear status clean
 
 help:
 	@echo ""
@@ -68,18 +72,23 @@ help:
 	@echo "    make up          ketiganya sekaligus, Ctrl+C mematikan semua"
 	@echo ""
 	@echo "  TES"
-	@echo "    make mock        simulasi komentar live -- menyentuh ketiga tier"
-	@echo "    make mock-tier2  tier 1 + sedikit tier 2, tanpa sorotan"
-	@echo "    make mock-tier3  banjir 10 koin, menguji aura VFX tier 3"
-	@echo "    make mock-tier4  banjir 30 koin, menguji raksasa tier 4"
+	@echo "    make mock        19 skenario pasti (5 tier, combo, gift tak menumpuk, tap)"
+	@echo "                     lalu campuran acak mirip live"
+	@echo "    make mock-tier2  banjir Rose, menguji cakram biru tier 2"
+	@echo "    make mock-tier3  banjir Rosa, menguji aura VFX tier 3"
+	@echo "    make mock-tier4  banjir Bouquet Flower, menguji nova tier 4"
+	@echo "    make mock-tier5  banjir Doughnut, menguji raksasa tier 5"
 	@echo "    make selftest    uji saringan dengan beberapa komentar contoh"
-	@echo "    make test-podium uji pembukuan slot podium di my_sscript_lua"
-	@echo "    make test-tier   uji lantai aura + jatah border di my_scrip_lua_v2"
-	@echo "    make test-sync   uji penyamaan tarian di kamera_client_lua_v2"
-	@echo "    make lint        cari nil global di kedua file Lua"
+	@echo "    make test-tier   uji lantai aura + jatah border di AvatarQueueV2"
+	@echo "    make test-sync   uji penyamaan tarian di KameraClientV2"
+	@echo "    make lint        cari nil global di ketiga file Lua"
 	@echo "    make test        lint + ketiga uji sekaligus"
 	@echo "    make watch       listener + tampilkan semua komentar, tanpa isi antrian"
 	@echo "    make watch-tf    sama, tapi paksa lewat TikFinity"
+	@echo ""
+	@echo "  STUDIO (Rojo)"
+	@echo "    make rojo        sinkron ketiga file Lua ke Studio (plugin Rojo > Connect)"
+	@echo "    make rojo-build  bikin tt-rblx.rbxlx berisi ketiga script"
 	@echo ""
 	@echo "  ANTRIAN"
 	@echo "    make peek        lihat isi antrian"
@@ -142,47 +151,49 @@ up: check-tiktok
 
 # ------------------------------------------------------------------------ tes
 
-# Campuran harian: mayoritas komentar biasa, sisanya gift rose (1 koin)
-# dan rosa (10 koin) -- jadi ketiga tier ikut lewat. Baris terakhirnya
-# mencetak rincian per tier, dan memperingatkan kalau ada tier yang sama
-# sekali tidak tersentuh.
+# Dibuka dengan 19 skenario pasti yang masing-masing diperiksa hasilnya,
+# TERMASUK urutan spawn-nya: kelima tier, Doughnut lalu Rose yang harus jadi
+# raksasa DULU baru Rose (bukan raksasa dua kali), Bouquet dua kali yang
+# harus tetap nova, combo (Rose x25 = 2 Rosa + 5 Rose, Doughnut x3 = 3
+# raksasa, dua combo Rose x5 yang TIDAK jadi Rosa), gift tak dikenal
+# yang jatuh ke harganya, tap dulu / username dulu, boost hangus, dan nama
+# ngawur yang harus ditolak. Sesudah itu campuran acak mirip live.
+# Baris terakhirnya mencetak rincian per tier dan skenario yang gagal.
+# Lewati pembukanya dengan `make mock ARGS=--tanpa-pembuka`.
 mock:
 	$(PY) mock_comments.py $(ARGS)
 
-# Panggung sehari-hari: mayoritas tier 1, sesekali ada yang menonjol.
-# Tidak pernah memicu sorotan, jadi enak buat menilai jarak dan susunan.
+# Rose saja (tier 2: skip lane + cakram biru). Lajunya menyesuaikan sendiri
+# ke jeda sorotan tier itu milik server (dibaca lewat /api/settings), jadi
+# tiap kedatangan benar-benar kebagian tampil dan tidak menumpuk di antrian.
 mock-tier2:
 	$(PY) mock_comments.py --tier2 $(ARGS)
 
-# Rosa saja (10 koin = raksasa). Lajunya menyesuaikan sendiri ke jeda
-# sorotan tier 3 milik server (dibaca lewat /api/settings), jadi tiap
-# raksasa benar-benar kebagian tampil dan tidak menumpuk di antrian.
+# Rosa saja (tier 3: aura VFX acak).
 mock-tier3:
 	$(PY) mock_comments.py --tier3 $(ARGS)
 
-# Singa saja (30 koin = raksasa tier 4). Dipakai menilai jalur kamera
-# tiga perhentian (serong kiri -> serong kanan -> belakang) tanpa
-# ketiban sorotan tier lain.
+# Bouquet Flower saja (tier 4: adegan nova). Butuh ModuleScript TierNova di
+# ReplicatedStorage; tanpa itu Output client mencetak [nova] dan avatarnya
+# langsung berdiri tanpa adegan.
 mock-tier4:
 	$(PY) mock_comments.py --tier4 $(ARGS)
+
+# Doughnut saja (tier 5: raksasa).
+mock-tier5:
+	$(PY) mock_comments.py --tier5 $(ARGS)
 
 selftest:
 	$(PY) tiktok_listener.py --self-test "builderman" "halo bang mantap" "@Roblox" "ngasal_bukan_akun"
 
-# Menjalankan fungsi slot podium dari my_sscript_lua di Lua sungguhan.
-# Yang diuji: satu orang = satu podium, dan avatar lamanya benar-benar
-# dihapus saat dia kirim gift lagi -- dulu dua badan menumpuk di sana.
-test-podium:
-	$(PY) test_podium.py
-
-# Menjalankan fungsi tier V2 dari my_scrip_lua_v2 di Lua sungguhan.
+# Menjalankan fungsi tier V2 dari AvatarQueueV2 di Lua sungguhan.
 # Yang diuji dua bug yang tidak pernah memunculkan error waktu live:
 # lantai aura untuk yang bayar, dan jatah Highlight (Roblox diam-diam
 # berhenti menggambar border setelah sekitar 31 sekaligus).
 test-tier:
 	$(PY) test_tier.py
 
-# Menjalankan fungsi penyamaan tarian dari kamera_client_lua_v2 di Lua
+# Menjalankan fungsi penyamaan tarian dari KameraClientV2 di Lua
 # sungguhan. Yang diuji dua sebab "tariannya patah-patah" yang tidak
 # pernah memunculkan satu pun baris di Output: raksasa/avatar melayang
 # ikut menyeret kerumunan ke animasinya sendiri, dan selisih waktu yang
@@ -202,9 +213,26 @@ lint:
 
 # Semuanya sekaligus. Lint duluan: dia yang paling cepat dan paling
 # sering menangkap sesuatu.
-test: lint test-tier test-sync test-podium
+test: lint test-tier test-sync
 	@echo ""
 	@echo "Semua pemeriksaan lolos."
+
+# --------------------------------------------------------------------- rojo
+
+# Folder src/ meniru Explorer di Studio (peta lengkapnya di default.project.json):
+#   src/ServerScriptService/AvatarQueueV2.server.luau                 -> Script
+#   src/StarterPlayer/StarterPlayerScripts/KameraClientV2.client.luau -> LocalScript
+#   src/ReplicatedStorage/TierNova.luau                               -> ModuleScript
+# Akhiran .server / .client yang menentukan jenis script-nya. Isi lain di
+# service yang sama (yang tidak ada di src/) dibiarkan Rojo, tidak dihapus.
+#
+# Studio jalan di Windows, Rojo di WSL. Plugin menyambung ke localhost:34872
+# dan WSL2 meneruskannya; kalau tidak nyambung, coba `make rojo ARGS="--address 0.0.0.0"`.
+rojo:
+	$(ROJO) serve $(ARGS)
+
+rojo-build:
+	$(ROJO) build -o tt-rblx.rbxlx
 
 # ------------------------------------------------------------------- antrian
 

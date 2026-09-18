@@ -1,13 +1,13 @@
 --[[
 	Roblox Avatar Queue Viewer  --  V2 (versi sederhana)
-	Taruh di: ServerScriptService (Insert Object > Script)
+	Di Studio: ServerScriptService.AvatarQueueV2 (Script). Jangan di-paste:
+	`make rojo` lalu Connect di plugin Rojo, file ini yang disinkron.
 
-	PASANGANNYA: kamera_client_lua_v2
-	Taruh di StarterPlayer > StarterPlayerScripts sebagai LocalScript
-	bernama KameraClientV2.
+	PASANGANNYA: KameraClientV2 (StarterPlayerScripts, LocalScript) dan
+	ModuleScript TierNova (ReplicatedStorage) -- ikut disinkron Rojo.
 
 	PENTING: MATIKAN script lama.
-	Kalau my_sscript_lua (v13) dan KameraClient lama masih aktif, dua
+	Kalau script v13 dan KameraClient lama masih aktif, dua
 	server script sama-sama menaruh avatar di panggung dan dua client
 	script sama-sama menulis workspace.CurrentCamera tiap frame --
 	kameranya bergetar dan panggungnya dobel. Hapus, atau klik kanan >
@@ -23,71 +23,61 @@
 
 	TIER (dibawa kembali, tapi konsepnya BARU)
 
-	V2 sempat membuang tier sama sekali. Sekarang ada EMPAT, dan
-	bentuknya tidak meniru v13 -- di sana pembedanya TEMPAT (podium) dan
-	UKURAN (raksasa).
+	LIMA tier, ditentukan NAMA GIFT (listener), bukan jumlah koin -- tiap
+	gift satu spawn di tiernya sendiri, tidak ada yang dijumlah. Dulu empat;
+	tier "border saja" 1 koin pernah dibuang, dan kembali sebagai Rose.
 
 	  tier 1  komentar biasa     berdiri, menari, aura acak penuh. Tidak
 	                             disorot. Undian >= 900% cuma mengganti
-	                             BUNYI mendaratnya -- tidak ada efek yang
-	                             menyaingi tier berbayar.
-	  tier 2  gift >= 1 koin     PERHATIAN, dan yang paling sering.
-	                             Border biru es + cakram cahaya di
-	                             lantai. Sorotan PENDEK 3 detik: kamera
-	                             merapat, mundur sampai 75% jarak, dan
-	                             menyapu busur depan +/-16 derajat.
-	                             Sengaja pendek -- yang menentukan di
-	                             tier ini berapa BANYAK yang kebagian,
-	                             bukan seberapa megah satu sorotan.
-	                             Lantai aura 300%.
-	  tier 3  gift >= 10 koin    AURA. Badan normal seperti tier 2, tapi
-	                             dapat efek partikel yang menempel di
-	                             badan -- satu dari tiga, DIACAK tiap
-	                             kedatangan (hijau / merah / rimuru).
-	                             Border oranye bara. Sorotan 5 detik
-	                             dengan kamera yang BERDENYUT: merapat,
-	                             mundur, merapat lagi, sambil menyapu
-	                             +/-26 derajat 1,5 kali dan naik lalu
-	                             turun. Keempat arah terpakai dan
-	                             bidikannya tidak pernah lepas dari
-	                             orangnya -- tetap dari DEPAN. Lantai
-	                             aura 550%.
-	  tier 4  gift >= 30 koin    UKURAN, dan CUMA itu. Raksasa 4x berdiri
+	                             BUNYI mendaratnya.
+	  tier 2  Rose               SKIP LANE + CAKRAM BIRU di kakinya, tanpa
+	                             garis tepi dan tanpa aura VFX. Sorotan 3
+	                             detik, kamera paling tenang. Lantai aura
+	                             900%.
+	  tier 3  Rosa / 1.000 tap   AURA. Border + efek partikel di badan,
+	                             satu dari tiga DIACAK tiap kedatangan.
+	                             Sorotan 4 detik dengan kamera PELAN.
+	                             Lantai aura 950%.
+	  tier 4  Bouquet Flower     NOVA, adegan 15 detik. Dia melayang naik
+	                             sambil dikelilingi orb dan rune, naik
+	                             lebih tinggi jadi mahkota, waktu berhenti
+	                             (layar abu-abu), lalu dia membanting diri
+	                             ke tanah: shockwave, pilar cahaya, petir,
+	                             kristal. Warnanya diundi satu dari TIGA
+	                             palet (NOVA.PALET). Mendaratnya di SLOT
+	                             1 -- barisan lama tersapu gempa di detik
+	                             yang sama, dan dia yang membuka barisan
+	                             yang baru. Sesudah itu dia menari 3
+	                             detik dan TETAP berdiri di sana seperti
+	                             kedatangan biasa. Aura VFX acak, tanpa
+	                             border. Efek dijalankan client
+	                             (ModuleScript TierNova). Lantai aura
+	                             999% -- praktis dijamin. Lihat NOVA.
+	  tier 5  Doughnut           UKURAN, dan CUMA itu. Raksasa 4x berdiri
 	                             di belakang barisan, tidak ikut menari,
-	                             cuma melambai. Tanpa border, tanpa
-	                             cakram, TANPA AURA -- dia polos, dan itu
-	                             memang bentuk tingkatannya: tier 3
-	                             ramai, tier 4 justru bersih. Cuma ADA
-	                             SATU pada satu waktu; yang baru
-	                             mengganti yang lama. Satu-satunya yang
-	                             boleh MEMBEKUKAN panggung. Kameranya
-	                             naik-turun paling jauh (5 stud) --
-	                             badan setinggi empat orang dibaca dari
-	                             kaki ke kepala. Lantai aura 650%.
+	                             cuma melambai. Polos, tanpa aura VFX.
+	                             Cuma ADA SATU pada satu waktu; yang baru
+	                             mengganti yang lama.
+	                             Kameranya naik-turun paling jauh. Angka
+	                             auranya 9.999-10.000%, tidak bisa
+	                             dicapai dengan cara lain -- berputar
+	                             dengan bunyi putaran dan bunyi mendarat
+	                             miliknya sendiri, lalu papannya menyusut
+	                             jadi NAMA SAJA. Selama dia berdiri,
+	                             kamera panggung turun supaya kepalanya
+	                             muat di frame (CAMERA_UP_JAUH_GIANT).
 
-	Tangganya dibangun dari hal yang JENISNYA berbeda -- perhatian, lalu
-	aura, lalu ukuran -- bukan dari "efek yang makin banyak". Penonton
-	tidak menghitung efek; yang mereka ingat satu kalimat per tier
-	("yang itu jadi raksasa"), dan kalimat itu harus ada lebih dulu
-	daripada efeknya.
+	Tangganya dibangun dari hal yang JENISNYA berbeda -- aura, lalu gerak,
+	lalu ukuran -- bukan dari "efek yang makin banyak". Penonton tidak
+	menghitung efek; yang mereka ingat satu kalimat per tier ("yang itu
+	lari dari belakang"), dan kalimat itu harus ada lebih dulu daripada
+	efeknya.
 
-	KAMERANYA SELALU DI DEPAN. Tidak ada tier yang kameranya memutar ke
-	samping badan, apalagi ke belakang.
+	KAMERANYA SELALU MEMANDANG DARI DEPAN. Tidak ada tier yang kameranya
+	memutar ke samping badan, apalagi ke belakang. Adegan nova naik
+	mengikuti orangnya yang melayang, tapi tetap memandang dari depan.
 
-	Orbit penuh dan jalur tiga sudut milik raksasa (serong kiri -> serong
-	kanan -> belakang) sempat ada dan sudah dibuang: dari belakang yang
-	terlihat cuma punggung, dan wajah, papan aura, serta border semuanya
-	menghadap ke arah lain. Gerakan adegan sekarang cuma zoom
-	masuk-keluar, sapuan kiri-kanan di dalam kerucut depan, dan
-	naik-turun.
-
-	Yang membedakan tier 2 dari tier 3: lebar busurnya (16 vs 26
-	derajat), berapa kali dia menyapu (1 vs 1,5), naik-turunnya (satu
-	gundukan vs dua -- tier 3 naik LALU turun), dan zoom yang merapat
-	untuk kedua kalinya di paruh akhir adegan. Plus aura VFX yang cuma
-	dipunyai tier 3. Semuanya satu tabel: lihat KAMERA_TIER.
-
-	Panggung BERHENTI di kedatangan tier 4 (BEKU_MIN_TIER): spawnAvatar
+	Panggung BERHENTI di kedatangan tier 4 dan 5 (BEKU_MIN_TIER): spawnAvatar
 	dijalankan langsung di gelung utama, jadi tidak ada kedatangan baru
 	yang diambil sampai raksasanya selesai berdiri.
 
@@ -114,14 +104,15 @@
 	   mundur ke jarak biasa. Ini sumber gerakan utamanya sekarang:
 	   ayunan bergerak terus (melelahkan), zoom bergerak sekali per
 	   kedatangan lalu berhenti (bercerita).
-	3. DENYUT selama sorotan tier 3: zoom masuk, mundur, MASUK LAGI,
-	   sambil menyapu kiri-kanan dan naik-turun. Tier 2 tidak berdenyut
-	   -- dia cuma dapat satu zoom masuk-keluar dan satu sapuan.
+	3. ADEGAN BERBAYAR: busur depan dan naik-turun selama sorotan
+	   (KAMERA_TIER), plus FOV, getaran, dan bidikan yang naik mengikuti
+	   nova tier 4 -- ketiganya dikemudikan ModuleScript TierNova lewat
+	   callback yang dipasang client.
 	   (Orbit yang dulu ada di sini sudah dibuang, lihat di bawah.)
 
 	Kameranya SELALU memandang yang terakhir datang, kecuali selama
 	adegan berbayar: di situ kedatangan gratisan tidak bisa menyeretnya
-	pergi (penjaga di kamera_client_lua_v2).
+	pergi (penjaga di KameraClientV2).
 
 	TAMPILAN
 
@@ -156,6 +147,10 @@ local Players      = game:GetService("Players")
 local Lighting     = game:GetService("Lighting")
 local HttpService  = game:GetService("HttpService")
 local RunService   = game:GetService("RunService")
+-- Dipakai SATU tempat saja: lemparan gempa waktu nova menghantam tanah
+-- (gempaBarisan). Sisa file ini sengaja tidak menganimasikan apa pun di
+-- server -- yang bergerak digerakkan client.
+local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ContentProvider   = game:GetService("ContentProvider")
 -- Jalur kedua pengambilan asset aura VFX, lihat muatAuraVfx. Diambil
@@ -171,8 +166,8 @@ local POLL_INTERVAL = 1
 
 -- Susunan barisan
 local ROW_SIZE      = 5
-local SPACING_X     = 6
-local SPACING_Z     = 6
+local SPACING_X     = 8
+local SPACING_Z     = 8
 local BASE_Y        = 5
 local FLOOR_Y       = 0
 
@@ -255,8 +250,22 @@ local AURA_ROLL  = 3
 -- kerasnya untuk semua orang, seperti bunyi antarmuka.
 --
 -- Kosongkan ("") untuk mematikannya.
-local AURA_SFX_ID  = "rbxassetid://15627079894"
-local AURA_SFX_VOL = 0.7
+-- Dikelompokkan jadi satu TABEL, bukan konstanta lepas satu per satu.
+--
+-- Bukan gaya penulisan, dan bukan pilihan: Lua membatasi 200 variabel
+-- lokal per fungsi, dan seluruh file ini SATU fungsi (chunk utamanya).
+-- File ini SUDAH menembus batas itu waktu bunyi mendarat raksasa
+-- ditambahkan, dan yang muncul bukan peringatan halus -- script-nya
+-- menolak dikompilasi sama sekali:
+--
+--     too many local variables (limit is 200) in main function
+--
+-- Sebelas konstanta jadi satu. Cara memakainya tidak berubah, cuma
+-- titiknya menggantikan garis bawah. Alasan lengkapnya di PLATE.
+local SFX_AURA = {}
+
+SFX_AURA.ID  = "rbxassetid://15627079894"
+SFX_AURA.VOL = 0.7
 
 -- Kecepatan putar bunyinya. 1 = asli, 2 = dua kali lebih cepat (dan
 -- nadanya ikut naik satu oktaf -- PlaybackSpeed menggeser keduanya
@@ -267,7 +276,7 @@ local AURA_SFX_VOL = 0.7
 -- diulang-ulang, jadi dipercepat supaya ulangannya terdengar rapat.
 -- Bunyi yang panjang tidak diulang sama sekali -- mempercepatnya cuma
 -- menaikkan nada tanpa satu pun manfaat.
-local AURA_SFX_SPEED = 1
+SFX_AURA.SPEED = 1
 
 -- Ulang bunyinya kalau dia habis sebelum angkanya mendarat.
 --
@@ -277,7 +286,7 @@ local AURA_SFX_SPEED = 1
 -- tanpa itu, putaran tiga detik akan hening di dua detik terakhirnya,
 -- dan hening di tengah putaran terbaca sebagai "sudah selesai" padahal
 -- angkanya masih naik.
-local AURA_SFX_LOOP = false
+SFX_AURA.LOOP = false
 
 -- Potong bunyinya tepat saat angkanya mendarat.
 --
@@ -288,9 +297,9 @@ local AURA_SFX_LOOP = false
 --
 -- Matikan (false) cuma kalau bunyimu punya ekor penutup yang memang
 -- ingin kamu dengar utuh; dia akan dibiarkan habis sendiri. Kalau
--- AURA_SFX_LOOP menyala, mematikan yang ini berarti tidak ada satu pun
+-- SFX_AURA.LOOP menyala, mematikan yang ini berarti tidak ada satu pun
 -- yang menghentikannya -- dia berputar sampai sesi berakhir.
-local AURA_SFX_IKUT_ROLL = true
+SFX_AURA.IKUT_ROLL = true
 
 -- --- Bunyi saat angkanya MENDARAT ---
 --
@@ -304,8 +313,8 @@ local AURA_SFX_IKUT_ROLL = true
 -- pertama. Bunyi yang punya jeda hening di depannya akan terdengar
 -- telat dari angkanya, dan yang panjang akan ketiban undian orang
 -- berikutnya -- pollingnya cuma satu detik.
-local AURA_SFX_HIT_ID  = "rbxassetid://73557803481217"
-local AURA_SFX_HIT_VOL = 0.8
+SFX_AURA.HIT_ID  = "rbxassetid://73557803481217"
+SFX_AURA.HIT_VOL = 0.8
 
 -- Bunyi mendarat KHUSUS untuk angka besar, dan yang di atas TIDAK ikut
 -- dibunyikan kalau yang ini kena.
@@ -315,8 +324,42 @@ local AURA_SFX_HIT_VOL = 0.8
 -- cuma hentakan biasa yang kebetulan lebih ramai -- dan angka 950
 -- kehilangan satu-satunya penanda yang membedakannya dari 200. Yang
 -- besar MENGGANTI, bukan menambah.
-local AURA_SFX_HIT_TINGGI_ID  = "rbxassetid://136357088509992"
-local AURA_SFX_HIT_TINGGI_VOL = 0.9
+SFX_AURA.HIT_TINGGI_ID  = "rbxassetid://136357088509992"
+SFX_AURA.HIT_TINGGI_VOL = 0.9
+
+-- Bunyi mendarat KHUSUS RAKSASA, dan cuma dia yang pernah kebagian.
+--
+-- MENGGANTI dua-duanya di atas, tidak menambah -- alasannya sama
+-- dengan kenapa yang tinggi mengganti yang biasa. Dan raksasa memang
+-- selalu kena yang "tinggi" sekarang (10.000 jauh di atas
+-- AURA_TINGGI_MIN), jadi tanpa bunyi sendiri angka yang tidak ada
+-- duanya di panggung mendarat dengan hentakan yang sama persis dengan
+-- penonton gratisan yang kebetulan dapat 950.
+--
+-- DIGANTI dari action_jump_land.mp3 pada nada 0,35. Berkas itu pendek
+-- sekali, dan diturunkan satu setengah oktaf dia jadi dengung rendah
+-- yang di speaker laptop atau HP nyaris tidak terdengar -- dari sisi
+-- penonton, raksasa tidak punya bunyi mendarat sama sekali.
+--
+-- Sekarang memakai hentakan "angka besar" yang SUDAH terbukti terdengar
+-- di siaran, pada nada 0,75: cukup rendah untuk terdengar lebih berat dan
+-- berbeda dari milik penonton gratisan, tapi masih di rentang yang
+-- keluar dari speaker kecil. Kalau nanti ada asset audio sendiri yang
+-- lebih megah, yang diganti cuma baris id ini.
+SFX_AURA.HIT_RAKSASA_ID   = SFX_AURA.HIT_TINGGI_ID
+SFX_AURA.HIT_RAKSASA_VOL  = 1.0
+SFX_AURA.HIT_RAKSASA_NADA = 0.75
+
+-- Bunyi PUTARAN angka khusus raksasa. Berkasnya sama dengan putaran
+-- milik semua orang (SFX_AURA.ID), yang dibedakan nadanya: 0,8 membuat
+-- putarannya terdengar lebih berat dan lebih lambat, jadi dari telinga
+-- saja penonton tahu yang sedang diundi bukan angka biasa.
+--
+-- Sound TERSENDIRI di client, bukan PlaybackSpeed yang ditukar pada Sound
+-- putaran biasa: undian raksasa dan undian orang lain bisa menempel, dan
+-- menukar nada Sound yang sedang berbunyi membuat putaran orang lain ikut
+-- berubah nada di tengah jalan.
+SFX_AURA.ROLL_RAKSASA_NADA = 0.8
 
 -- --- BUNYI KEDATANGAN TIER BERBAYAR ---
 --
@@ -347,19 +390,19 @@ local AURA_SFX_HIT_TINGGI_VOL = 0.9
 -- tier masih terdengar berbeda -- yang mahal terdengar lebih berat dan
 -- lebih rendah, yang murah lebih tinggi dan lebih ringan.
 local SFX_TIER = {
-	-- Tier 2: pendek, terang, tidak menuntut perhatian lama. Dia datang
-	-- paling sering, jadi bunyi yang berat akan melelahkan telinga
-	-- dalam sepuluh menit.
+	-- Tier 2 (Rose): yang PALING sering datang di antara yang berbayar,
+	-- jadi bunyinya yang paling ringan -- satu denting pendek bernada
+	-- tinggi. Rose datang tiap beberapa detik saat live ramai, dan bunyi
+	-- yang berisi sesering itu jadi derau.
 	[2] = {
 		vol = 0.5, nada = 1.3,
 		kandidat = {
 			"rbxasset://sounds/electronicpingshort.wav",
-			"rbxasset://sounds/clickfast.wav",
-			"rbxasset://sounds/switch3.wav",
+			"rbxasset://sounds/bass.wav",
 		},
 	},
-	-- Tier 3: lebih berisi dan sedikit lebih rendah -- sepadan dengan
-	-- aura yang menyala di badannya.
+	-- Tier 3 (Rosa, aura): bunyinya berisi tapi tidak berat -- bunyi
+	-- berat tiap beberapa detik melelahkan telinga dalam sepuluh menit.
 	[3] = {
 		vol = 0.7, nada = 1.0,
 		kandidat = {
@@ -368,11 +411,33 @@ local SFX_TIER = {
 			"rbxasset://sounds/electronicpingshort.wav",
 		},
 	},
-	-- Tier 4: paling berat dan paling rendah. Nada 0,6 menurunkan
-	-- berkas yang sama hampir satu oktaf -- itu yang membuat raksasa
-	-- terdengar seperti sesuatu yang BESAR mendarat, bukan seperti
-	-- notifikasi yang kebetulan lebih keras.
+	-- Tier 4 (Bouquet, nova): desis angin jatuh. Dibunyikan client tepat saat dia
+	-- MEMBANTING DIRI ke tanah, bukan saat avatarnya dibuat -- di detik
+	-- itu dia masih mengumpulkan tenaga di udara dan belum ada yang
+	-- terjadi (bunyiSaatNova di KAMERA_TIER).
+	--
+	-- action_falling.mp3 = bunyi angin jatuh bawaan Humanoid, dan untuk
+	-- nova namanya kebetulan tepat: yang dibunyikan memang orang yang
+	-- sedang jatuh. Dipilih karena berkas action_* dipakai SETIAP
+	-- karakter Roblox, jadi pasti ikut terpasang. swoosh.wav yang dulu di
+	-- sini ternyata TIDAK ada di instalasi Studio: "Asset is not approved
+	-- for the requester", dan bunyinya jatuh ke ping cadangan.
+	--
+	-- Nada dinaikkan (1,4): angin jatuh aslinya panjang dan rendah;
+	-- dipercepat dia jadi desis pendek yang terdengar membelah udara.
 	[4] = {
+		vol = 0.9, nada = 1.4,
+		kandidat = {
+			"rbxasset://sounds/action_falling.mp3",
+			"rbxasset://sounds/action_jump.mp3",
+			"rbxasset://sounds/electronicpingshort.wav",
+		},
+	},
+	-- Tier 5 (Doughnut, raksasa): paling berat dan paling rendah. Nada
+	-- 0,6 menurunkan berkas yang sama hampir satu oktaf -- itu yang membuat
+	-- raksasa terdengar seperti sesuatu yang BESAR mendarat, bukan seperti
+	-- notifikasi yang kebetulan lebih keras.
+	[5] = {
 		vol = 0.9, nada = 0.6,
 		kandidat = {
 			"rbxasset://sounds/action_jump_land.mp3",
@@ -385,12 +450,12 @@ local SFX_TIER = {
 -- Dari angka berapa sebuah undian dihitung "tinggi".
 --
 -- Sekarang cuma menentukan BUNYI MENDARAT, tidak lagi ikut menentukan
--- aura VFX di badan. Aura badan jadi milik tier 3 saja (lihat
+-- aura VFX di badan. Aura badan jadi milik tier 2 dan 3 saja (lihat
 -- AURA_VFX_TIER), dan itu keputusan yang sengaja:
 --
 -- Kalau penonton gratisan dengan undian besar juga dapat aura, aura
--- berhenti menjadi penanda "ini yang kirim 10 koin" -- padahal itu
--- satu-satunya hal yang membedakan tier 3 dari tier 2 sekarang. Yang
+-- berhenti menjadi penanda "ini yang kirim 1 koin" -- padahal itu
+-- penanda orang yang membayar. Yang
 -- gratisan tetap dapat sesuatu untuk undian besarnya, cuma bentuknya
 -- BUNYI, bukan efek yang menyaingi tier berbayar.
 local AURA_TINGGI_MIN = 900
@@ -468,30 +533,7 @@ local AURA_H     = 0.32
 --
 -- Tier datang dari server (/api/next), bukan dihitung di sini. main.py
 -- yang memutuskan siapa tier berapa; di file ini cuma bentuk visualnya.
---
--- Tangganya dibangun dari TIGA hal yang berbeda, bukan dari "efek yang
--- makin banyak". Tiap naik satu tingkat, yang berubah JENISNYA:
---
---   tier 1  komentar biasa   ikut antre, berdiri, menari. Tidak ada
---                            apa-apa, dan memang harus begitu -- kalau
---                            yang gratis sudah ramai, yang berbayar
---                            tidak punya ruang untuk terasa beda.
---   tier 2  >= 1 koin        PERHATIAN. Border di badan dan cakram
---                            cahaya di kaki, lalu kamera BERHENTI di
---                            dia beberapa detik. Kameranya tidak
---                            mengorbit -- dia cuma menahan dekat.
---   tier 3  >= 10 koin       UKURAN, dan cuma itu. Raksasa berdiri di
---                            belakang barisan, tidak ikut menari, cuma
---                            melambai. Tanpa satu pun efek menempel --
---                            yang membuatnya terbaca badannya sendiri,
---                            dan apa pun yang ditambahkan di kakinya
---                            cuma menyaingi itu. Kamera mengorbit dan
---                            mundur supaya badannya muat di frame.
---
--- Kenapa dibedakan begitu, bukan sekadar "efeknya makin banyak":
--- penonton tidak menghitung efek. Yang mereka ingat satu kalimat per
--- tier -- "yang itu jadi raksasa" -- dan kalimat itu harus ada lebih
--- dulu daripada efeknya.
+-- Ringkasan keempat tier ada di kepala file ini.
 --
 -- Ambang koin dan panjang sorotannya milik main.py (.env). Semuanya
 -- bisa dimatikan sekaligus lewat TIER_ENABLED.
@@ -507,8 +549,20 @@ local BORDER_ENABLED = true
 local BORDER_GARIS   = true
 local BORDER_CAKRAM  = true
 
+-- Dari tier berapa GARIS TEPI ikut dipasang. Di bawahnya cuma cakram.
+--
+-- Rose (tier 2) cuma dapat cakram biru di kakinya -- itu yang diminta:
+-- "skip lane dan bawah biru saja". Dan ada alasan kedua yang bukan selera:
+-- Roblox cuma menggambar sekitar 31 Highlight sekaligus (BORDER_MAKS_GARIS),
+-- dan Rose yang paling sering datang. Kalau dia ikut memakai jatah garis,
+-- border orang yang bayar Rosa dilepas duluan untuk memberi tempat ke dia.
+-- Cakram itu Part biasa, tidak punya jatah semacam itu.
+local BORDER_GARIS_MIN_TIER = 3
+
 -- Satu warna per tier. Ini bahasa yang paling cepat dibaca penonton --
 -- lebih cepat daripada ukuran, apalagi daripada angka.
+-- Nama konstantanya peninggalan zaman empat tier: T2 = warna tier
+-- berbayar biasa (Rose dan Rosa sekarang), T3 = warna tier 4 ke atas.
 local BORDER_T2_WARNA = Color3.fromRGB(120, 200, 255)  -- biru es
 local BORDER_T3_WARNA = Color3.fromRGB(255, 140,  56)  -- oranye bara
 
@@ -518,7 +572,7 @@ local BORDER_T3_WARNA = Color3.fromRGB(255, 140,  56)  -- oranye bara
 local BORDER_ISI         = 0.92  -- transparansi isian (1 = garis saja)
 local BORDER_GARIS_ALPHA = 0     -- transparansi garisnya (0 = pekat)
 
--- Garis tengah cakram, studs. Jangan lewat dari SPACING_X (6):
+-- Garis tengah cakram, studs. Jangan lewat dari SPACING_X (8):
 -- tetangga sebelahnya berdiri sejauh itu, dan cakram yang lebih lebar
 -- akan bertindihan jadi satu genangan cahaya, bukan lingkaran per orang.
 -- Raksasa mengalikannya sendiri dengan skalanya.
@@ -547,7 +601,7 @@ local BORDER_PUDAR   = 0.8
 -- untuk Highlight dari tempat lain (plugin, efek bawaan).
 local BORDER_MAKS_GARIS = 24
 
--- --- TIER 3: RAKSASA ---
+-- --- TIER 4: RAKSASA ---
 --
 -- Satu raksasa saja pada satu waktu. Yang baru menggantikan yang lama.
 --
@@ -578,7 +632,7 @@ local GIANT_SKALA_MAKS = 14
 -- tidak muncul", padahal dia berdiri di sana. Jadi begitu skalanya
 -- dikecilkan, dia harus DIDEKATKAN.
 --
--- 18 = tiga baris di belakang baris depan (SPACING_Z = 6): masih jelas
+-- 18 = lebih dari dua baris di belakang baris depan (SPACING_Z = 8): masih jelas
 -- di luar barisan, tapi masih mengisi frame.
 local GIANT_X = 0
 local GIANT_Z = 18
@@ -622,10 +676,73 @@ local GIANT_EMOTE_SPEED = 0.55   -- dilambatkan: gerakan raksasa yang
 -- Tanpa ini kamera sinematik (12 stud) berakhir DI DALAM tulang
 -- keringnya. Dikali skalanya sendiri terlalu jauh -- pada 10x dia jadi
 -- 120 stud dan raksasanya kembali jadi titik kecil; setengahnya pas.
-local GIANT_KAMERA_JAUH = 0.55   -- pengali terhadap skala avatarnya
+--
+-- 0,55 -> 0,72. Yang dikeluhkan: KEPALANYA tidak terlihat waktu dia
+-- disorot. Sebabnya bukan tingginya kamera -- sudut kepala terhadap
+-- tengah layar hampir tidak berubah kalau kamera dinaikkan atau
+-- diturunkan (yang ikut berubah sudut tunduknya, dan keduanya saling
+-- meniadakan). Yang benar-benar menentukan JARAK.
+--
+-- Dan angka 5 stud per satuan skala yang dipakai menghitungnya itu rig
+-- POLOS. Avatar bertopi tinggi atau berambut menjulang bisa 6-7 stud
+-- per skala, dan selisih satu stud itu tiga sampai empat derajat --
+-- persis selisih antara kepala yang muat dan kepala yang terpotong.
+-- Mundur ke 0,72 membeli sekitar lima derajat ruang di atas kepalanya,
+-- dan itu yang menanggung topi.
+local GIANT_KAMERA_JAUH = 0.72   -- pengali terhadap skala avatarnya
+
+-- Seberapa TINGGI kamera duduk untuk raksasa. Pengali terhadap skalanya,
+-- persis seperti GIANT_KAMERA_JAUH di atas -- tapi ANGKANYA SENDIRI, dan
+-- itu seluruh intinya.
+--
+-- Sebelumnya tidak ada angka ini: tinggi kamera ikut diskalakan oleh
+-- pengali jarak yang sama. Akibatnya pada 14x kamera duduk di 78 stud
+-- sementara MATA raksasanya ada di 64 -- kameranya empat belas stud DI
+-- ATAS kepalanya, dan yang dilihat penonton ubun-ubun, bukan wajah.
+-- Raksasa yang tidak pernah terlihat wajahnya kehilangan satu-satunya
+-- hal yang membuat dia terbaca sebagai ORANG dan bukan sebagai patung.
+--
+-- 0,37 menaruh kamera di 62 stud saat mundur penuh dan 55 saat merapat
+-- -- di bawah garis mata di kedua-duanya, jadi wajahnya menghadap lensa
+-- sepanjang sorotan.
+--
+-- Pasangannya GIANT_FOKUS_TINGGI dan `masuk` di KAMERA_TIER[4]: ketiga
+-- angka itu satu kesatuan, dan test_tier.py memeriksa hasil GABUNGANNYA
+-- -- wajah terlihat, badan utuh, barisan tetap di dalam frame -- bukan
+-- angkanya satu per satu.
+local GIANT_KAMERA_TINGGI = 0.37
+
+-- DI MANA kamera membidik raksasa, sebagai pecahan tinggi pivot-nya.
+--
+-- Dulu 1,15 -- di ATAS titik tengah badan. Angka itu dipilih supaya
+-- kepalanya muat waktu kamera sedang paling dekat, dan memang berhasil
+-- untuk itu; yang tidak dihitung waktu itu BARISANNYA. Kamera yang
+-- membidik setinggi 48 stud ikut naik setinggi itu juga, dan dari sana
+-- barisan yang berdiri di lantai jatuh ke tepi bawah frame (-45 derajat
+-- saat menahan, di luar setengah-FOV 35) -- panggungnya hilang, yang
+-- tersisa cuma raksasa menggantung di langit.
+--
+-- 0,80 membidik dada, bukan ubun-ubun: barisan naik ke dalam frame di
+-- seluruh adegan. Kepalanya tetap muat karena rapatannya sekalian
+-- dikurangi -- lihat `masuk` di KAMERA_TIER[4].
+--
+-- Turun 0,85 -> 0,80 bersama GIANT_KAMERA_TINGGI: kamera duduk di
+-- bidikan + tinggi, jadi menurunkan bidikannya ikut menurunkan
+-- kameranya, dan itu yang membawanya ke bawah garis mata raksasa.
+--
+-- Ketiganya sepasang-sepasang; menurunkan yang ini sendirian memotong
+-- kepalanya. Yang menjaga kombinasinya test_tier.py.
+local GIANT_FOKUS_TINGGI = 0.80
 
 -- Dari tier berapa seseorang jadi raksasa.
-local GIANT_MIN_TIER = 4
+--
+-- Turun 5 -> 4 waktu tier "border saja" dibuang. Semua yang bergantung pada
+-- "raksasa atau bukan" (slot, skala, emote, beku, papan nama saja) ikut
+-- pindah lewat adalahRaksasa di bawah, tanpa satu pun angka lain diubah.
+--
+-- Naik 4 -> 5 waktu Rose kembali jadi tier sendiri (tier 2) dan semua yang
+-- di atasnya naik satu nomor. Raksasa = Doughnut.
+local GIANT_MIN_TIER = 5
 
 -- SATU-SATUNYA tempat yang menjawab "tier ini raksasa atau bukan".
 --
@@ -648,34 +765,395 @@ local function adalahRaksasa(tier)
 	return (tonumber(tier) or 1) >= GIANT_MIN_TIER
 end
 
+-- --- TIER 3: NOVA (PRISMATIC STARFALL) ---
+--
+-- Menggantikan DASH. Yang dijual tier 3 sekarang bukan lagi kecepatan
+-- (zigzag menerobos kerumunan) tapi UPACARA: orangnya melayang naik,
+-- mengumpulkan tenaga, waktu berhenti, lalu dia membanting diri ke tanah
+-- dan panggungnya meledak. Harganya tidak berubah, tetap TIER3_KOIN.
+--
+-- Adegan 15 detik (SPOTLIGHT_MS_TIER3 di .env), urutannya:
+--
+--   0,0 - ~0,6   client menunggu aset avatarnya (SPAWN_SIAP_MAKS)
+--   CHARGE  4,0  letterbox masuk, FOV menyempit, badan melayang naik 14
+--                stud, enam orb mengorbit sambil menarik beam ke dada,
+--                32 rune berputar di lantai, partikel naik dari tanah.
+--                KAMERA rendah memandang ke atas, mengorbit 360 derajat
+--   ASCEND  1,5  naik ke 45 stud, orb mengatup jadi mahkota di atas
+--                kepala, lingkaran rune melebar dan berputar makin cepat.
+--                Selagi naik dia juga MELINTAS ke atas slot 1 -- di situ
+--                dia akan membanting diri (NOVA.CONFIG, `tujuan`)
+--   FREEZE  1,0  orb tersedot ke dada, kilatan membesar, layar jadi
+--                abu-abu dan buram -- waktu berhenti. KAMERA meluncur ke
+--                depan wajahnya dan diam
+--   SLAM    0,6  banting ke tanah SLOT 1 dari 45 stud, FOV menyempit.
+--                KAMERA meluncur ke atas kepalanya -- dia jatuh menjauh
+--   IMPACT  3,2  shell, tiga shockwave, pilar cahaya, delapan petir,
+--                kristal melayang lalu jatuh, aftershock kedua, warna
+--                pulih, letterbox keluar. KAMERA mundur ke shot lebar.
+--                Di detik yang sama BARISAN TERSAPU: semua yang sedang
+--                menari terlempar keluar dan dihapus, panggung kembali
+--                ke slot 1 (gempaBarisan)
+--   TARI    3,0  dia menari SENDIRIAN di panggung kosong, disorot
+--                (NOVA.TARI) -- lalu dia TINGGAL, sebagai orang pertama
+--                di barisan yang baru (novaKeBarisan). Yang komentar
+--                sesudahnya berdiri di sampingnya, slot 2, 3, ...
+--
+-- Aura VFX acaknya (AURA_VFX_TIER) menyala saat adegannya selesai --
+-- selama nova berlangsung client menyembunyikan avatar aslinya bersama
+-- seluruh efek yang menempel padanya.
+--
+-- SERVER TIDAK MENGGERAKKAN APA PUN. Avatarnya tetap di-spawn persis
+-- seperti yang lain -- langsung di slot, dikunci BodyPosition -- dan yang
+-- dikirim ke client cuma satu pesan "nova" berisi model, seed, palet, dan
+-- setelan di bawah. Client yang menyembunyikan avatar aslinya, memainkan
+-- adegannya dengan SALINAN lokalnya (ModuleScript TierNova), lalu
+-- memunculkan yang asli kembali -- di slot 1, tempat salinannya tadi
+-- mendarat.
+--
+-- Kenapa tidak digerakkan di server: posisi avatar dijaga BodyPosition,
+-- dan badan yang ditarik-tarik tween sambil dilawan pegas itu yang dulu
+-- membuat raksasa tersangkut di bawah tanah (lihat catatan raksasa). Nova
+-- di client tidak menyentuh fisika server sama sekali -- kalau adegannya
+-- gagal di satu layar, yang terjadi di layar itu cuma avatar yang langsung
+-- berdiri seperti tier lain.
+--
+-- Client TIDAK BISA memicu nova sendiri: V2Event tidak punya
+-- OnServerEvent sama sekali, jadi satu-satunya yang bisa mengirim "nova"
+-- script ini.
+--
+-- Seed-nya diundi di sini dan dikirim ke semua client, jadi petir, kristal,
+-- dan PALET warnanya sama persis di tiap layar.
+--
+-- Satu TABEL, bukan konstanta lepas -- batas 200 variabel lokal, lihat
+-- catatan di PLATE.
+local NOVA = {}
+
+NOVA.ENABLED = true
+
+-- Tier yang dapat nova. TEPAT tier ini, bukan "ke atas": raksasa (tier 5)
+-- sengaja tidak ikut -- badan 14x yang melayang 13 stud lalu membanting
+-- diri menyapu seluruh panggung, dan yang dia jual justru diamnya.
+-- Naik 3 -> 4 bersama semua tier di atas Rose. Nova = Bouquet Flower.
+NOVA.TIER = 4
+
+-- Setelan yang diteruskan apa adanya ke TierNova.Play. Nama kolomnya nama
+-- config modul itu, supaya tidak ada terjemahan di tengah jalan.
+--
+-- Kelima angka fase JUMLAHNYA lama seluruh adegan, dan angka itu terikat
+-- ke sorotan 15 detik. test_tier.py menjaganya: SPAWN_SIAP_MAKS + seluruh
+-- fase + TARI <= sorotan.
+NOVA.CONFIG = {
+	-- Fase paling panjang, dan itu memang bentuknya: yang dijual di sini
+	-- penantian. Dipendekkan, ledakannya datang sebelum penonton sempat
+	-- bertanya-tanya apa yang sedang dikumpulkan.
+	charge = 4.0,
+	ascend = 1.5,
+	freeze = 1.0,
+	-- Bantingannya tetap yang TERPENDEK dari semuanya -- lima setengah
+	-- detik naik pelan lalu turun dalam 0,6 detik, dan selisih itu yang
+	-- bikin jatuhnya terbaca sebagai berat.
+	--
+	-- Naik 0,3 -> 0,6 waktu tingginya dinaikkan ke 45 stud. Dua alasan:
+	-- jatuh 45 stud dalam 0,3 detik itu 150 stud/detik, cepat sampai
+	-- badannya cuma jadi garis kabur; dan kamera harus sempat meluncur
+	-- dari depan wajahnya ke atas kepalanya selama dia jatuh (lihat
+	-- NOVA.KAMERA). 0,6 detik memberi ruang untuk keduanya tanpa
+	-- membuat jatuhnya terasa pelan.
+	slam   = 0.6,
+	impact = 3.2,
+
+	-- Tinggi melayangnya, stud.
+	--
+	-- 13 -> 45 (sembilan kali tinggi badan, hampir setinggi raksasa
+	-- 14x). Yang membuat angka setinggi ini bisa dipakai kamera
+	-- adegannya sendiri: kamera nova TIDAK lagi cuma menumpang di
+	-- kamera sorotan biasa -- dia punya jalur sendiri yang ikut naik,
+	-- jadi badannya tidak pernah menyusut jadi titik di langit.
+	--
+	-- naikCharge dinaikkan sebanding (7 -> 14): dia separuh jalan,
+	-- dan separuh jalan dari 45 bukan 7.
+	naikCharge = 14,
+	naikAscend = 45,
+
+	orbCount   = 6,
+	runeCount  = 32,
+	shardCount = 20,
+	boltCount  = 8,
+
+	-- Efek SELURUH LAYAR: letterbox, layar abu-abu saat freeze, bloom,
+	-- blur. Dia yang membuat fase freeze terbaca sebagai waktu berhenti
+	-- dan bukan cuma sebagai orb yang menghilang.
+	--
+	-- Ini menyentuh frame siaran, bukan cuma satu avatar. Kalau overlay
+	-- TikTok-nya nanti bertabrakan dengan bilah hitamnya, yang dimatikan
+	-- `letterbox` di bawah (jadi 0), bukan saklar ini -- warna dan
+	-- blur-nya tidak mengambil ruang layar sama sekali.
+	layar     = true,
+	letterbox = 0.12,
+
+	fovCharge = -12,
+	fovSlam   = -20,
+	fovImpact = 20,
+}
+
+-- --- JALUR KAMERA ADEGAN NOVA ---
+--
+-- Dikirim ke client bersama pesan "nova"; client yang menjalankannya
+-- (kameraNova di KameraClientV2).
+--
+-- INI MEMBALIK KEPUTUSAN YANG SEMPAT TERTULIS DI FILE INI. Waktu nova
+-- baru menggantikan dash, kameranya sengaja dibiarkan jadi kamera
+-- sorotan biasa ditambah FOV dan getaran -- alasannya nova terjadi di
+-- tempat orangnya berdiri, jadi kamera yang sudah menghadap ke sana
+-- tidak perlu diganti. Itu benar untuk nova yang naik 13 stud.
+--
+-- Pada 45 stud tidak lagi: kamera yang diam di tanah memandang orang
+-- setinggi sembilan badan cuma memperlihatkan telapak kakinya. Jadi
+-- adegannya sekarang punya EMPAT bidikan yang berurutan, dan tiap
+-- bidikan menjawab satu pertanyaan yang berbeda:
+--
+--   NAIK    kamera RENDAH memandang ke atas, mengorbit 360 derajat
+--           sekali penuh selama dia naik. Sudut rendah yang membuat
+--           dia terbaca menjulang; orbitnya yang membuat penonton
+--           melihat dia dari segala sisi sebelum apa pun terjadi.
+--
+--           Kameranya IKUT NAIK (naikBawah -> naikAtas) dan itu bukan
+--           cuma soal framing: pada stud ke-2 dia sejajar lutut
+--           kerumunan, dan orbit di ketinggian itu menembus badan
+--           orang yang sedang menari. Naik ke 16 stud membawanya lewat
+--           DI ATAS kepala mereka sebelum orbitnya sampai ke sisi
+--           belakang.
+--
+--   DIAM    dia menggantung di puncak, kamera meluncur ke DEPAN
+--           wajahnya dan berhenti. Satu-satunya detik tenang di
+--           seluruh adegan, dan itu yang membuat bantingan sesudahnya
+--           terasa mendadak.
+--
+--   JATUH   kamera meluncur ke ATAS kepalanya dan memandang ke bawah,
+--           jadi dia jatuh MENJAUH dari lensa. Ini yang membuat 45
+--           stud terbaca sebagai jarak, bukan sebagai angka.
+--
+--   LEDAKAN mundur ke shot lebar supaya shockwave, pilar, dan barisan
+--           yang berceceran muat dalam satu frame.
+--
+-- Sesudah itu kamera meluncur balik (`lepas`) ke sorotan biasa yang
+-- sudah berjalan di belakang layar, jadi tariannya disorot seperti
+-- tier lain -- dan tidak ada satu pun frame yang meloncat.
+NOVA.KAMERA = {
+	-- --- NAIK ---
+	naikRadius  = 26,   -- sejauh ini dari titik berdirinya, stud
+	naikBawah   = 2.0,  -- tinggi kamera saat dia baru mulai naik
+	naikAtas    = 16,   -- tinggi kamera sesudah naiknya selesai
+	naikPutaran = 1,    -- berapa KALI mengelilingi. 1 = 360 derajat pas
+
+	-- Seberapa CEPAT kameranya naik, relatif terhadap orbitnya. 3 =
+	-- tinggi penuh dicapai pada sepertiga putaran pertama.
+	--
+	-- Ini bukan penghalusan selera, ini yang mencegah kamera menembus
+	-- badan orang. Orbitnya melingkari titik berdiri avatar nova, dan
+	-- avatar nova selalu yang PALING DEKAT kamera (barisan tumbuh ke
+	-- arah -Z), jadi separuh putaran pertama lewat di ruang kosong di
+	-- depannya -- tapi separuh keduanya lewat DI ATAS barisan. Kepala
+	-- avatar biasa ada di sekitar 8 stud.
+	--
+	-- Kalau tingginya dinaikkan rata sepanjang orbit, di sudut 180
+	-- derajat kamera baru sampai 9 stud: satu stud di atas ubun-ubun,
+	-- dan satu stud itu habis oleh rambut atau topi. Dengan 3, dia sudah
+	-- di 16 stud sebelum sampai ke sisi belakang. Diuji di test_tier.py.
+	naikCepat   = 3,
+
+	-- --- DIAM DI PUNCAK ---
+	diamRadius = 20,
+	diamTurun  = 3,     -- sedikit di bawah matanya, jadi tetap mendongak
+
+	-- --- JATUH ---
+	--
+	-- atasNaik HARUS di atas puncaknya (naikAscend 45), kalau tidak
+	-- "kamera di atas" bohong: di frame pertama dia jatuh, dia justru
+	-- berada di ATAS lensa dan yang terlihat cuma dia melintas turun
+	-- melewati kamera. 52 = tujuh stud di atas ubun-ubunnya.
+	--
+	-- atasRadius digeser cukup jauh, bukan tepat di atas kepalanya:
+	-- bidikan lurus ke bawah tidak punya cakrawala sama sekali dan
+	-- terbaca sebagai peta, bukan sebagai orang yang jatuh. Pada 22
+	-- stud, kamera mulai hampir sejajar kepalanya (13 derajat menunduk)
+	-- lalu berakhir menunduk 67 derajat waktu dia menghantam tanah --
+	-- menunduknya sendiri yang menceritakan jatuhnya.
+	atasRadius = 22,
+	atasNaik   = 52,
+
+	-- --- LEDAKAN ---
+	lebarRadius = 46,
+	lebarNaik   = 20,
+	lebarMundur = 1.2,  -- detik mundurnya ke shot lebar
+
+	lepas = 1.0,        -- detik meluncur balik ke sorotan biasa
+}
+
+-- --- TIGA PALET, DIUNDI TIAP KEDATANGAN ---
+--
+-- Alasannya sama persis dengan AURA_VFX_IDS: dua orang yang sama-sama
+-- kirim 10 koin harus tampil BERBEDA. Satu skema warna yang selalu sama
+-- berhenti diperhatikan sesudah beberapa kedatangan, dan yang hilang
+-- bukan cuma kebaruan -- hilang juga alasan untuk mengirim lagi ("kali
+-- ini dapat yang merah").
+--
+-- Yang mengundi SERVER, dan hasilnya dikirim ke semua client: kalau tiap
+-- client mengundi sendiri, satu orang tampil pink di satu layar dan biru
+-- di layar sebelahnya.
+--
+-- Lima warna per palet karena itu yang dibaca modulnya: orb, rune, dan
+-- kristal memutar kelimanya, dan ColorSequence pelanginya memakai
+-- kelimanya berurutan. Urutannya BUKAN sekadar gradasi -- warna ke-3
+-- jadi warna lampu dan shell, ke-1 dan ke-2 jadi shockwave, jadi taruh
+-- yang paling mewakili paletnya di posisi 3.
+NOVA.PALET = {
+	{ nama = "prisma", warna = {
+		{ 255, 120, 220 }, { 120, 200, 255 }, { 180, 120, 255 },
+		{ 255, 220, 130 }, { 130, 255, 200 } } },
+	{ nama = "inferno", warna = {
+		{ 255, 140,  60 }, { 255,  80,  60 }, { 255, 110,  40 },
+		{ 255, 205, 100 }, { 180,  40,  40 } } },
+	{ nama = "glasir", warna = {
+		{ 150, 230, 255 }, { 210, 245, 255 }, {  90, 170, 255 },
+		{ 255, 255, 255 }, { 120, 130, 255 } } },
+}
+
+-- --- BUNYI ADEGAN NOVA ---
+--
+-- Daftar DATAR, bukan tabel bertingkat per fase, dan itu yang membuat
+-- pelapisan jadi gratis: dua baris dengan `fase` yang sama berbunyi
+-- bersamaan. Dentuman ledakannya memang dua lapis -- satu berat di
+-- bawah, satu pecah di atasnya -- dan satu berkas saja tidak pernah
+-- terdengar seperti ledakan.
+--
+-- SEMUANYA BAWAAN ROBLOX (rbxasset://sounds/*), dan itu batasan yang
+-- disengaja: berkas-berkas itu ikut terpasang di TIAP instalasi, jadi
+-- tidak ada kemungkinan "Asset is not approved for the requester" yang
+-- pernah membuat swoosh.wav gagal diam-diam di file ini (lihat SFX_TIER).
+--
+-- Harganya: pilihannya cuma enam berkas. Yang dipakai di bawah semuanya
+-- berkas yang SAMA dengan yang sudah dipakai tier lain, dibedakan lewat
+-- NADA saja. bass.wav pada 0,30 bukan lagi bass -- dia dentuman; pada
+-- 0,50 naik ke 1,15 dia jadi dengungan yang mengisi tenaga. Kalau nanti
+-- ada asset audio sendiri, yang diganti cuma `id`-nya.
+--
+--   fase   kapan dibunyikan: charge / ascend / freeze / impact
+--   tunda  detik SESUDAH fase itu mulai. nil = langsung
+--   ulang  Looped. Untuk berkas yang lebih pendek daripada fasenya;
+--          dihentikan sendiri waktu fase berikutnya mulai
+--   nada, nadaAkhir  kalau keduanya ada, nadanya MELUNCUR dari yang
+--          pertama ke yang kedua sepanjang fase itu
+NOVA.SFX = {
+	-- CHARGE: dengungan yang naik pelan. Ini satu-satunya yang looped --
+	-- bass.wav jauh lebih pendek dari empat detik, dan hening di tengah
+	-- fase mengisi tenaga terbaca sebagai "sudah selesai" padahal
+	-- orbnya masih berkumpul.
+	--
+	-- Nada yang MELUNCUR 0,50 -> 1,15 yang mengerjakan seluruh
+	-- pekerjaannya: dengungan yang naik terus-menerus itu satu-satunya
+	-- cara memberi tahu telinga bahwa sesuatu sedang dikumpulkan.
+	{ fase = "charge", id = "rbxasset://sounds/bass.wav",
+	  vol = 0.35, nada = 0.50, nadaAkhir = 1.15, ulang = true },
+
+	-- ASCEND: whoosh naik. Nada di bawah 1 memanjangkannya, jadi dia
+	-- menutupi satu setengah detik penuh alih-alih berhenti di tengah.
+	{ fase = "ascend", id = "rbxasset://sounds/action_jump.mp3",
+	  vol = 0.55, nada = 0.65 },
+
+	-- FREEZE: satu denting rendah. Ping bawaan pada 0,35 tidak lagi
+	-- terdengar seperti notifikasi -- dia jadi denting panjang yang
+	-- menggantung, dan menggantung itu persis yang sedang terjadi.
+	{ fase = "freeze", id = "rbxasset://sounds/electronicpingshort.wav",
+	  vol = 0.6, nada = 0.35 },
+
+	-- IMPACT, lapis 1: dentuman berat. bass.wav pada 0,30 turun hampir
+	-- dua oktaf dari nada aslinya.
+	{ fase = "impact", id = "rbxasset://sounds/bass.wav",
+	  vol = 1.0, nada = 0.30 },
+	-- IMPACT, lapis 2: pecahnya, di frame yang sama. Yang berat saja
+	-- terdengar seperti pintu ditutup; yang pecah saja terdengar ringan.
+	{ fase = "impact", id = "rbxasset://sounds/impact_water.mp3",
+	  vol = 0.9, nada = 0.45 },
+
+	-- GEMPA: gemuruh barisan yang tersapu, menyusul 0,3 detik sesudah
+	-- dentumannya.
+	--
+	-- Bunyi SENDIRI, bukan dijadikan satu dengan dentuman di atas, dan
+	-- itu yang membuat "dia mendarat" dan "panggungnya hancur" terdengar
+	-- sebagai DUA kejadian. Dijadikan satu, yang kedua tidak pernah
+	-- terdengar sama sekali -- dia tertutup yang pertama.
+	--
+	-- 0,3 detik juga kira-kira sama dengan telatnya lemparan di server
+	-- (SPAWN_SIAP_MAKS), jadi bunyinya jatuh berdekatan dengan badan
+	-- yang benar-benar mulai terlempar.
+	{ fase = "impact", tunda = 0.3,
+	  id = "rbxasset://sounds/action_jump_land.mp3",
+	  vol = 0.85, nada = 0.45 },
+
+	-- AFTERSHOCK: gemuruh kedua, sejalan dengan cincin dan petir kedua
+	-- di dalam modulnya (task.delay 1,4).
+	{ fase = "impact", tunda = 1.4,
+	  id = "rbxasset://sounds/impact_water.mp3",
+	  vol = 0.55, nada = 0.65 },
+}
+
+-- Lama menari sesudah adegannya selesai, detik. Tidak dikirim ke mana pun
+-- -- tariannya tarian panggung biasa. Angka ini JANJI yang dijaga
+-- test_tier.py: sisa sorotan sesudah nova harus paling tidak sepanjang ini.
+NOVA.TARI = 3.0
+
+-- Lama SELURUH adegan, detik. Ditulis sebagai penjumlahan, bukan 10:
+-- angka yang ditulis terpisah tertinggal begitu salah satu fase digeser,
+-- dan yang membaca ini auraMulai di KAMERA_TIER[3] -- papan aura yang
+-- muncul terlalu cepat tersembunyi bersama avatar aslinya.
+-- Nomor urut adegan nova. Naik satu tiap kedatangan nova (tier 4), dan cuma
+-- dipakai client untuk mencocokkan pesan "nova" dengan model yang
+-- sedang dia tahan -- lihat SetAttribute("NovaId") di spawnAvatar.
+local novaIdBerikut = 0
+
+local function novaTotal()
+	local c = NOVA.CONFIG
+	return c.charge + c.ascend + c.freeze + c.slam + c.impact
+end
+
+-- SATU-SATUNYA tempat yang menjawab "tier ini nova atau bukan". Alasannya
+-- sama dengan adalahRaksasa: jawaban yang ditulis dua kali akan berpisah
+-- diam-diam di perubahan berikutnya.
+local function adalahNova(tier)
+	if not (TIER_ENABLED and NOVA.ENABLED) then return false end
+	return (tonumber(tier) or 1) == NOVA.TIER
+end
+
 -- --- PANGGUNG BERHENTI SELAMA SINEMATIK ---
 --
 -- Tidak ada yang di-spawn selama adegannya berlangsung, jadi kamera
 -- boleh nempel penuh ke satu orang tanpa ada yang datang di belakangnya
 -- dan mencuri perhatian.
 --
--- Ambangnya tier 3, bukan 2. Tier 2 cuma butuh 1 koin dan saat live
--- ramai dia datang tiap beberapa detik -- membekukan panggung untuk
--- tiap satu koin berarti panggungnya lebih sering beku daripada jalan,
--- dan antrian gratisan tidak pernah kebagian. Tier 2 tetap dapat border
--- dan kamera 3 detik; yang dia tidak dapat cuma hak menghentikan
--- panggung.
+-- Yang boleh menghentikan panggung CUMA raksasa. Tier 2 datang tiap
+-- beberapa detik saat live ramai, dan memberi HAK ITU ke tier 2 berarti
+-- antrian gratisan berhenti berjalan sebagian besar waktu.
+--
+-- Tier 3 IKUT sejak nova menggantikan dash, dan itu perubahan yang
+-- disengaja: nova 10 detik menyita seluruh layar (letterbox, warna
+-- abu-abu, ledakan setinggi 300 stud), dan avatar gratisan yang muncul
+-- di barisan di tengah itu bukan cuma tidak terlihat -- dia menghabiskan
+-- slot panggung untuk kedatangan yang memang tidak ada yang melihat.
+-- Harganya: tiap 10 koin, antrian gratisan berhenti ~16 detik.
 local BEKU_ENABLED   = true
--- Ikut naik 3 -> 4 bersama raksasanya.
+-- Diikatkan ke NOVA.TIER, bukan ditulis sebagai angka: niatnya satu
+-- kalimat tentang ADEGAN SINEMATIK YANG PALING MURAH, bukan tentang angka
+-- 3. Angka yang ditulis terpisah tertinggal waktu tier-nya bergeser -- dan
+-- itu sudah sekali terjadi di file ini (lihat adalahRaksasa).
 --
--- Yang boleh menghentikan panggung tetap CUMA raksasa. Tier 3 sekarang
--- badan normal di barisan: adegannya 5 detik dan datang jauh lebih
--- sering daripada 30 koin, jadi memberinya hak membekukan panggung
--- berarti antrian gratisan berhenti berjalan sebagian besar waktu.
--- Diikatkan ke GIANT_MIN_TIER, bukan ditulis 4 lagi.
+-- Dulu terikat ke GIANT_MIN_TIER (4). Turun ke 3 waktu nova menggantikan
+-- dash: nova menyita seluruh layar selama 10 detik, dash tidak.
 --
--- Niatnya "cuma raksasa yang boleh menghentikan panggung", dan itu satu
--- kalimat tentang RAKSASA -- bukan tentang angka 4. Kalau suatu saat
--- raksasa dipindah ke tier 5, angka yang ditulis terpisah akan
--- tertinggal di 4 dan tier 4 diam-diam membekukan panggung tanpa jadi
--- raksasa. Itu persis jenis kesalahan yang sudah sekali terjadi di file
--- ini (lihat adalahRaksasa), jadi sekali ini cukup.
-local BEKU_MIN_TIER  = GIANT_MIN_TIER
+-- Tetap "min", bukan daftar: tier 4 di atasnya ikut terbawa, dan itu
+-- memang benar -- raksasa juga tidak boleh diganggu.
+local BEKU_MIN_TIER  = NOVA.TIER
 
 -- Tambahan waktu beku SESUDAH sorotannya habis, detik. Jeda napas
 -- supaya orang berikutnya tidak muncul di frame yang sama dengan avatar
@@ -688,6 +1166,9 @@ local BEKU_EKOR      = 0.8
 -- suatu saat KOIN_SPOT_MAX_MUL di .env dinaikkan tanpa sengaja, angka
 -- itu langsung jadi lama panggung ini mati. Salah ketik satu digit
 -- tidak boleh berarti siaran diam semenit.
+-- Sorotan nova (tier 4) sekarang 15 detik + BEKU_EKOR 0,8 = 15,8, jadi 20 masih
+-- longgar. Diuji di test_tier.py supaya angka ini tidak diam-diam jadi
+-- yang memotong nova kalau fase-fasenya dipanjangkan lagi.
 local BEKU_MAKS      = 20
 
 -- --- LANTAI AURA UNTUK YANG BAYAR ---
@@ -700,13 +1181,64 @@ local BEKU_MAKS      = 20
 -- Yang gratisan tidak disentuh: tetap 0-1000, tetap boleh dapat 998%.
 -- Kalau lantainya dinaikkan untuk semua orang, angka besar berhenti
 -- terasa besar.
-local AURA_LANTAI_T2 = 300
-local AURA_LANTAI_T3 = 550
--- Raksasa. Lantainya paling tinggi karena dia yang paling mahal, dan
--- lubang yang ditutup lantai ini paling kelihatan justru di dia: badan
--- setinggi tiga orang dengan papan bertuliskan 4% membatalkan seluruh
--- kesannya dalam satu angka.
-local AURA_LANTAI_T4 = 650
+--
+-- --- APA YANG DILEPAS WAKTU ANGKA INI DINAIKKAN ---
+--
+-- Lantai 550/600 dulu dipilih supaya yang bayar tidak pernah dapat angka
+-- memalukan TAPI juga tidak dijamin menang: penonton gratisan masih bisa
+-- mengalahkan mereka, dan justru itu yang bikin panggungnya seru.
+--
+-- 900/999/1000 melepas separuh dari itu dengan sengaja. Tier 2 masih
+-- bisa dikalahkan gratisan (900-1000 lawan 0-1000), tapi tier 3 dan 4
+-- praktis TIDAK: 999 berarti dua kemungkinan saja, dan 1000 berarti
+-- satu. Yang dibeli 10 koin sekarang bukan lagi undian yang bagus --
+-- melainkan angka yang pasti.
+--
+-- Ini keputusan produk, bukan kelalaian, dan ditulis di sini supaya
+-- siapa pun yang membaca lantai 999 tahu apa yang ditukar untuk itu.
+-- Kalau kontesnya mau dikembalikan, yang diturunkan angka-angka di
+-- bawah -- bukan AURA_MAX.
+local AURA_LANTAI_T2 = 900   -- Rose
+-- Rosa. Di ATAS Rose, walaupun tipis: tier yang lebih mahal tidak boleh
+-- punya lantai yang lebih rendah atau sama dengan tier di bawahnya
+-- (dijaga test_tier.py). Kalau dua-duanya 900, yang bayar 10 koin tidak
+-- dapat satu pun kepastian lebih daripada yang bayar 1.
+local AURA_LANTAI_T3 = 950   -- Rosa / tap
+local AURA_LANTAI_T4 = 999   -- Bouquet, nova
+
+-- Raksasa diundi di rentangnya SENDIRI: 9.999% atau 10.000%.
+--
+-- Dulu selalu tepat 10.000. Diubah atas permintaan jadi rentang setipis
+-- ini: tetap tidak bisa dicapai siapa pun dengan cara lain, tapi angkanya
+-- sekarang benar-benar DIUNDI -- putarannya punya sesuatu untuk ditunggu.
+--
+-- Angka ini KELUAR dari skala semua orang lain, dan itu seluruh
+-- gunanya. Lantai 1000 yang dulu ada di sini secara teknis benar --
+-- yang paling mahal tidak boleh punya lantai lebih rendah daripada
+-- tier di bawahnya -- tapi di layar dia tidak bercerita apa-apa: 1000%
+-- itu angka yang sama yang bisa didapat penonton gratisan yang
+-- beruntung, jadi raksasa membayar paling mahal untuk angka yang bukan
+-- miliknya sendiri.
+--
+-- Sepuluh ribu tidak bisa dicapai siapa pun dengan cara lain. Dia
+-- bukan "undian yang bagus" lagi, dan memang bukan: yang dibeli 30
+-- koin sekarang ANGKA YANG TIDAK ADA DUANYA di panggung.
+--
+-- Konsekuensinya, ditulis di sini supaya tidak jadi kejutan: dia
+-- melewati AURA_MAX. Jadi "langit-langit 1000 berlaku untuk semua
+-- orang" sudah tidak benar lagi -- yang benar, undian berhenti di
+-- 1000, dan raksasa tidak ikut diundi.
+local AURA_RAKSASA_MIN = 9999
+local AURA_RAKSASA     = 10000
+
+-- Berapa detik angka raksasa yang sudah mendarat dibiarkan terbaca
+-- sebelum papannya dirapikan jadi NAMA SAJA.
+--
+-- Papan tiga baris di atas kepala setinggi belasan stud itu papan reklame
+-- yang menyaingi badannya sendiri kalau dibiarkan selamanya. Tapi putaran
+-- angkanya justru yang ditonton -- jadi angkanya tampil, mendarat, sempat
+-- dibaca, BARU papannya menyusut jadi satu baris nama.
+local AURA_RAKSASA_NAMA_S = 2.5
 
 -- --- AURA VFX YANG MENEMPEL DI BADAN ---
 --
@@ -714,24 +1246,34 @@ local AURA_LANTAI_T4 = 650
 -- papan atas kepala, yang ini efek partikel sungguhan yang menempel di
 -- badan avatarnya.
 --
--- Siapa yang dapat: TEPAT tier 3. Bukan "tier 3 ke atas", dan bukan
--- juga lewat besarnya undian.
+-- Siapa yang dapat: tier 3 (Rosa, aura) DAN tier 4 (Bouquet, nova). Rentang, bukan
+-- "ke atas", dan bukan juga lewat besarnya undian.
 --
--- Tier 2 tidak dapat karena aura adalah satu-satunya pembeda tier 3
--- sekarang (keduanya badan normal, keduanya dapat border, keduanya
--- disorot kamera berputar). Kalau tier 2 dapat juga, 10 koin kehilangan
--- alasannya.
+-- Tier 3 dapat juga karena itu yang diminta untuk yang dijual 10 koin --
+-- dan sekarang dia dapat DUA undian: palet nova (NOVA.PALET) dan aura
+-- ini. Keduanya terpisah, jadi ada sembilan kombinasi tampilan.
 --
--- Tier 4 tidak dapat karena yang membuatnya terbaca UKURAN badannya,
--- dan aura menyala di badan sebesar itu cuma menyaingi satu-satunya hal
--- yang jadi intinya. Dia polos, dan itu memang bentuk tingkatannya:
--- tier 3 ramai, tier 4 justru bersih.
-local AURA_VFX_ENABLED = true
-local AURA_VFX_TIER    = 3
+-- Auranya tidak ikut melayang: selama nova, client menyembunyikan badan
+-- aslinya BERSAMA partikelnya (KELAS_MATIKAN), dan salinan yang melayang
+-- cuma berisi part badan -- jadi orb dan rune-nya tetap bersih, dan
+-- auranya menyala tepat saat avatar aslinya muncul kembali.
+--
+-- Raksasa (tier 5) TIDAK dapat. Sempat dicoba, lalu dicopot atas
+-- permintaan: yang membuat dia terbaca UKURAN badannya, dan aura di badan
+-- sebesar itu cuma menyaingi satu-satunya hal yang jadi intinya.
+--
+-- Kalau mau dicoba lagi, cukup naikkan AURA_VFX_TIER_MAKS ke 5 --
+-- pasangAuraVfx sudah memperbesar partikelnya sebanding skala badan, jadi
+-- auranya tidak akan jadi titik kecil di dada raksasa 4x.
+local AURA_VFX_ENABLED   = true
+-- Rosa (3) dan Bouquet/nova (4). Rose (2) sengaja TIDAK: dia cuma skip
+-- lane dan cakram biru.
+local AURA_VFX_TIER      = 3
+local AURA_VFX_TIER_MAKS = 4
 
 -- Diacak satu dari tiga tiap kedatangan.
 --
--- Bukan satu aura tetap untuk semua tier 3: dengan tiga pilihan, dua
+-- Bukan satu aura tetap untuk semua tier 2: dengan tiga pilihan, dua
 -- orang yang sama-sama kirim 10 koin tampil berbeda, dan itu memberi
 -- alasan untuk mengirim lagi ("kali ini dapat yang merah"). Satu asset
 -- yang selalu sama berhenti diperhatikan setelah beberapa kedatangan.
@@ -850,6 +1392,139 @@ local AURA_VFX_LAMA = 0
 -- tangan, jadi efeknya tidak ikut terayun waktu avatarnya menari.
 local AURA_VFX_BAGIAN = { "HumanoidRootPart", "Torso", "UpperTorso", "Head" }
 
+-- --- LAYAR SINEMATIK UNTUK ROSA (tier 3) ---
+--
+-- Versi ringan dari layar nova: bilah hitam atas-bawah (letterbox) yang
+-- masuk dan keluar selama sorotannya. Dijalankan client (layarSinema di
+-- KameraClientV2); yang dikirim cuma pilihannya.
+--
+-- TIGA pilihan, ganti lewat MODE_ROSA:
+--
+--   "tipis"  A. letterbox SETENGAH tebal nova, tanpa apa pun lagi
+--   "warna"  B. A + layar sedikit lebih hangat dan berpendar
+--   "penuh"  C. letterbox setebal nova + warna + sekejap layar abu-abu
+--               dan buram di tengah sorotan, seperti fase freeze nova
+--   "mati"      tanpa efek layar
+--
+-- Bawaannya "tipis", dan itu bukan selera. Rosa datang dari TIGA jalan
+-- (Rosa, 1.000 tap, tiap 10 Rose dalam satu combo) dengan jeda sorotan
+-- cuma 6 detik. Efek layar yang lebih berat terasa seperti layar yang
+-- gelisah saat live ramai, menutupi overlay TikTok di atas dan bawah, dan
+-- membuat nova (Bouquet, 30 koin) kehilangan satu-satunya hal yang
+-- membedakan layarnya dari Rosa (10 koin). Coba "warna" dan "penuh" di
+-- siaran, lalu pilih yang tidak mengganggu.
+--
+-- TANPA slow-mo, sengaja: tarian semua avatar disamakan terus-menerus di
+-- client, dan satu avatar yang diperlambat akan dilawan penyamaan itu --
+-- hasilnya tarian yang tersendat, bukan gerak lambat.
+--
+-- Satu TABEL, bukan konstanta lepas -- batas 200 variabel lokal, lihat
+-- catatan di PLATE.
+local LAYAR = {}
+
+-- "warna" sejak sorotan Rosa jadi 10 detik: jedanya ikut naik ke 12 detik,
+-- jadi alasan utama "tipis" -- layar yang berkedip tiap beberapa detik --
+-- sudah jauh berkurang.
+LAYAR.MODE_ROSA = "warna"
+
+-- Isi tiap pilihan.
+--
+--   letterbox  tinggi tiap bilah, pecahan tinggi layar. Nova 0,12.
+--   warna      layar sedikit lebih hangat dan berpendar
+--   kilat      kilatan cahaya tepat saat angka auranya MENDARAT -- dia
+--              yang membuat detik mendarat terasa sebagai puncak adegan
+--   garis      garis tepi avatarnya BERDENYUT selama sorotan
+--   beku       sekejap abu-abu + buram di tengah sorotan
+--
+-- Masuk 0,5 detik dan keluar 0,5 detik, lebih cepat dari nova (0,8 +
+-- 0,6): sorotan Rosa cuma 4 detik, dan waktu masuk-keluar nova memakan
+-- sepertiganya.
+LAYAR.PILIHAN = {
+	tipis = { letterbox = 0.06, masuk = 0.6, keluar = 0.6, garis = true },
+	warna = { letterbox = 0.08, masuk = 0.6, keluar = 0.6, garis = true,
+	          warna = true, kilat = true },
+	penuh = { letterbox = 0.12, masuk = 0.6, keluar = 0.6, garis = true,
+	          warna = true, kilat = true, beku = true },
+}
+
+-- --- PANGGUNG ROSA: JALUR KAMERA + LATAR SINEMATIK ---
+--
+-- Rosa punya jalur kamera SENDIRI, seperti nova (NOVA.KAMERA), yang menimpa
+-- kamera sorotan biasa selama adegannya. Dijalankan client (kameraRosa dan
+-- panggungRosa di KameraClientV2); di sini cuma angkanya.
+--
+-- Yang dijual adegan ini PENAMPILAN orangnya -- badan, kulit, pakaian --
+-- jadi kameranya dekat dan memperlihatkannya dari segala sisi:
+--
+--   0,0 - 2,6   DARI BAWAH   kamera rendah dekat lantai memandang kakinya,
+--                            lalu naik dan mendekat sampai setinggi dada
+--   2,6 - 6,0   KELILING     satu putaran penuh di jarak dekat (7 stud) --
+--                            depan, samping, belakang pakaiannya
+--   6,0 - 8,6   POTRET       naik ke wajah, lalu dorong masuk pelan. Angka
+--                            aura berputar di sini dan MENDARAT di 8,5
+--   8,6 - 10,0  LEPAS        meluncur balik ke kamera sorotan biasa
+--
+-- LATAR SINEMATIK selama adegan, semuanya LOKAL di tiap client:
+--
+--   - panggung sekitarnya diredupkan, dan orangnya disiram lampu sorot
+--     dari atas plus cahaya dari belakang yang memisahkan siluetnya
+--   - partikel cahaya melayang pelan di sekitarnya
+--   - avatar tetangga dalam radius `sepi` DISEMBUNYIKAN sementara
+--
+-- Yang terakhir bukan hiasan. Jarak antar-slot cuma 8 stud, dan kamera
+-- yang mengelilingi di jarak 7 stud lewat PERSIS di dalam badan tetangga
+-- kanan-kiri dan belakangnya. Tanpa disembunyikan, separuh putaran yang
+-- terlihat cuma bidang warna dari dalam badan orang lain.
+--
+-- Semua angka jarak dan tinggi dalam STUD, kecuali yang disebut pecahan:
+-- pecahan dihitung terhadap tinggi badan avatarnya sendiri, jadi avatar
+-- pendek dan tinggi sama-sama terbingkai utuh.
+local ROSA = {}
+
+ROSA.JALUR = {
+	-- Lama tiap bidikan, detik. Jumlahnya HARUS muat di sorotan Rosa
+	-- (SPOTLIGHT_MS_TIER3, 10 detik) -- dijaga test_tier.py.
+	naik   = 2.6,
+	orbit  = 3.4,
+	potret = 2.6,
+	lepas  = 1.4,
+	masuk  = 0.4,   -- meluncur dari kamera biasa ke jalur ini
+
+	-- DARI BAWAH
+	naikJauh  = 10,    -- mulai sejauh ini di depannya
+	naikBawah = 0.6,   -- dan serendah ini dari lantai
+	naikBidik = 0.30,  -- memandang setinggi ini (pecahan badan): kaki
+
+	-- KELILING. radius = "jangan terlalu jauh".
+	radius      = 7,
+	tinggiOrbit = 0.55,  -- pecahan badan: setinggi dada
+	bidikOrbit  = 0.55,
+	orbitNaik   = 1.2,   -- naik sedikit di tengah putaran, lalu turun
+	putaran     = 1,     -- BULAT: pulang ke depan tanpa loncatan
+
+	-- POTRET
+	potretJauh   = 9,     -- mundur sedikit supaya papan auranya masuk
+	potretDekat  = 6.5,   -- lalu dorong masuk pelan
+	potretTinggi = 0.80,  -- pecahan badan
+	potretBidik  = 0.8,   -- stud DI ATAS kepalanya: kepala + papan aura
+
+	-- LATAR
+	sepi  = 14,    -- tetangga dalam radius ini disembunyikan
+	redup = 0.7,   -- ExposureCompensation diturunkan sebanyak ini
+}
+
+-- Tiga tema warna latarnya, DIUNDI tiap Rosa -- alasannya sama dengan
+-- NOVA.PALET: dua orang yang sama-sama kirim Rosa harus tampil berbeda.
+-- Triplet RGB: lampu sorot, cahaya belakang, partikel, dan warna layar.
+ROSA.TEMA = {
+	{ nama = "emas", sorot = { 255, 214, 150 }, belakang = { 255, 160, 70 },
+	  partikel = { 255, 226, 160 }, layar = { 255, 236, 214 } },
+	{ nama = "neon", sorot = { 255, 150, 230 }, belakang = { 90, 200, 255 },
+	  partikel = { 210, 160, 255 }, layar = { 246, 226, 255 } },
+	{ nama = "es",   sorot = { 200, 228, 255 }, belakang = { 110, 160, 255 },
+	  partikel = { 225, 242, 255 }, layar = { 226, 238, 255 } },
+}
+
 -- --- KAMERA SINEMATIK ---
 --
 -- Selama sorotan tier 3 dan 4, kamera berhenti mengayun dan MENGORBIT
@@ -889,7 +1564,7 @@ local SINEMA_UP      = 5.5
 -- kepalanya baru kebaca kalau kameranya sedekat ini.
 --
 -- Jangan lebih dekat dari sekitar -8: baris kerumunan berjarak
--- SPACING_Z = 6, jadi kamera yang masuk lebih dekat dari itu berakhir
+-- SPACING_Z = 8, jadi kamera yang masuk lebih dekat dari itu berakhir
 -- DI DALAM badan avatar yang berdiri di depan si fokus.
 local CAMERA_BACK      = -11   -- jarak mundur (negatif = di belakang)
 
@@ -919,6 +1594,43 @@ local CAMERA_UP        = 2.5
 -- Perpindahannya ikut zoom, jadi tidak ada gerakan tambahan yang harus
 -- dijadwalkan: dia naik sambil mundur, dan turun lagi sambil merapat.
 local CAMERA_UP_JAUH   = 7
+
+-- Tinggi kamera saat mundur penuh SELAMA ADA RAKSASA BERDIRI.
+--
+-- Yang dikeluhkan: kepala raksasa tidak terlihat waktu panggung
+-- menjalankan kedatangan biasa -- yang gratisan menari di depan, dan
+-- raksasa di belakang mereka terpotong di tepi atas frame.
+--
+-- Sebabnya SUDUT TUNDUK, bukan jaraknya. Kamera duduk di 7 stud dan
+-- membidik 3,2 stud dari jarak 11 stud, jadi dia menunduk 19 derajat --
+-- dan 19 derajat itu langsung dipotong dari ruang di atas frame. Kepala
+-- raksasa 4x ada di sekitar 20 stud, 29 stud di depan kamera (11 ke
+-- titik fokus + GIANT_Z 18): 29 derajat di atas garis pandang, ditambah
+-- 19 derajat tunduk = 48, jauh di luar setengah-FOV 35.
+--
+-- 3,5 stud membuat tunduknya tinggal 1,6 derajat, dan kepalanya masuk
+-- di 31 derajat -- sisa empat derajat itu jatah topi dan rambut yang
+-- menjulang (sekitar dua stud pada skala 4).
+--
+-- YANG DITUKAR UNTUK ITU, supaya tidak ditemukan sebagai kejutan:
+-- seluruh gunanya CAMERA_UP_JAUH adalah duduk DI ATAS kepala barisan
+-- (sekitar 5,8 stud) supaya baris kedua dan ketiga muncul di atas bahu
+-- baris depannya. Di 3,5 stud kamera berada DI BAWAH garis kepala itu,
+-- jadi barisan belakang kembali bersembunyi di belakang baris depan.
+--
+-- Bidikan kameranya TIDAK ikut dinaikkan, walaupun menaikkannya
+-- meratakan sudut tunduk yang sama tanpa menurunkan kamera sama
+-- sekali. Alasannya: titik bidik yang sama dipakai waktu kamera sedang
+-- MERAPAT, dan di jarak 5 stud selisih tiga stud itu 45 derajat --
+-- kedatangan biasa akan dibidik dari bawah, kakinya jauh di luar tepi
+-- frame. Tinggi kamera aman untuk itu karena dia ikut diskalakan zoom;
+-- titik bidiknya tidak.
+--
+-- Makanya angka ini TIDAK menggantikan CAMERA_UP_JAUH, cuma dipakai
+-- selama ada raksasa. Tanpa raksasa di panggung tidak ada satu pun
+-- frame yang berubah; begitu ada, panggung memang berhenti bercerita
+-- tentang kedalaman barisan dan mulai bercerita tentang dia.
+local CAMERA_UP_JAUH_GIANT = 3.5
 
 -- Setinggi apa kamera MEMANDANG, diukur dari lantai.
 --
@@ -1004,7 +1716,7 @@ local ZOOM_TAHAN = 1.0
 -- gerakan yang justru diminta lebih lambat.
 local ZOOM_KELUAR = 3.2
 
--- Lama mundurnya untuk RAKSASA (tier 4), detik.
+-- Lama mundurnya untuk RAKSASA (tier 5), detik.
 --
 -- Dipisah dari angka di atas: raksasa punya gerakan naik-turun yang
 -- paling besar dari semua tier (naikAmp di KAMERA_TIER), dan mundur
@@ -1019,6 +1731,10 @@ local ZOOM_KELUAR_GIANT = 1.8
 -- "kenapa tier 3 terasa sama seperti tier 2" jadi pertanyaan yang harus
 -- dijawab dengan membaca enam tempat.
 --
+--   masuk   SEDEKAT APA rapatan awalnya, sebagai pecahan jarak penuh.
+--           nil = pakai ZOOM_MASUK (0,45) seperti tier lain. Dinaikkan
+--           cuma oleh tier yang badannya tidak muat di jarak sedekat
+--           itu -- raksasa; lihat [4].
 --   tahan   berapa lama menahan dekat sebelum mundur, detik
 --   keluar  lama mundurnya, detik
 --   maks    MUNDUR SAMPAI SEJAUH APA, sebagai pecahan jarak penuh.
@@ -1042,7 +1758,14 @@ local ZOOM_KELUAR_GIANT = 1.8
 --   roll    lama putaran angka auranya, detik. Biasanya AURA_ROLL;
 --           tier yang sorotannya pendek memakai yang lebih pendek,
 --           supaya angkanya MENDARAT sebelum kameranya pergi. Uji di
---           test_tier.py menjaga tunda + roll <= lama sorotan.
+--           test_tier.py menjaga auraMulai + tunda + roll <= lama
+--           sorotan.
+--   auraMulai  berapa detik SERVER menahan pesan aura sebelum dikirim.
+--           Beda dari `tunda`: tunda menahan putaran angkanya, tapi
+--           papannya sendiri langsung muncul. Ini menahan papannya
+--           juga -- dipakai nova, yang avatar aslinya (beserta papan
+--           apa pun yang menempel padanya) disembunyikan client selama
+--           adegannya berlangsung. nil = 0.
 --
 -- --- DENYUT ZOOM (masuk, mundur, MASUK LAGI) ---
 --
@@ -1051,7 +1774,8 @@ local ZOOM_KELUAR_GIANT = 1.8
 -- adegan, jadi bentuknya jadi masuk -> mundur -> masuk lagi -> mundur.
 --
 --   denyutDalam  seberapa dalam rapatan itu, pecahan jarak saat itu.
---                0 = tidak ada denyut sama sekali (tier selain 3).
+--                0 = tidak ada denyut sama sekali (semua tier sekarang;
+--                mesinnya dibiarkan untuk dicoba lagi).
 --                0.35 = merapat sampai 35% lebih dekat dari jaraknya.
 --                Batas atasnya: maks x (1 - denyutDalam) tidak boleh
 --                lebih kecil dari ZOOM_MASUK, kalau tidak rapatannya
@@ -1080,102 +1804,223 @@ local ZOOM_KELUAR_GIANT = 1.8
 -- samping (90 derajat). Di 26 derajat wajah dan papan auranya masih
 -- menghadap kamera sepenuhnya.
 --
--- Yang membedakan tier 2 dan 3 sekarang BENTUK gerakannya, bukan lagi
--- seberapa jauh dia berputar:
---   tier 2  +/-16 derajat, satu sapuan, satu gundukan naik, zoom
---           masuk-keluar sekali -> tenang, cukup untuk 3 detik
---   tier 3  +/-26 derajat, 1,5 sapuan, DUA gundukan (naik lalu turun),
---           dan zoom yang MASUK LAGI di paruh kedua -> keempat arah
---           terpakai (kiri, kanan, atas, bawah) plus satu rapatan
---           kedua, dan itu yang membuat 10 koin terasa beda dari 1 koin
---           tanpa perlu satu detik pun lebih lama
+-- Yang membedakan tier sekarang BENTUK adegannya, bukan lamanya:
+--   tier 2  Rose: paling tenang, 3 detik, seperempat sapuan kecil
+--   tier 3  Rosa: kamera PELAN, mundur panjang, setengah sapuan, satu gundukan
+--   tier 4  selama nova (10 detik pertama) kamera dikemudikan TierNova
+--           lewat callback client -- FOV, getaran, dan bidikan yang naik
+--           mengikuti badannya; tabel di bawah cuma mengatur sorotan
+--           tarian 3 detik sesudah adegannya selesai
+--   tier 5  mundur penuh, naik-turun paling jauh
+-- --- MUNCUL UTUH, BUKAN BERTAHAP ---
+--
+-- Masalahnya: avatar datang POLOS dulu, beberapa detik kemudian
+-- rambutnya muncul, lalu bajunya. Terlihat seperti avatarnya rusak.
+--
+-- Sebabnya bukan di kode ini. CreateHumanoidModelFromDescription
+-- membuat rig-nya seketika, tapi isinya cuma RUJUKAN -- MeshId rambut,
+-- TextureId baju. File-nya sendiri baru diunduh dari CDN Roblox oleh
+-- TIAP PENONTON, saat modelnya sudah kelihatan di layar mereka. Jadi
+-- urutan yang terlihat itu urutan kedatangan file-nya.
+--
+-- Karena unduhannya terjadi di client, obatnya juga harus di client:
+-- dia menyembunyikan avatar yang baru datang, menunggu asetnya siap
+-- (ContentProvider:PreloadAsync), lalu memunculkannya utuh.
+--
+-- BATAS WAKTUNYA SENGAJA PENDEK. Ini pertukaran langsung: makin lama
+-- menunggu makin kecil peluang masih ada yang belum siap, tapi
+-- avatarnya juga makin telat muncul -- dan sorotan tier 2 cuma 3 detik.
+-- 0,6 detik menangkap sebagian besar aset yang sudah ada di cache atau
+-- dekat, tanpa memakan porsi sorotan yang terasa.
+--
+-- Yang lewat dari batas ini tetap dimunculkan, apa adanya. Menunggu
+-- sampai benar-benar siap berarti satu aset yang gagal diunduh bikin
+-- avatarnya TIDAK PERNAH muncul -- jauh lebih buruk daripada popping.
+-- --- KARAKTER PENONTON DISEMBUNYIKAN ---
+--
+-- Siaran ini direkam dengan MASUK ke room-nya lalu meng-capture layar.
+-- Masalahnya: begitu masuk, Roblox men-spawn avatar KAMU di panggung --
+-- dan avatar itu ikut terekam, berdiri di tengah kerumunan dengan nama
+-- di atas kepalanya. Kameranya scriptable jadi dia tidak selalu di
+-- tengah frame, tapi dia ADA, dan penonton TikTok tidak punya cara tahu
+-- kenapa ada satu orang yang tidak pernah menari.
+--
+-- Yang dikerjakan client (lihat sembunyikanPenonton di
+-- KameraClientV2), dan SEMUANYA lokal -- tidak ada satu pun yang
+-- mengubah apa yang dilihat orang lain:
+--
+--   1. seluruh badannya ditembuskan (LocalTransparencyModifier)
+--   2. BAYANGANNYA dimatikan. Ini yang paling gampang terlewat: part
+--      yang ditembuskan secara lokal TETAP menjatuhkan bayangan, dan
+--      bayangan orang yang tidak ada di lantai panggung justru lebih
+--      aneh daripada orangnya sendiri
+--   3. nama dan health bar bawaannya dimatikan
+--   4. badannya di-anchor lalu CanCollide dimatikan -- urutannya
+--      begitu, bukan sebaliknya: CanCollide yang dimatikan duluan bikin
+--      dia jatuh menembus lantai sampai FallenPartsDestroyHeight, lalu
+--      Roblox men-spawn-nya lagi, dan begitu terus
+--   5. aksesori yang baru diunduh belakangan (rambut, topi berpartikel)
+--      ikut disembunyikan, dan semuanya dipasang ulang tiap respawn
+--
+-- Berlaku untuk SIAPA PUN yang masuk, bukan cuma kamu: penonton yang
+-- iseng join juga tidak boleh muncul di siaran.
+local SEMBUNYI_PENONTON = true
+
+local SPAWN_SIAP      = true
+local SPAWN_SIAP_MAKS = 0.6
+
+-- PRA-MUAT: model avatar dikirim ke semua penonton SELAGI TERSEMBUNYI
+-- (ReplicatedStorage) selama ini, detik, baru dipindah ke panggung.
+--
+-- Masalah yang ditutup: "kakinya tidak ada" atau "rambutnya telat
+-- muncul". File mesh dan teksturnya diunduh TIAP PENONTON dari CDN
+-- Roblox, dan unduhan itu baru mulai saat modelnya sampai. Client
+-- menahan avatarnya paling lama SPAWN_SIAP_MAKS (0,6 detik) -- avatar
+-- yang asetnya belum pernah dimuat tidak sempat, dan muncul bolong.
+--
+-- Kenapa bukan SPAWN_SIAP_MAKS saja yang dinaikkan: angka itu dipakai
+-- SESUDAH avatarnya tercatat di panggung. Pesan kamera, papan aura, dan
+-- jadwal gempa nova sudah terkirim -- menahan badannya lebih lama berarti
+-- angka aura berputar di atas badan yang belum terlihat, dan barisan
+-- tersapu gempa sebelum nova-nya menghantam tanah.
+--
+-- Dengan pra-muat, tunggunya dipindah ke SEBELUM semua itu: tidak ada satu
+-- pun pesan yang dikirim sampai modelnya masuk panggung, jadi seluruh
+-- jadwal di belakangnya tetap sama persis -- cuma bergeser bersama.
+-- Harganya: tiap avatar muncul sekian detik lebih lambat dari sebelumnya.
+--
+-- ReplicatedStorage direplikasi utuh ke semua client, streaming menyala
+-- atau tidak. 0 = matikan pra-muat.
+local SPAWN_PRAMUAT_S = 1.5
+local SPAWN_SIAP_FADE = 0.12
+
+-- Ditaruh di ATAS KAMERA_TIER, bukan di dekat kode spawn yang memakainya:
+-- auraMulai tier 4 (nova) di bawah menjumlahkannya (nova baru mulai sesudah
+-- client selesai menunggu aset), dan Lua membaca file ini dari atas ke
+-- bawah -- konstanta yang dideklarasikan sesudah tabelnya nil di dalam
+-- tabel itu, tanpa satu pun error yang memberitahu.
+
 local KAMERA_TIER = {
 	-- Tier 1 tidak punya adegan: dia cuma dapat zoom masuk-keluar biasa
 	-- dan mundur sampai jarak penuh. Busurnya 0 -- ayunan panggung yang
 	-- biasa sudah menggerakkan gambarnya.
 	[1] = { tahan = 1.0, keluar = ZOOM_KELUAR,       maks = 1.00,
-	        arcDeg = 0,  arcPutar = 0,   naikAmp = 0,   naikPutar = 1,
-	        tunda = 1.2, roll = AURA_ROLL,
-	        denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
+		arcDeg = 0,  arcPutar = 0,   naikAmp = 0,   naikPutar = 1,
+		tunda = 1.2, roll = AURA_ROLL,
+		denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
 
-	-- Sorotan tier 2 cuma 3,0 detik sekarang, dan itu yang memaksa DUA
-	-- angka di baris ini, bukan selera:
+	-- Tier 2 (Rose): 3 detik, dan kameranya yang PALING tenang dari semua
+	-- yang berbayar. Dia yang paling sering datang, jadi gerakan yang
+	-- bagus sekali pun jadi melelahkan kalau diulang tiap beberapa detik.
 	--
-	--   tunda 0,5  papan auranya baru masuk frame sesudah kamera mulai
-	--              mundur (tahan 0,5 + keluar 1,5). Lebih pendek dari
-	--              ini dan putarannya jalan selagi papannya masih di
-	--              luar frame atas.
-	--   roll 2,4   0,5 + 2,4 = 2,9 -- angkanya mendarat 0,1 detik
-	--              sebelum kameranya pergi. Dengan AURA_ROLL penuh (3,0)
-	--              jumlahnya 3,5 dan hentakan mendaratnya jatuh DI LUAR
-	--              sorotannya sendiri: momen yang dibayar orangnya
-	--              terjadi waktu kamera sudah pindah. Dijaga uji di
-	--              test_tier.py.
+	--   0,0 - 0,5  menahan dekat
+	--   0,5 - 2,0  mundur sampai 75% jarak
+	--   sepanjang  seperempat sapuan +/-10 derajat, gundukan kecil 0,8 stud
+	--
+	-- tunda 0,5 + roll 2,2 = 2,7: angkanya mendarat sebelum sorotan 3
+	-- detik habis (dijaga test_tier.py).
 	[2] = { tahan = 0.5, keluar = 1.5,               maks = 0.75,
-	        arcDeg = 16, arcPutar = 1.0, naikAmp = 1.5, naikPutar = 1,
-	        tunda = 0.5, roll = 2.4,
-	        denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
+		arcDeg = 10, arcPutar = 0.5, naikAmp = 0.8, naikPutar = 1,
+		tunda = 0.5, roll = 2.2,
+		denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
 
-	-- Tier 3: SATU-SATUNYA yang kameranya berdenyut.
+	-- Tier 3 (Rosa, aura): ADEGAN SINEMATIK 10 detik dengan JALUR KAMERA
+	-- SENDIRI -- dari bawah, mengelilingi dekat, potret. Lihat ROSA.JALUR.
 	--
-	-- Urutan yang terjadi dalam 5 detik, dan kenapa angkanya begitu:
+	-- Selama adegannya kamera dikemudikan jalur itu, jadi angka zoom,
+	-- busur, dan naik-turun di baris ini cuma CADANGAN (dipakai kalau
+	-- client versi lama tidak mengenal jalurnya) dan lapisan di bawah yang
+	-- dituju jalur itu waktu dia melepaskan kamera.
 	--
-	--   0,0 - 0,6  menahan dekat (tahan)
-	--   0,6 - 2,0  mundur sampai 70% jarak (keluar 1,4)
-	--   2,1 - 5,0  DENYUT: merapat 35% lagi, puncaknya di ~3,5 detik,
-	--              lalu mundur kembali (denyutMulai 0.42 x 5,0 = 2,1)
+	-- Angka auranya ditunda ke bidikan POTRET: tunda 6,0 + roll 2,5 =
+	-- mendarat di 8,5, saat kamera memandang wajah dan papannya. Selama
+	-- bidikan dari bawah dan keliling, papan itu keluar-masuk frame -- dan
+	-- putaran yang tidak terlihat sama saja dengan tidak diundi.
 	--
-	-- Kenapa 35% dan bukan 40%: 0,70 x (1 - 0,35) = 0,455, tepat di
-	-- luar ZOOM_MASUK (0,45). Jadi rapatan keduanya sedekat waktu dia
-	-- DATANG, tidak pernah lebih. Di 40% angkanya jadi 0,42 -- lebih
-	-- dekat daripada jarak masuk, dan client memotongnya di DENYUT_MIN;
-	-- yang terlihat gerakan yang berhenti mendadak di tengah rapatan.
-	-- Dijaga uji di test_tier.py.
-	--
-	-- Bersamaan dengan itu, sepanjang adegan:
-	--   kiri-kanan  busur +/-26 derajat, 1,5 sapuan -- kanan, kiri,
-	--               pulang ke depan
-	--   atas-bawah  naikAmp 3,0 dengan naikPutar 2 -- naik di paruh
-	--               pertama, TURUN di paruh kedua, pulang ke tinggi
-	--               biasa di akhir
-	--
-	-- Turunnya sengaja jatuh bersamaan dengan rapatan kedua: kamera
-	-- rendah dan dekat berarti memandang orangnya dari sedikit bawah,
-	-- dan itu sudut yang membuat badan biasa terlihat paling besar.
-	-- Keempat arah terpakai, dan bidikannya tidak pernah lepas dari
-	-- avatarnya.
-	--
-	-- denyutMulai 0,42 dan bukan lebih kecil: zoom dasarnya baru
-	-- selesai mundur di detik 2,0 (u = 0,40). Denyut yang mulai
-	-- sebelum itu mendorong ke arah yang berlawanan dengan mundurnya,
-	-- dan yang terlihat cuma kamera yang ragu-ragu -- bukan dua
-	-- gerakan.
-	--
-	-- tunda 1,8 + roll 3,0 = 4,8: angkanya mendarat di detik 4,8, waktu
-	-- denyutnya sudah hampir pulang ke jarak penuh -- jadi papan auranya
-	-- ada di dalam frame tepat pada detik yang paling ditonton.
-	[3] = { tahan = 0.6, keluar = 1.4,               maks = 0.70,
-	        arcDeg = 26, arcPutar = 1.5, naikAmp = 3.0, naikPutar = 2,
-	        tunda = 1.8, roll = AURA_ROLL,
-	        denyutDalam = 0.35, denyutMulai = 0.42, denyutUlang = 1 },
+	-- Tanpa denyut zoom lagi (denyutDalam 0): dorongan masuk sekarang
+	-- bagian dari jalurnya sendiri, dan dua dorongan yang bertumpuk
+	-- terbaca sebagai kamera yang tidak yakin ke mana dia menuju.
+	[3] = { tahan = 1.0, keluar = 2.5,               maks = 0.80,
+		arcDeg = 24, arcPutar = 1.5, naikAmp = 3.0, naikPutar = 2,
+		tunda = 6.0, roll = 2.5,
+		jalur = ROSA.JALUR,
+		-- Letterbox dan kawan-kawannya. nil kalau MODE_ROSA "mati" atau
+		-- salah ketik -- dan salah ketik diperingatkan saat server mulai.
+		layar = LAYAR.PILIHAN[LAYAR.MODE_ROSA],
+		denyutDalam = 0, denyutMulai = 0.55, denyutUlang = 1 },
 
-	-- Raksasa mundur sampai JARAK PENUH walau yang lain tidak: badan 4x
-	-- tidak muat di 70%, dan yang dia jual justru ukurannya.
+	-- Tier 4 (Bouquet, nova). Selama adegannya (10 detik) kameranya dipegang
+	-- TierNova di client, jadi angka di sini baru TERLIHAT sesudah
+	-- adegannya selesai: sorotan tarian 3 detik terakhir.
 	--
-	-- naikAmp-nya paling besar, dan itu justru gerakan yang paling masuk
-	-- akal untuk dia: badan setinggi empat orang dibaca dari kaki ke
-	-- kepala, jadi kamera yang naik-turun memperlihatkan ukurannya jauh
-	-- lebih baik daripada kamera yang bergeser ke samping.
+	-- maks 0,75 dan busur kecil: dia sedang menari, dan kamera yang ikut
+	-- menyapu lebar di atas tarian cuma jadi dua gerakan yang bertabrakan.
 	--
-	-- TANPA denyut, dan itu disengaja. Merapat ke badan 4x berarti
-	-- kameranya berakhir di dalam tulang keringnya: yang terlihat bukan
-	-- "dekat", tapi satu bidang warna. Yang menjual tier 4 ukurannya,
-	-- dan ukuran cuma terbaca dari jarak yang cukup untuk memuat
-	-- seluruh badannya.
-	[4] = { tahan = 0.8, keluar = ZOOM_KELUAR_GIANT, maks = 1.00,
-	        arcDeg = 20, arcPutar = 1.0, naikAmp = 5.0, naikPutar = 1,
-	        tunda = 0,   roll = AURA_ROLL,
-	        denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
+	-- auraMulai = tunggu aset + novaTotal() + napas. Ini BUKAN selera,
+	-- ini syarat: selama nova, client menyembunyikan avatar ASLINYA
+	-- beserta semua BillboardGui yang menempel padanya (KELAS_MATIKAN).
+	-- Papan aura yang dikirim lebih cepat dari ini dibuat, lalu ikut
+	-- dimatikan -- dan putaran angkanya, tiga detik yang paling ditonton,
+	-- habis selagi papannya belum kelihatan.
+	--
+	-- SPAWN_SIAP_MAKS ikut dijumlah karena adegannya baru MULAI sesudah
+	-- client selesai menunggu aset avatarnya: hitungan yang lupa itu
+	-- meleset setengah detik, dan setengah detik itu persis lebar
+	-- lubangnya.
+	--
+	-- 0,6 + 10,3 + 0,1 = 11,0; + tunda 0,1 + roll 2,4 = 13,5, masih di
+	-- dalam sorotan 15 detik (dijaga test_tier.py, yang juga mengunci
+	-- auraMulai >= tunggu aset + novaTotal()).
+	--
+	-- bunyiSaatNova: bunyi kedatangannya dibunyikan client saat dia
+	-- MEMBANTING DIRI ke tanah, bukan saat avatarnya dibuat.
+	[4] = { tahan = 0.3, keluar = 1.2,               maks = 0.75,
+		arcDeg = 12, arcPutar = 1.0, naikAmp = 1.0, naikPutar = 1,
+		tunda = 0.1, roll = 2.4,
+		auraMulai = SPAWN_SIAP_MAKS + novaTotal() + 0.1,
+		bunyiSaatNova = true,
+		denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
+
+	-- Raksasa mundur sampai JARAK PENUH: badan 4x tidak muat di 70%, dan
+	-- yang dia jual justru ukurannya.
+	--
+	-- naikAmp-nya paling besar: badan setinggi empat orang dibaca dari
+	-- kaki ke kepala, jadi kamera yang naik-turun memperlihatkan ukurannya
+	-- jauh lebih baik daripada kamera yang bergeser ke samping.
+	--
+	-- TANPA denyut: merapat ke badan 4x berarti kameranya berakhir di
+	-- dalam tulang keringnya -- yang terlihat cuma satu bidang warna.
+	--
+	-- masuk 0,75 (bukan 0,45 seperti yang lain): pada 45% jarak, badan
+	-- 14x mengisi 62 derajat dari 70 derajat FOV -- pas-pasan, dan cuma
+	-- pas selama kamera membidik setinggi ubun-ubunnya. Begitu bidikannya
+	-- diturunkan ke dada supaya barisannya ikut terlihat
+	-- (GIANT_FOKUS_TINGGI), sisa 8 derajat itu habis dan yang terpotong
+	-- kepalanya.
+	--
+	-- 0,65 -> 0,75 waktu kameranya diturunkan ke bawah garis mata
+	-- (GIANT_KAMERA_TINGGI). Kamera yang lebih rendah harus MEMANDANG
+	-- LEBIH KE ATAS untuk memuat kepalanya, dan sudut itu diambil dari
+	-- jatah yang sama yang dipakai barisan di tepi bawah. Berhenti
+	-- sedikit lebih jauh mengembalikan jatahnya: margin tersempit di
+	-- detik dia paling dekat justru naik dari 3,9 ke 5,6 derajat.
+	--
+	-- masuk 0,75 -> 0,95, dan tunda 0 -> 0,8.
+	--
+	-- Yang pertama melanjutkan apa yang dikerjakan GIANT_KAMERA_JAUH di
+	-- atas: rapatannya praktis dibuang. Raksasa tidak butuh rapatan --
+	-- badannya sudah mengisi frame di jarak penuh, dan setiap persen
+	-- yang dia merapat langsung dibayar dengan kepalanya.
+	--
+	-- Yang kedua akibat papannya sekarang berisi ANGKA: tunda 0 dulu
+	-- benar karena tidak ada yang berputar, cuma nama. Sekarang
+	-- putarannya harus menunggu kameranya cukup mundur, sama seperti
+	-- tier lain. 0,8 + roll 3,0 = 3,8, masih separuh dari sorotan 7
+	-- detik (dijaga test_tier.py).
+	[5] = { masuk = 0.95, tahan = 0.8, keluar = ZOOM_KELUAR_GIANT, maks = 1.00,
+		arcDeg = 20, arcPutar = 1.0, naikAmp = 5.0, naikPutar = 1,
+		tunda = 0.8, roll = AURA_ROLL,
+		denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
 }
 
 -- KENAPA putaran angka aura DITUNDA.
@@ -1211,34 +2056,6 @@ end
 -- memakai sudutBias yang sudah ada -- angka yang sama yang dipakai
 -- orbit untuk mengambil alih ayunan tanpa satu pun frame yang lompat.
 local SPAWN_LURUS = true
-
--- --- MUNCUL UTUH, BUKAN BERTAHAP ---
---
--- Masalahnya: avatar datang POLOS dulu, beberapa detik kemudian
--- rambutnya muncul, lalu bajunya. Terlihat seperti avatarnya rusak.
---
--- Sebabnya bukan di kode ini. CreateHumanoidModelFromDescription
--- membuat rig-nya seketika, tapi isinya cuma RUJUKAN -- MeshId rambut,
--- TextureId baju. File-nya sendiri baru diunduh dari CDN Roblox oleh
--- TIAP PENONTON, saat modelnya sudah kelihatan di layar mereka. Jadi
--- urutan yang terlihat itu urutan kedatangan file-nya.
---
--- Karena unduhannya terjadi di client, obatnya juga harus di client:
--- dia menyembunyikan avatar yang baru datang, menunggu asetnya siap
--- (ContentProvider:PreloadAsync), lalu memunculkannya utuh.
---
--- BATAS WAKTUNYA SENGAJA PENDEK. Ini pertukaran langsung: makin lama
--- menunggu makin kecil peluang masih ada yang belum siap, tapi
--- avatarnya juga makin telat muncul -- dan sorotan tier 2 cuma 3 detik.
--- 0,6 detik menangkap sebagian besar aset yang sudah ada di cache atau
--- dekat, tanpa memakan porsi sorotan yang terasa.
---
--- Yang lewat dari batas ini tetap dimunculkan, apa adanya. Menunggu
--- sampai benar-benar siap berarti satu aset yang gagal diunduh bikin
--- avatarnya TIDAK PERNAH muncul -- jauh lebih buruk daripada popping.
-local SPAWN_SIAP      = true
-local SPAWN_SIAP_MAKS = 0.6
-local SPAWN_SIAP_FADE = 0.12
 
 -- ============ MUSIK + TARIAN ============
 --
@@ -1461,10 +2278,20 @@ local V2Config = ReplicatedStorage:FindFirstChild("V2Config")
 V2Config.Name   = "V2Config"
 V2Config.Parent = ReplicatedStorage
 
+-- Tempat avatar menunggu selagi asetnya diunduh penonton. Lihat
+-- SPAWN_PRAMUAT_S. Namanya dibaca client (KameraClientV2).
+local folderPramuat = ReplicatedStorage:FindFirstChild("AvatarPramuat")
+	or Instance.new("Folder")
+folderPramuat.Name   = "AvatarPramuat"
+folderPramuat.Parent = ReplicatedStorage
+
 local avatars   = {}   -- slot -> model
 local tracks    = {}   -- slot -> AnimationTrack
 local slotCount = 0
 local resetting = false
+-- Naik tiap kali barisan dikosongkan (resetStage, gempa nova). Lihat
+-- pemakaiannya di spawnAvatar.
+local barisanGen = 0
 
 -- Garis tepi yang sedang hidup, urut dari yang paling tua. Roblox cuma
 -- menggambar sekitar 31 Highlight sekaligus, jadi daftar ini yang
@@ -1484,6 +2311,36 @@ local laguSound = nil
 -- berdiri di tempat yang seharusnya kosong. Cuma ada satu pada satu
 -- waktu, jadi satu nomor cukup.
 local SLOT_RAKSASA = 9999
+
+-- Nomor slot avatar nova SELAMA adegannya.
+--
+-- Dia memegang nomor ini sejak detik pertama, bukan mulai dari
+-- ledakannya. Itu perubahan yang disengaja, dan ini sebabnya: selama
+-- sepuluh detik adegannya, kedatangan gratisan terus mengisi barisan.
+-- Waktu nova masih memegang slot barisan biasa, barisan yang kebetulan
+-- penuh di detik-detik itu memanggil resetStage -- dan resetStage
+-- menghapus avatarnya di tengah adegan. AncestryChanged di client
+-- membatalkan seluruh novanya, jadi yang tersisa cuma kamera yang
+-- mengorbit panggung kosong. Itu persis "novanya kadang tidak muncul,
+-- cuma kameranya yang bergerak".
+--
+-- Nomor ini di luar 1..slotCount, jadi tidak ada satu pun gelung
+-- barisan -- resetStage maupun gempaBarisan -- yang bisa menyentuhnya.
+--
+-- Yang tetap diambil dari barisan cuma TEMPATnya: slotCount ikut naik
+-- seperti kedatangan biasa, supaya orang berikutnya tidak berdiri
+-- menembus badannya selagi dia mengisi tenaga. Slot itu kosong di tabel
+-- `avatars`, dan memang tidak ada yang perlu berdiri di sana.
+--
+-- Perginya nomor ini juga cuma satu detik: saat dia menghantam tanah,
+-- barisannya disapu gempa dan dia PINDAH ke slot 1 (novaKeBarisan) --
+-- jadi sesudah adegannya dia berdiri sebagai orang pertama di barisan
+-- yang baru, bukan dihapus. Lihat catatan di novaKeBarisan.
+local SLOT_NOVA = 9998
+
+-- Slot yang ditempati avatar nova sesudah mendarat: paling depan,
+-- paling dekat kamera, dan sesudah gempa memang satu-satunya yang ada.
+local SLOT_NOVA_MENDARAT = 1
 
 local function getPosition(slot)
 	if slot == SLOT_RAKSASA then
@@ -1926,17 +2783,18 @@ local function muatAuraVfx(id, redam)
 	return kotak
 end
 
--- Siapa yang dapat aura di badan: TEPAT tier 3. Lihat AURA_VFX_TIER.
+-- Siapa yang dapat aura di badan: tier AURA_VFX_TIER sampai
+-- AURA_VFX_TIER_MAKS. Lihat catatan di sana.
 local function layakAuraVfx(tier)
 	if not AURA_VFX_ENABLED then return false end
-	return tier == AURA_VFX_TIER
+	return tier >= AURA_VFX_TIER and tier <= AURA_VFX_TIER_MAKS
 end
 
 -- Satu aura acak yang BERHASIL dimuat, beserta namanya.
 --
 -- Kalau yang keundi ternyata gagal diambil, dicoba yang lain -- bukan
 -- langsung menyerah. Satu asset yang dihapus atau di-private tidak boleh
--- membuat sepertiga kedatangan tier 3 kehilangan auranya, dan mulai dari
+-- membuat sepertiga kedatangan tier 2 kehilangan auranya, dan mulai dari
 -- titik acak menjaga pilihannya tetap rata saat semuanya sehat.
 local function pilihAuraVfx()
 	local n = #AURA_VFX_IDS
@@ -1954,7 +2812,7 @@ end
 -- Mengembalikan NAMA auranya kalau terpasang, atau nil kalau tidak.
 -- Namanya dipakai log di spawnAvatar: "dapat aura" tanpa menyebut yang
 -- mana tidak bisa menjawab "kenapa yang merah tidak pernah keluar".
-local function pasangAuraVfx(model, tier)
+local function pasangAuraVfx(model, tier, skala)
 	if not layakAuraVfx(tier) then return nil end
 	local asli, nama = pilihAuraVfx()
 	if not asli then return nil end
@@ -1984,6 +2842,25 @@ local function pasangAuraVfx(model, tier)
 		-- aslinya dibuang: dua emitter dari asset yang sama sering
 		-- bernama sama persis, dan yang dicari nanti tandanya.
 		k.Name   = AURA_VFX_TANDA
+
+		-- Badan yang diperbesar (raksasa) dapat partikel yang ikut
+		-- diperbesar. Ukuran, kecepatan, dan jangkauan lampu -- tiga-
+		-- tiganya harus ikut, kalau tidak partikel besar yang tetap
+		-- lambat terlihat seperti mengambang di tempat.
+		local f = tonumber(skala) or 1
+		if f > 1 then
+			if k:IsA("ParticleEmitter") then
+				pcall(function() k.Size = skalaSeq(k.Size, f) end)
+				pcall(function()
+					k.Speed = NumberRange.new(k.Speed.Min * f, k.Speed.Max * f)
+				end)
+			elseif k:IsA("Light") then
+				pcall(function() k.Range = k.Range * f end)
+			elseif k:IsA("Fire") or k:IsA("Smoke") then
+				pcall(function() k.Size = k.Size * f end)
+			end
+		end
+
 		k.Parent = bagian
 		dipasang += 1
 	end
@@ -2008,15 +2885,25 @@ end
 local function hitungAura(tier)
 	local bawah = AURA_MIN
 
-	-- Yang naik cuma LANTAINYA; langit-langitnya tetap AURA_MAX untuk
-	-- semua orang. Jadi yang bayar tidak pernah dapat angka memalukan,
-	-- tapi juga tidak dijamin menang -- yang gratisan masih bisa
-	-- mengalahkan dia, dan justru itu yang bikin panggungnya seru.
+	-- Untuk yang IKUT DIUNDI, yang naik cuma LANTAINYA -- langit-
+	-- langitnya tetap AURA_MAX. Jadi yang bayar tidak pernah dapat angka
+	-- memalukan, tapi juga tidak dijamin menang: yang gratisan masih
+	-- bisa mengalahkan dia, dan justru itu yang bikin panggungnya seru.
+	--
+	-- Raksasa satu-satunya yang TIDAK ikut diundi sama sekali (lihat
+	-- cabang pertama di bawah). Dia keluar dari kalimat di atas dengan
+	-- sengaja, bukan lolos dari situ -- alasannya di AURA_RAKSASA.
+	--
 	-- Dibaca dari tier TERTINGGI ke terendah. Dibalik, tier 4 akan
-	-- berhenti di cabang tier 3 yang juga cocok dan lantai tertingginya
+	-- berhenti di cabang tier 2 yang juga cocok dan angkanya sendiri
 	-- tidak pernah terpakai.
 	if TIER_ENABLED and tier then
-		if tier >= 4 then
+		if tier >= GIANT_MIN_TIER then
+			-- Keluar lebih awal: raksasa diundi di rentangnya sendiri,
+			-- tidak dijepit AURA_MAX, tidak dipengaruhi apa pun di
+			-- bawah. Lihat AURA_RAKSASA.
+			return math.random(AURA_RAKSASA_MIN, AURA_RAKSASA)
+		elseif tier >= 4 then
 			bawah = math.max(bawah, AURA_LANTAI_T4)
 		elseif tier >= 3 then
 			bawah = math.max(bawah, AURA_LANTAI_T3)
@@ -2056,17 +2943,31 @@ local function tampilkanAura(model, nama, persen, slot, tier)
 		-- tidak berputar selagi papannya masih di luar frame atas.
 		-- Alasan panjangnya ada di atas KAMERA_TIER.
 		tunda  = kameraTier(tier).tunda,
-		-- Papan raksasa cuma menampilkan USERNAME -- tanpa angka, tanpa
-		-- kata AURA.
+		-- CATATAN: papan raksasa dulu CUMA berisi username -- tanpa
+		-- angka, tanpa kata AURA (`namaSaja`). Alasannya: papan tiga
+		-- baris di atas kepala setinggi belasan stud jadi papan reklame
+		-- yang menyaingi badannya sendiri, dan yang menjual raksasa
+		-- ukurannya.
 		--
-		-- Angkanya tetap diundi dan tetap masuk log (berguna buat yang
-		-- menjaga siaran), yang dilewati cuma tampilannya. Alasannya
-		-- sama dengan kenapa raksasa tidak dapat border: yang membuat
-		-- tier 3 terbaca UKURAN badannya, dan papan tiga baris di atas
-		-- kepala setinggi belasan stud jadi papan reklame yang
-		-- menyaingi badannya sendiri. Satu baris nama sudah cukup untuk
-		-- menjawab "itu siapa".
-		namaSaja = (slot == SLOT_RAKSASA) or nil,
+		-- DIBALIK atas permintaan, dan sekarang justru dia yang paling
+		-- butuh papannya: angkanya 10.000% (AURA_RAKSASA), satu-satunya
+		-- angka di panggung yang tidak bisa dicapai siapa pun dengan
+		-- cara lain. Menyembunyikannya berarti yang bayar paling mahal
+		-- adalah satu-satunya yang angkanya tidak pernah terlihat --
+		-- dan putaran angka itu justru bagian yang ditonton.
+		--
+		-- Yang tetap berlaku cuma `tetap` di bawah: dia berdiri di luar
+		-- barisan, jadi pembukuan baris tidak menyentuhnya.
+
+		-- Penanda untuk bunyi mendaratnya yang eksklusif. Dikirim
+		-- sebagai penanda, bukan disimpulkan client dari besarnya
+		-- angka: "siapa yang raksasa" sudah punya satu jawaban di file
+		-- ini (adalahRaksasa), dan ambang angka di client akan jadi
+		-- jawaban kedua yang diam-diam bisa tidak sepakat.
+		raksasa = (slot == SLOT_RAKSASA) or nil,
+		-- Sesudah putarannya mendarat dan sempat dibaca selama ini, papan
+		-- raksasa dirapikan jadi NAMA SAJA. Lihat AURA_RAKSASA_NAMA_S.
+		namaSesudah = (slot == SLOT_RAKSASA) and AURA_RAKSASA_NAMA_S or nil,
 
 		-- Papan raksasa tidak ikut aturan "hanya baris depan".
 		--
@@ -2087,12 +2988,12 @@ end
 -- ============ TIER: BORDER, AKSESORI, MELAYANG ============
 
 local function warnaTier(tier)
-	if tier >= 3 then return BORDER_T3_WARNA end
+	if tier >= NOVA.TIER then return BORDER_T3_WARNA end
 	return BORDER_T2_WARNA
 end
 
 local function umurBorder(tier)
-	if tier >= 3 then return BORDER_T3_UMUR end
+	if tier >= NOVA.TIER then return BORDER_T3_UMUR end
 	return BORDER_T2_UMUR
 end
 
@@ -2148,7 +3049,7 @@ local function pasangBorder(model, slot, tier, kakiY, skala)
 	-- sekali.
 	local d = BORDER_CAKRAM_D * (skala or 1)
 
-	if BORDER_GARIS then
+	if BORDER_GARIS and tier >= BORDER_GARIS_MIN_TIER then
 		-- Yang paling tua dilepas duluan waktu penuh. Tanpa ini, yang
 		-- KE-32 dan seterusnya cuma tidak digambar -- dan yang hilang
 		-- justru border baru, milik orang yang barusan bayar.
@@ -2237,6 +3138,25 @@ end
 -- terlihat halus -- tapi itu jalur khusus yang sama yang membuat
 -- raksasa bisa tersangkut di bawah tanah, dan satu detik kehalusan
 -- tidak sebanding dengan itu.
+-- Hapus avatar nova yang tersisa sesudah adegannya.
+--
+-- Dipisah dari buangRaksasa walau isinya mirip: yang satu dipanggil
+-- karena ada raksasa BARU (giliran yang lama habis), yang ini karena
+-- sorotannya sendiri sudah selesai. Dua sebab yang berbeda, dan
+-- menyatukannya berarti mengubah salah satunya ikut mengubah yang lain.
+local function buangNova()
+	local lama = avatars[SLOT_NOVA]
+	if not lama then return end
+
+	local t = tracks[SLOT_NOVA]
+	if t then pcall(function() t:Stop() end) end
+
+	avatars[SLOT_NOVA] = nil
+	tracks[SLOT_NOVA]  = nil
+
+	if lama.Parent then lama:Destroy() end
+end
+
 local function buangRaksasa()
 	local lama = avatars[SLOT_RAKSASA]
 	if not lama then return end
@@ -2268,9 +3188,32 @@ end
 -- per kedatangan, jadi client tidak perlu tahu tier sama sekali -- dia
 -- cuma menjalankan angka yang diberikan. Itu yang membuat menambah tier
 -- kelima nanti tidak menyentuh file client sama sekali.
-local function fokusKamera(pos, lamaS, orbit, jauh, k, tier)
+local function fokusKamera(pos, lamaS, orbit, jauh, k, tier, jauhY, model)
 	V2Event:FireAllClients("fokus", {
 		pos      = pos,
+		-- Avatarnya sendiri, cuma untuk tier yang punya efek layar: garis
+		-- tepinya yang dibuat berdenyut di client (LAYAR, `garis`).
+		model    = (k.layar or k.jalur) and model or nil,
+		-- Jalur kamera sendiri dan tema latarnya (Rosa). nil untuk tier
+		-- lain. Temanya diundi DI SINI supaya sama di semua layar.
+		jalur    = k.jalur,
+		tema     = k.jalur and ROSA.TEMA[math.random(1, #ROSA.TEMA)] or nil,
+		-- Detik ke berapa angka auranya MENDARAT, dihitung dari pesan ini.
+		-- Kilatan layarnya dijadwalkan ke sini supaya jatuh di frame yang
+		-- sama dengan hentakan mendaratnya.
+		layarKilat = k.layar and ((k.tunda or 0) + (k.roll or AURA_ROLL))
+			or nil,
+		-- Tinggi kamera saat mundur penuh. Dikirim per kedatangan,
+		-- bukan sekali lewat V2Config, karena jawabannya BERUBAH: dia
+		-- turun selama ada raksasa berdiri supaya kepala raksasanya
+		-- masuk frame. Lihat CAMERA_UP_JAUH_GIANT.
+		--
+		-- Raksasa bertahan sampai ada raksasa berikutnya, jadi sekali
+		-- dia datang semua pesan sesudahnya membawa angka yang sama --
+		-- tidak ada keadaan yang harus disimpan di client selain nilai
+		-- terakhir yang dia terima.
+		upJauh   = avatars[SLOT_RAKSASA] and CAMERA_UP_JAUH_GIANT
+			or CAMERA_UP_JAUH,
 		sinema   = (lamaS and lamaS > 0) and true or nil,
 		lama     = lamaS,
 		-- Dipakai client cuma untuk memilih bunyi kedatangannya (lihat
@@ -2278,10 +3221,25 @@ local function fokusKamera(pos, lamaS, orbit, jauh, k, tier)
 		-- ini -- semuanya sudah dikirim sebagai angka jadi di bawah,
 		-- supaya client tetap tidak perlu tahu arti tier.
 		tier     = tier,
+		-- Bunyi kedatangannya dibunyikan client sendiri NANTI (nova: saat
+		-- dia membanting diri ke tanah), jadi pesan ini tidak boleh ikut
+		-- membunyikannya.
+		bunyiNanti = k.bunyiSaatNova and true or nil,
 		orbit    = orbit and true or nil,
 		jauh     = (jauh and jauh > 1) and jauh or nil,
+		-- Pengali TINGGI kamera, terpisah dari pengali jaraknya di atas.
+		-- nil = tingginya ikut jaraknya, seperti semua tier selain
+		-- raksasa. Lihat GIANT_KAMERA_TINGGI.
+		jauhY    = (jauhY and jauhY > 1) and jauhY or nil,
+		-- Efek layar sinematik selama sorotan (letterbox, warna, sekejap
+		-- abu-abu). nil untuk tier yang tidak punya -- lihat LAYAR.
+		layar      = k.layar,
 		zoomTahan  = k.tahan,
 		zoomKeluar = k.keluar,
+		-- Sedekat apa rapatan awalnya. nil untuk tier yang memakai
+		-- ZOOM_MASUK biasa -- dan client yang membaca nil jatuh ke
+		-- CFG.zoomMasuk, jadi pesan tier lain tidak ikut membesar.
+		zoomMasuk  = k.masuk,
 		-- Mundur sampai sejauh apa, pecahan jarak penuh. Lihat `maks`
 		-- di KAMERA_TIER.
 		zoomMaks   = k.maks,
@@ -2315,6 +3273,197 @@ local function titikPanggung()
 end
 
 -- ============ PANGGUNG ============
+
+-- --- GEMPA: barisan tersapu hantaman nova ---
+--
+-- Dipanggil TEPAT saat avatar nova menghantam tanah. Semua yang sedang
+-- menari di barisan terlempar keluar dari titik hantam, berputar,
+-- memudar, lalu dihapus -- dan panggungnya kembali kosong dari slot 1.
+--
+-- Avatar novanya sendiri tidak perlu dikecualikan di sini. Dia memegang
+-- SLOT_NOVA sejak lahir, di luar 1..slotCount, jadi gelung di bawah
+-- memang tidak bisa menyentuhnya. Versi sebelumnya menerima parameter
+-- `kecuali` untuk itu -- dan parameter itulah yang dulu bisa menunjuk
+-- slot milik orang lain kalau panggungnya sempat di-reset selagi
+-- adegannya jalan, yang berarti menyelamatkan orang yang salah.
+--
+-- KENAPA TWEEN, BUKAN FISIKA SUNGGUHAN
+--
+-- Melepas kunci lalu mendorong badannya dengan impuls memang lebih
+-- nyata, tapi harganya delapan puluh avatar meragdoll berbarengan --
+-- tepat di detik yang paling ditonton dari seluruh siaran, dan tepat
+-- saat client juga sedang menggambar shockwave, pilar cahaya, delapan
+-- petir, dan dua puluh kristal. Yang pertama jatuh FPS-nya.
+--
+-- Tween juga menyelesaikan hal yang tidak bisa diselesaikan fisika:
+-- hasilnya SAMA di tiap layar. Fisika Roblox tidak deterministik antar
+-- client, jadi dengan impuls, satu penonton melihat kerumunan terlempar
+-- ke kiri dan penonton lain ke kanan.
+--
+-- Kuncinya tetap harus dibuang lebih dulu: BodyPosition menarik badan
+-- kembali ke slotnya dengan gaya ratusan kali beratnya, dan tween yang
+-- melawan itu tidak bergerak satu stud pun.
+local GEMPA_LAMA   = 0.8    -- lama terlemparnya, detik
+local GEMPA_JAUH   = 55     -- sejauh ini dari titik hantam, stud
+local GEMPA_NAIK   = 22     -- dan setinggi ini di puncak lemparannya
+
+local function gempaBarisan(pusat)
+	local kena = 0
+
+	for slot = 1, slotCount do
+		local model = avatars[slot]
+		if model and model.Parent then
+			local track = tracks[slot]
+			if track then pcall(function() track:Stop() end) end
+
+			local hrp = model:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				-- Kunci posisi dibuang, lalu badannya di-anchor supaya
+				-- tween yang menulis CFrame tidak dilawan fisika.
+				-- Sisa badannya ikut lewat Motor6D.
+				for _, nama in ipairs({ "PositionLock", "RotationLock" }) do
+					local m = hrp:FindFirstChild(nama)
+					if m then m:Destroy() end
+				end
+
+				-- Supaya mereka tidak saling menabrak selagi terlempar.
+				-- Tanpa ini yang terlihat bukan kerumunan yang tersapu,
+				-- tapi tumpukan badan yang saling mendorong di tempat.
+				for _, x in ipairs(model:GetDescendants()) do
+					if x:IsA("BasePart") then x.CanCollide = false end
+				end
+
+				-- Yang di-anchor CUMA root-nya, bukan semua part.
+				--
+				-- Part yang tersambung Motor6D membentuk satu assembly:
+				-- begitu root-nya di-anchor, seluruh assembly ikut
+				-- kinematik dan menyeret mengikuti CFrame root. Kalau
+				-- SETIAP part di-anchor sendiri-sendiri, tiap part jadi
+				-- assembly-nya sendiri -- root-nya terbang, badannya
+				-- tertinggal berdiri di tempat.
+				hrp.Anchored = true
+
+				-- Arahnya MENJAUH dari titik hantam, dan yang lebih
+				-- dekat terlempar lebih jauh -- itu yang membuatnya
+				-- terbaca sebagai gelombang yang berasal dari satu
+				-- titik, bukan sebagai semua orang meloncat bersamaan.
+				local ke = hrp.Position - pusat
+				ke = Vector3.new(ke.X, 0, ke.Z)
+				local jarak = ke.Magnitude
+				if jarak < 0.5 then
+					-- Tepat di titik hantam: arahnya diundi, kalau
+					-- tidak dia satu-satunya yang tidak ikut terlempar.
+					local a = math.random() * math.pi * 2
+					ke = Vector3.new(math.cos(a), 0, math.sin(a))
+					jarak = 1
+				else
+					ke = ke / jarak
+				end
+				local kuat = math.clamp(1 - jarak / 90, 0.35, 1)
+
+				local tujuan = CFrame.new(hrp.Position
+						+ ke * (GEMPA_JAUH * kuat)
+						+ Vector3.new(0, GEMPA_NAIK * kuat, 0))
+					* CFrame.Angles(math.random() * 6,
+						math.random() * 6, math.random() * 6)
+
+				TweenService:Create(hrp,
+					TweenInfo.new(GEMPA_LAMA, Enum.EasingStyle.Quad,
+						Enum.EasingDirection.Out),
+					{ CFrame = tujuan }):Play()
+
+				-- Memudar bareng terlemparnya, jadi yang sampai ke tepi
+				-- frame sudah hampir tidak ada -- bukan badan utuh yang
+				-- mendadak dihapus.
+				for _, x in ipairs(model:GetDescendants()) do
+					if x:IsA("BasePart") and x.Transparency < 1 then
+						TweenService:Create(x,
+							TweenInfo.new(GEMPA_LAMA * 0.9),
+							{ Transparency = 1 }):Play()
+					end
+				end
+			end
+
+			-- Dihapus SESUDAH lemparannya selesai, bukan sekarang.
+			--
+			-- Ini yang gampang salah: Destroy() di baris ini membuat
+			-- seluruh tween di atas tidak pernah tergambar satu frame
+			-- pun -- yang terlihat cuma kerumunan yang LENYAP di detik
+			-- hantaman. Referensinya sudah dilepas dari `avatars` di
+			-- bawah, jadi tidak ada lagi yang bisa memakainya selama
+			-- dia terbang.
+			local pergi = model
+			task.delay(GEMPA_LAMA + 0.1, function()
+				if pergi.Parent then pergi:Destroy() end
+			end)
+			kena = kena + 1
+		end
+
+		avatars[slot] = nil
+		tracks[slot]  = nil
+	end
+
+	-- Cakram lantai dan border hidup di luar model avatarnya, jadi
+	-- menghapus badannya saja meninggalkan lingkaran menyala di panggung
+	-- kosong. Alasan lengkapnya di resetStage.
+	for i = #borderHidup, 1, -1 do
+		lepasBorder(borderHidup[i], true)
+	end
+	for _, benda in ipairs(workspace:GetChildren()) do
+		if benda.Name == "CakramTier" then benda:Destroy() end
+	end
+
+	slotCount = 0
+	barisanGen += 1
+	print(("[nova] gempa -- %d avatar tersapu, barisan kembali ke slot 1")
+		:format(kena))
+end
+
+-- --- AVATAR NOVA MASUK BARISAN ---
+--
+-- Dipanggil tepat sesudah gempaBarisan, di detik yang sama: dia
+-- menghantam tanah, barisannya tersapu habis, dan dia sendiri berdiri
+-- sebagai orang PERTAMA di barisan yang baru.
+--
+-- Ini menggantikan buangNova() yang dulu dijadwalkan di akhir
+-- sorotannya. Yang dulu terjadi: adegan sepuluh detik, sorotan, lalu
+-- orangnya menghilang begitu saja dari panggung -- padahal yang bayar
+-- paling mahal justru dia. Sekarang dia tinggal seperti kedatangan
+-- biasa, dan yang menghapusnya nanti sama dengan yang menghapus semua
+-- orang: panggung penuh (resetStage) atau nova berikutnya.
+--
+-- Dulu itu tidak bisa dilakukan, dan alasannya sudah hilang sekarang:
+-- avatar novanya berdiri di slot barisan LAMAnya (n(x)), yang beberapa
+-- kedatangan kemudian diisi orang lain -- dua badan di satu titik.
+-- Sekarang dia mendarat di slot 1, dan slotCount dimulai dari dia, jadi
+-- orang berikutnya dapat slot 2 seperti seharusnya.
+--
+-- Badannya ikut dipindah, bukan cuma nomornya: kunci posisinya
+-- (BodyPosition/BodyGyro) diarahkan ulang ke titik yang sama dengan
+-- yang dipakai salinan nova di client untuk membanting diri, jadi waktu
+-- client memunculkan kembali avatar aslinya di akhir adegan, dia sudah
+-- berdiri persis di tempat salinannya mendarat.
+local function novaKeBarisan(model, tujuan)
+	if avatars[SLOT_NOVA] ~= model then return end
+
+	avatars[SLOT_NOVA_MENDARAT] = model
+	tracks[SLOT_NOVA_MENDARAT]  = tracks[SLOT_NOVA]
+	avatars[SLOT_NOVA] = nil
+	tracks[SLOT_NOVA]  = nil
+	slotCount = SLOT_NOVA_MENDARAT
+
+	local hrp = model:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local bp = hrp:FindFirstChild("PositionLock")
+		local bg = hrp:FindFirstChild("RotationLock")
+		if bp then bp.Position = tujuan.Position end
+		if bg then bg.CFrame   = tujuan end
+	end
+	model:PivotTo(tujuan)
+
+	print(("[nova] %s mendarat di slot %d -- dia yang membuka barisan baru")
+		:format(model.Name, SLOT_NOVA_MENDARAT))
+end
 
 local function resetStage()
 	if resetting then return end
@@ -2362,6 +3511,7 @@ local function resetStage()
 	end
 
 	slotCount = 0
+	barisanGen += 1
 	resetting = false
 	print(("Panggung dikosongkan (%d avatar)."):format(dihapus))
 end
@@ -2447,6 +3597,7 @@ local function spawnAvatar(entry, slot)
 	-- sebelumnya menulis syarat ini dua kali dan keduanya sempat tidak
 	-- sepakat, yang membuat tier 3 dan tier 4 tertukar tempat.
 	local raksasa = adalahRaksasa(tier)
+	local nova    = adalahNova(tier)
 	local skala   = 1
 	if raksasa then
 		skala = math.clamp(tonumber(entry.scale) or 4, 1, GIANT_SKALA_MAKS)
@@ -2457,6 +3608,9 @@ local function spawnAvatar(entry, slot)
 	-- memotong angka yang sama adalah cara paling rapi untuk suatu
 	-- saat punya kamera yang masih mengorbit setelah orangnya mendarat.
 	if lamaS > BEKU_MAKS then lamaS = BEKU_MAKS end
+
+	-- Dicatat SEBELUM yield pertama. Lihat pemeriksaannya di bawah.
+	local genBarisan = barisanGen
 
 	local userId = cariUserId(username, entry.userId)
 	local desc   = Players:GetHumanoidDescriptionFromUserId(userId)
@@ -2499,7 +3653,7 @@ local function spawnAvatar(entry, slot)
 		elseif sebelum > 0 and sesudah / sebelum < skala * 0.8 then
 			warn(("[raksasa] ScaleTo(%.1f) jalan tapi tingginya cuma " ..
 				"naik %.1fx (%.1f -> %.1f stud). Rig-nya menolak " ..
-				"diperbesar sebanyak itu; turunkan TIER4_SCALE di .env.")
+				"diperbesar sebanyak itu; turunkan TIER5_SCALE di .env.")
 				:format(skala, sesudah / math.max(sebelum, 0.01),
 					sebelum, sesudah))
 		else
@@ -2529,6 +3683,54 @@ local function spawnAvatar(entry, slot)
 	-- di bawah tanah untuk dinaikkan belakangan -- lihat catatan di
 	-- bagian TIER 3 soal kenapa jalur khusus itu dibuang.
 	model:PivotTo(finalCFrame(model, slot))
+
+	-- Ditandai SEBELUM masuk workspace, bukan sesudah: atribut ikut
+	-- terkirim bersama modelnya, jadi client sudah tahu "yang ini akan
+	-- nova" di frame pertama dia melihatnya -- dan menahannya tetap
+	-- tersembunyi. Kalau ditandai sesudahnya, avatar aslinya sempat
+	-- berdiri sekejap di slot, lalu hilang waktu salinan novanya
+	-- mengambil alih -- satu kedipan yang terbaca sebagai bug.
+	--
+	-- NovaId ikut dipasang di sini, dan itu jaring pengaman untuk satu
+	-- kegagalan yang tidak memunculkan satu pun error: referensi
+	-- Instance di dalam pesan remote sampai sebagai NIL kalau modelnya
+	-- belum selesai direplikasi ke client itu. Yang terlihat waktu itu
+	-- terjadi persis "novanya tidak muncul, cuma kameranya yang
+	-- bergerak" -- kameranya jalan karena pesan `fokus` tidak membawa
+	-- Instance apa pun. Dengan nomor ini, client bisa menunggu
+	-- modelnya datang lewat ChildAdded dan tetap menjalankan adegannya.
+	if nova then
+		novaIdBerikut += 1
+		model:SetAttribute("TierNova", true)
+		model:SetAttribute("NovaId", novaIdBerikut)
+
+		-- Persistent: modelnya dikirim UTUH ke semua client, dan tidak
+		-- pernah dicabut lagi -- walaupun StreamingEnabled menyala.
+		--
+		-- Dengan streaming, client cuma menerima benda di sekitar
+		-- KARAKTER penontonnya. Kamera panggung ini scriptable dan jauh
+		-- dari karakter itu, jadi avatar nova bisa belum sampai, sampai
+		-- sepotong, atau dicabut di tengah adegan -- dan ketiganya
+		-- berakhir sama: avatarnya berdiri tanpa efek, "kadang-kadang",
+		-- tergantung di mana karakter penontonnya kebetulan berdiri.
+		--
+		-- Tidak berbuat apa-apa kalau streaming mati, jadi aman dipasang
+		-- tanpa syarat. pcall karena properti ini tidak ada di versi
+		-- Roblox yang sangat lama.
+		pcall(function()
+			model.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+		end)
+	end
+
+	-- Pra-muat dulu, baru panggung. Lihat SPAWN_PRAMUAT_S.
+	if SPAWN_PRAMUAT_S > 0 then
+		model.Parent = folderPramuat
+		task.wait(SPAWN_PRAMUAT_S)
+		-- Dihapus selagi menunggu (tidak ada yang melakukannya sekarang,
+		-- tapi task.wait di tengah fungsi ini membuka jendela untuk itu).
+		if not model.Parent then return end
+	end
+
 	model.Parent = workspace
 
 	createNameplate(model, username)
@@ -2538,6 +3740,22 @@ local function spawnAvatar(entry, slot)
 	-- mengambang atau terbenam.
 	RunService.Heartbeat:Wait()
 	if not model.Parent then return end
+
+	-- Barisan dikosongkan selagi avatar ini dimuat.
+	--
+	-- Slotnya dipesan gelung utama SEBELUM semua yield di atas (unduh
+	-- deskripsi + SPAWN_PRAMUAT_S). Kalau di tengahnya resetStage atau
+	-- gempa nova menyetel slotCount kembali ke awal, nomor lama ini
+	-- dipakai lagi oleh kedatangan berikutnya: dua badan di satu titik,
+	-- dan satunya tidak pernah terhapus reset mana pun karena barisnya
+	-- di tabel avatars sudah ditimpa. Dia diberi tempat baru di barisan
+	-- yang baru -- orangnya tetap tampil, cuma pindah antrian.
+	if slot ~= SLOT_RAKSASA and barisanGen ~= genBarisan then
+		slotCount += 1
+		print(("[slot] %s dimuat selagi barisan dikosongkan -- slot %d -> %d")
+			:format(username, slot, slotCount))
+		slot = slotCount
+	end
 
 	local target = finalCFrame(model, slot)
 	model:PivotTo(target)
@@ -2572,7 +3790,17 @@ local function spawnAvatar(entry, slot)
 		pcall(function() hum.EvaluateStateMachine = false end)
 	end
 
-	avatars[slot] = model
+	-- Nova dibukukan di SLOT_NOVA, bukan di slot barisannya.
+	--
+	-- Tempatnya di barisan tetap dipakai (slotCount sudah naik di gelung
+	-- utama, dan finalCFrame di atas menaruh badannya di sana), yang
+	-- tidak dipakai cuma satu baris tabel ini. Alasannya di SLOT_NOVA:
+	-- selama sepuluh detik adegannya, barisan yang kebetulan penuh
+	-- memanggil resetStage, dan reset itu dulu menghapus avatarnya di
+	-- tengah adegan.
+	local kunci = nova and SLOT_NOVA or slot
+	if nova then buangNova() end
+	avatars[kunci] = model
 
 	-- Raksasa MELAMBAI, bukan menari. Alasan lengkapnya di
 	-- GIANT_EMOTE_ID; ringkasnya, yang diam di antara yang bergerak
@@ -2582,9 +3810,9 @@ local function spawnAvatar(entry, slot)
 		if emote then
 			pcall(function() emote:AdjustSpeed(GIANT_EMOTE_SPEED) end)
 		end
-		tracks[slot] = emote
+		tracks[kunci] = emote
 	else
-		tracks[slot] = playDance(model, danceSekarang())
+		tracks[kunci] = playDance(model, danceSekarang())
 	end
 
 	-- Raksasa TIDAK dapat border maupun cakram lantai.
@@ -2600,7 +3828,12 @@ local function spawnAvatar(entry, slot)
 	-- Border cuma untuk tier 2. Raksasa tidak dapat: yang membuatnya
 	-- terbaca ukuran badannya, dan lingkaran di kakinya cuma menyaingi
 	-- itu.
-	if not raksasa then
+	-- Nova juga tidak: Highlight di badan yang disembunyikan client
+	-- selama adegannya tetap digambar -- yang terlihat jadi garis tepi
+	-- kosong berdiri di slot selagi orangnya melayang di atasnya. Dan
+	-- kalaupun tidak, dia punya outline putihnya sendiri di dalam
+	-- TierNova, yang dua-duanya menyala berarti dua garis tepi.
+	if not raksasa and not nova then
 		local rec = pasangBorder(model, slot, tier, FLOOR_Y, skala)
 
 		-- Yang sedang disorot boleh menembus badan, selama sorotannya.
@@ -2626,15 +3859,24 @@ local function spawnAvatar(entry, slot)
 	-- auranya keluar: angka aura butuh AURA_ROLL detik untuk berputar,
 	-- dan kalau kameranya baru pindah sesudah itu, putarannya sudah
 	-- setengah jalan waktu orangnya masuk frame.
-	local fokusPos = titikPandang(slot)
+	-- Nova dibidik di slot tempat dia MENDARAT, bukan di slot tempat dia
+	-- mulai. Selama adegannya kamera dipegang jalur nova di client, jadi
+	-- angka ini baru terlihat sesudah adegan itu melepaskannya -- dan di
+	-- detik itu orangnya sudah pindah ke slot 1 (novaKeBarisan). Yang
+	-- lama membuat kamera pulang ke slot kosong tempat dia dulu berdiri,
+	-- sementara orangnya menari di ujung lain panggung.
+	local fokusPos = titikPandang(nova and SLOT_NOVA_MENDARAT or slot)
 	local jauh     = 1
+	local jauhY    = 1
 	if raksasa then
 		-- Dipandang di TENGAH BADAN, bukan di titik berdirinya.
 		-- Kamera yang membidik kakinya menampilkan sepatu setinggi
 		-- layar dan kepalanya jauh di luar frame atas.
 		local tp = tinggiPivot(model) or (BASE_Y * skala)
-		fokusPos = Vector3.new(GIANT_X, FLOOR_Y + tp * 1.15, GIANT_Z)
+		fokusPos = Vector3.new(GIANT_X,
+			FLOOR_Y + tp * GIANT_FOKUS_TINGGI, GIANT_Z)
 		jauh     = math.max(1, skala * GIANT_KAMERA_JAUH)
+		jauhY    = math.max(1, skala * GIANT_KAMERA_TINGGI)
 	end
 	-- Orbit dimatikan untuk SEMUA tier sekarang. Penandanya dari
 	-- /api/next sengaja tetap dibaca, jadi dia bisa dinyalakan kembali
@@ -2646,24 +3888,139 @@ local function spawnAvatar(entry, slot)
 	-- Gerakan adegannya sekarang busur depan.
 	local orbitKamera = (not raksasa) and orbit or false
 	local kam = kameraTier(tier)
-	fokusKamera(fokusPos, lamaS, orbitKamera, jauh, kam, tier)
+	fokusKamera(fokusPos, lamaS, orbitKamera, jauh, kam, tier, jauhY, model)
+
+	if nova then
+		-- Seed diundi SEKALI di sini dan dikirim ke semua client, jadi
+		-- petir dan kristalnya jatuh sama persis di tiap layar. Batasnya
+		-- 2^31 - 2 karena TierNova memakai Park-Miller dengan modulus
+		-- 2^31 - 1.
+		local seed  = math.random(1, 2147483646)
+		-- Paletnya diundi TERPISAH dengan math.random, bukan diturunkan
+		-- dari seed di atas lewat sisa bagi. Dua alasan, dan yang kedua
+		-- yang menentukan:
+		--
+		--   1. seed itu milik Park-Miller di dalam modul; bit rendahnya
+		--      berkorelasi dengan nilainya sendiri, jadi `seed % 3`
+		--      menghasilkan undian yang berat sebelah
+		--   2. tidak ada yang perlu dihemat. Paletnya toh dikirim UTUH
+		--      (warnanya, bukan nomornya), jadi tidak ada kesempatan bagi
+		--      dua client untuk tidak sepakat -- yang menyeberang cuma
+		--      satu tabel warna yang sudah jadi
+		local palet = NOVA.PALET[math.random(1, #NOVA.PALET)]
+
+		-- Di mana dia MEMBANTING DIRI, yang belum tentu tempat dia
+		-- mulai melayang.
+		--
+		-- Dihitung di server dan dikirim, bukan ditentukan client:
+		-- gempa, pemindahan slot, dan bantingan salinannya di client
+		-- harus jatuh di satu titik yang sama persis, dan tiga jawaban
+		-- untuk satu titik adalah tiga kesempatan untuk tidak sepakat.
+		--
+		-- Slot 1 dan bukan slot asalnya: gempa di detik yang sama
+		-- menyapu seluruh barisan, jadi sesudah hantaman panggungnya
+		-- memang kosong -- dan yang paling masuk akal berdiri di tempat
+		-- paling depan sesudah itu adalah orang yang baru saja
+		-- membuatnya kosong.
+		local tujuan = finalCFrame(model, SLOT_NOVA_MENDARAT)
+
+		V2Event:FireAllClients("nova", {
+			model  = model,
+			-- Cadangan kalau `model` di atas sampai sebagai nil karena
+			-- modelnya belum direplikasi. Lihat SetAttribute("NovaId").
+			novaId = model:GetAttribute("NovaId"),
+			tujuan = tujuan,
+			seed   = seed,
+			config = NOVA.CONFIG,
+			-- Jalur kamera adegannya, lihat NOVA.KAMERA.
+			kamera = NOVA.KAMERA,
+			-- Bunyi per fase, lihat NOVA.SFX. Dimainkan modulnya sendiri
+			-- karena dia yang tahu kapan tiap fase mulai -- bunyi yang
+			-- dijadwalkan dari luar akan meleset sebanyak tunggu aset.
+			sfx    = NOVA.SFX,
+			-- Warnanya, bukan nomornya: client tidak pernah perlu tahu
+			-- ada berapa palet, dan menambah palet keempat tidak
+			-- menyentuh satu baris pun di sana.
+			palet  = palet,
+			-- Untuk bunyi kedatangannya, yang dibunyikan client saat dia
+			-- membanting diri ke tanah.
+			tier   = tier,
+		})
+		print(("[nova] %s dapat palet '%s' (seed %d)")
+			:format(username, palet.nama, seed))
+
+		-- --- GEMPA: barisan disapu tepat saat dia menghantam tanah ---
+		--
+		-- Dijadwalkan dari SINI, bukan dipicu pesan balik dari client:
+		-- V2Event sengaja tidak punya OnServerEvent sama sekali (lihat
+		-- catatan di NOVA), dan membuka satu cuma untuk ini berarti
+		-- client mana pun bisa menyapu panggung kapan saja.
+		--
+		-- SPAWN_SIAP_MAKS ikut dijumlah karena adegannya baru MULAI
+		-- sesudah client selesai menunggu aset avatarnya. Ini membuat
+		-- gempanya jatuh 0 sampai 0,6 detik SESUDAH hantaman yang
+		-- terlihat, tidak pernah sebelum -- dan arah itu yang benar:
+		-- gelombang kejut yang sampai ke kerumunan sepersekian detik
+		-- setelah hantamannya terbaca masuk akal, sedangkan kerumunan
+		-- yang terlempar sebelum orangnya mendarat tidak.
+		local mendarat = NOVA.CONFIG.charge + NOVA.CONFIG.ascend
+			+ NOVA.CONFIG.freeze + NOVA.CONFIG.slam
+		task.delay(SPAWN_SIAP_MAKS + mendarat, function()
+			-- Dia bisa sudah pergi selagi ditunggu (nova berikutnya
+			-- lewat buangNova, atau modelnya gagal). Nomornya sendiri
+			-- tidak bisa direbut barisan, jadi satu syarat ini cukup.
+			if avatars[SLOT_NOVA] ~= model or not model.Parent then return end
+
+			-- Urutannya mengikat: gempa mengosongkan barisan dan
+			-- menyetel slotCount ke nol, dan novaKeBarisan yang
+			-- menaruhnya kembali ke satu. Dibalik, kedatangan
+			-- berikutnya akan berdiri menembus badannya.
+			gempaBarisan(tujuan.Position)
+			novaKeBarisan(model, tujuan)
+		end)
+
+		-- Dan sesudah itu dia TINGGAL. Lihat novaKeBarisan -- dia jadi
+		-- orang pertama di barisan yang baru, dan yang menghapusnya
+		-- nanti sama dengan yang menghapus semua orang.
+	end
 
 	local persen = hitungAura(tier)
 
-	-- Aura di BADAN, beda dari papan angka di bawah ini. Milik tier 3
+	-- Aura di BADAN, beda dari papan angka di bawah ini. Milik tier 2-3
 	-- saja, dan diacak satu dari tiga -- lihat AURA_VFX_IDS.
 	--
 	-- Tetap dipanggil di sini walau tidak lagi butuh `persen`: log di
 	-- bawah menyebut angkanya, dan satu baris yang memuat tier, aura,
 	-- dan undian sekaligus itu yang bisa menjawab "kenapa yang ini
 	-- kelihatan beda" tanpa perlu membuka apa pun.
-	local auraNama = pasangAuraVfx(model, tier)
+	local auraNama = pasangAuraVfx(model, tier, skala)
 	if auraNama then
 		print(("[aura-vfx] %s dapat aura '%s' (tier %s, %d%%)")
 			:format(username, auraNama, tostring(tier), persen))
 	end
 
-	tampilkanAura(model, entry.displayName or username, persen, slot, tier)
+	-- Ditahan untuk tier yang punya auraMulai (nova): papannya baru boleh
+	-- muncul setelah avatar aslinya dimunculkan kembali. Model yang keburu dihapus di masa
+	-- tunggu (reset panggung) tidak dikirimi apa pun.
+	-- Slot yang dipakai papannya juga slot MENDARAT untuk nova: papan
+	-- membawa nomor barisnya, dan client memakai nomor itu untuk
+	-- memutuskan siapa yang masih di baris depan. Nomor baris lama
+	-- membuat papan orang yang berdiri paling depan dianggap ada di
+	-- belakang, lalu dilepas oleh kedatangan berikutnya.
+	local slotPapan = nova and SLOT_NOVA_MENDARAT or slot
+
+	local auraMulai = tonumber(kam.auraMulai) or 0
+	if auraMulai > 0 then
+		local namaTampil = entry.displayName or username
+		task.delay(auraMulai, function()
+			if model.Parent then
+				tampilkanAura(model, namaTampil, persen, slotPapan, tier)
+			end
+		end)
+	else
+		tampilkanAura(model, entry.displayName or username, persen,
+			slotPapan, tier)
+	end
 
 	local dari = entry.tiktokUser and (" <- " .. entry.tiktokUser) or ""
 	local cap  = ""
@@ -2772,17 +4129,23 @@ V2Config.OnServerInvoke = function(pemain)
 
 		auraTime = AURA_TIME,
 		auraRoll = AURA_ROLL,
-		auraSfx     = AURA_SFX_ID,
-		auraSfxVol  = AURA_SFX_VOL,
-		auraSfxSpeed = AURA_SFX_SPEED,
-		auraSfxRoll = AURA_SFX_IKUT_ROLL,
-		auraSfxLoop = AURA_SFX_LOOP,
-		auraSfxHit    = AURA_SFX_HIT_ID,
-		auraSfxHitVol = AURA_SFX_HIT_VOL,
+		auraSfx     = SFX_AURA.ID,
+		auraSfxVol  = SFX_AURA.VOL,
+		auraSfxSpeed = SFX_AURA.SPEED,
+		auraSfxRoll = SFX_AURA.IKUT_ROLL,
+		auraSfxLoop = SFX_AURA.LOOP,
+		auraSfxHit    = SFX_AURA.HIT_ID,
+		auraSfxHitVol = SFX_AURA.HIT_VOL,
 		-- Bunyi mendarat khusus angka besar. MENGGANTI yang di atas,
-		-- tidak menambah -- lihat AURA_SFX_HIT_TINGGI_ID.
-		auraSfxHitTinggi    = AURA_SFX_HIT_TINGGI_ID,
-		auraSfxHitTinggiVol = AURA_SFX_HIT_TINGGI_VOL,
+		-- tidak menambah -- lihat SFX_AURA.HIT_TINGGI_ID.
+		auraSfxHitTinggi    = SFX_AURA.HIT_TINGGI_ID,
+		auraSfxHitTinggiVol = SFX_AURA.HIT_TINGGI_VOL,
+		-- Bunyi mendarat khusus raksasa. MENGGANTI dua-duanya di atas
+		-- -- lihat SFX_AURA.HIT_RAKSASA_ID.
+		auraSfxHitRaksasa     = SFX_AURA.HIT_RAKSASA_ID,
+		auraSfxHitRaksasaVol  = SFX_AURA.HIT_RAKSASA_VOL,
+		auraSfxHitRaksasaNada = SFX_AURA.HIT_RAKSASA_NADA,
+		auraSfxRollRaksasaNada = SFX_AURA.ROLL_RAKSASA_NADA,
 		-- Bunyi kedatangan per tier. Dikirim sebagai tabel utuh, bukan
 		-- dipecah jadi sfxTier2/sfxTier3/...: menambah tier kelima nanti
 		-- cukup menambah satu baris di SFX_TIER, tanpa menyentuh baris
@@ -2814,6 +4177,8 @@ V2Config.OnServerInvoke = function(pemain)
 		zoomTahan  = ZOOM_TAHAN,
 		zoomKeluar = ZOOM_KELUAR,
 		spawnLurus = SPAWN_LURUS,
+
+		sembunyiPenonton = SEMBUNYI_PENONTON,
 
 		spawnSiap     = SPAWN_SIAP,
 		spawnSiapMaks = SPAWN_SIAP_MAKS,
@@ -3159,13 +4524,23 @@ if TIER_ENABLED then
 	print(("Tier: border %s, panggung beku dari tier %d")
 		:format(BORDER_ENABLED and "on" or "off",
 			BEKU_ENABLED and BEKU_MIN_TIER or 99))
-	print(("Lantai aura: tier 2 = %d%%, tier 3 = %d%%, tier 4 = %d%%")
-		:format(AURA_LANTAI_T2, AURA_LANTAI_T3, AURA_LANTAI_T4))
+	print(("Lantai aura: Rose = %d%%, Rosa = %d%%, nova = %d%%; raksasa " ..
+		"TIDAK diundi -- selalu %d%%")
+		:format(AURA_LANTAI_T2, AURA_LANTAI_T3, AURA_LANTAI_T4, AURA_RAKSASA))
+	print(("Border: tier %d cuma cakram, garis tepi dari tier %d")
+		:format(2, BORDER_GARIS_MIN_TIER))
+	if LAYAR.MODE_ROSA ~= "mati" and not LAYAR.PILIHAN[LAYAR.MODE_ROSA] then
+		warn(("[layar] LAYAR.MODE_ROSA = '%s' tidak dikenal -- Rosa jalan " ..
+			"tanpa efek layar. Pilihannya: tipis, warna, penuh, mati.")
+			:format(tostring(LAYAR.MODE_ROSA)))
+	else
+		print(("Layar Rosa: %s"):format(LAYAR.MODE_ROSA))
+	end
 	-- Kamera per tier ikut dicetak: kalau nanti "tier 3 terasa sama
 	-- seperti tier 2", baris ini yang menjawabnya tanpa perlu membuka
 	-- file -- dan yang paling sering jadi sebabnya justru busur yang
 	-- kebetulan disetel sama lebarnya.
-	for _, t in ipairs({ 2, 3, 4 }) do
+	for _, t in ipairs({ 2, 3, 4, 5 }) do
 		local k = kameraTier(t)
 		print(("Kamera tier %d: tahan %.1fs, mundur %.1fs sampai %d%% jarak, " ..
 			"busur depan %s, naik-turun %.1f stud x%d gundukan, %s, " ..
@@ -3184,13 +4559,35 @@ if TIER_ENABLED then
 				k.roll or AURA_ROLL,
 				k.tunda))
 	end
-	print(("Aura VFX: %s, tepat tier %d, %d pilihan diacak")
+	print(("Aura VFX: %s, tier %d-%d, %d pilihan diacak")
 		:format(AURA_VFX_ENABLED and "on" or "off",
-			AURA_VFX_TIER, #AURA_VFX_IDS))
-	print(("Tier 4: raksasa %s (batas %dx) di z=%d, emote %s, tanpa efek " ..
-		"dan tanpa aura, bertahan lewat reset")
-		:format(GIANT_ENABLED and "on" or "off", GIANT_SKALA_MAKS,
+			AURA_VFX_TIER, AURA_VFX_TIER_MAKS, #AURA_VFX_IDS))
+	print(("Tier %d: nova %s -- charge %.1fs + ascend %.1fs + freeze %.1fs " ..
+		"+ slam %.1fs + impact %.1fs = %.1fs, lalu menari %.1fs; " ..
+		"%d palet diacak, layar %s (ModuleScript TierNova di client)")
+		:format(NOVA.TIER, NOVA.ENABLED and "on" or "off",
+			NOVA.CONFIG.charge, NOVA.CONFIG.ascend, NOVA.CONFIG.freeze,
+			NOVA.CONFIG.slam, NOVA.CONFIG.impact, novaTotal(), NOVA.TARI,
+			#NOVA.PALET, NOVA.CONFIG.layar and "on" or "off"))
+	print(("Bunyi nova: %d isyarat (charge/ascend/freeze/impact), " ..
+		"semuanya bawaan Roblox yang digeser nadanya"):format(#NOVA.SFX))
+	print(("Karakter penonton: %s")
+		:format(SEMBUNYI_PENONTON
+			and "disembunyikan (badan, bayangan, nama) -- aman di-capture"
+			or "TERLIHAT -- avatarmu sendiri ikut terekam di siaran"))
+	print(("Tier %d: raksasa %s (batas %dx) di z=%d, emote %s, tanpa efek " ..
+		"dan tanpa aura VFX, bertahan lewat reset")
+		:format(GIANT_MIN_TIER, GIANT_ENABLED and "on" or "off", GIANT_SKALA_MAKS,
 			GIANT_Z, GIANT_EMOTE_ID ~= "" and "on" or "off"))
+	print(("Raksasa: papan %d%% dengan putaran %.1fs, bunyi mendarat " ..
+		"sendiri (nada %.2f), dan kamera panggung turun ke %d stud " ..
+		"selama dia berdiri (biasanya %d)")
+		:format(AURA_RAKSASA, kameraTier(GIANT_MIN_TIER).roll or AURA_ROLL,
+			SFX_AURA.HIT_RAKSASA_NADA, CAMERA_UP_JAUH_GIANT, CAMERA_UP_JAUH))
+	print(("Kamera raksasa: bidik %.0f%% tinggi pivot, jarak %.2fx skala, " ..
+		"tinggi %.2fx skala (di bawah garis mata -- wajahnya menghadap lensa)")
+		:format(GIANT_FOKUS_TINGGI * 100, GIANT_KAMERA_JAUH,
+			GIANT_KAMERA_TINGGI))
 else
 	print("Tier: DIMATIKAN (TIER_ENABLED = false)")
 end

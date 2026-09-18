@@ -11,9 +11,12 @@ Jalankan:
     .venv/bin/python mock_comments.py --count 30       # 30 komentar lalu berhenti
     .venv/bin/python mock_comments.py --fast           # tanpa jeda, buat tes cepat
     .venv/bin/python mock_comments.py --dry-run        # jangan kirim ke /api/push
-    .venv/bin/python mock_comments.py                  # campuran harian, ketiga tier
-    .venv/bin/python mock_comments.py --tier2          # tier 1 + sedikit tier 2, tanpa rosa
-    .venv/bin/python mock_comments.py --tier3          # banjir rosa, menguji raksasa
+    .venv/bin/python mock_comments.py                  # skenario pasti, lalu campuran harian
+    .venv/bin/python mock_comments.py --tanpa-pembuka  # langsung campuran harian
+    .venv/bin/python mock_comments.py --tier2          # banjir Rose, menguji cakram biru
+    .venv/bin/python mock_comments.py --tier3          # banjir Rosa, menguji aura VFX
+    .venv/bin/python mock_comments.py --tier4          # banjir Bouquet Flower, menguji nova
+    .venv/bin/python mock_comments.py --tier5          # banjir Doughnut, menguji raksasa
 
 Pipeline-nya diimpor dari tiktok_listener, BUKAN disalin — jadi apa pun yang
 lolos di sini persis sama dengan yang bakal lolos pas live.
@@ -25,7 +28,8 @@ import random
 
 import httpx
 
-from tiktok_listener import PUSH_URL, Pipeline, log
+from tiktok_listener import (LIKE_PODIUM, LIKE_TIER, PUSH_URL, Pipeline, log,
+                             tier_dari_gift)
 
 # Semua nama ini sudah dicek dan memang ada di Roblox, jadi mock-nya menguji
 # jalur "ketemu" sampai ujung (push beneran), bukan cuma jalur penolakan.
@@ -74,50 +78,216 @@ PENONTON = [
 
 
 # Gift yang disimulasikan, beserta harganya dalam koin -- persis seperti
-# `gift.diamond_count` yang dikirim TikTok. "kucing" harganya 0: gift gratis
-# harus dilewati tanpa menghasilkan apa-apa, dan itu perlu ikut teruji.
-# "galaxy" ada di daftar harga tapi TIDAK ikut komposisi harian: gift mahal
-# memang jarang, dan kalau ikut di sini sorotan jalan terus sampai mock-nya
-# tidak lagi mirip live. Ujinya lewat `--gift galaxy` -- itu jalur yang dulu
-# jatuh ke tier 1 gara-gara namanya tidak ada di tabel.
+# `gift.diamond_count` yang dikirim TikTok. NAMA-nya ditulis persis seperti
+# nama gift TikTok, karena sekarang namalah yang menentukan tier
+# (GIFT_TIER di tiktok_listener.py).
+#
+# Tiga yang TIDAK ada di GIFT_TIER, sengaja: mereka menguji jalur cadangan
+# lewat harga satuan. "Kucing" harganya 0 (gift gratis harus dilewati),
+# "Finger Heart" 5 koin harus jatuh ke tier Rose, dan "Galaxy" 1.000 koin
+# harus jatuh ke raksasa -- bukan ke tier 1, yang dulu jadi alasan tabel nama
+# dibuang.
 GIFT_KOIN = {
-    "rose": 1,
-    "rosa": 10,
-    # 30 koin = ambang tier 4 (raksasa) yang paling murah. Ada di daftar
-    # supaya raksasanya bisa diuji dengan kiriman PAS di ambangnya, bukan
-    # cuma lewat galaxy yang 1000 koin -- kalau ambangnya suatu saat
-    # digeser, yang pertama patah justru kiriman yang pas-pasan.
-    "singa": 30,
-    "galaxy": 1000,
-    "kucing": 0,
+    "Rose": 1,
+    "Rosa": 10,
+    # Bouquet Flower dan Doughnut sama-sama 30 koin. Itu justru yang perlu
+    # diuji: dari harga saja keduanya tidak bisa dibedakan.
+    "Bouquet Flower": 30,
+    "Doughnut": 30,
+    "Finger Heart": 5,
+    "Galaxy": 1000,
+    "Kucing": 0,
 }
 
-# Komposisi harian. Sengaja menyentuh KETIGA tier, karena "mock-nya
+
+def koin_gift(nama: str) -> int:
+    """Harga gift, tanpa peduli huruf besar-kecil (`--gift rose` juga jalan)."""
+    for n, k in GIFT_KOIN.items():
+        if n.lower() == nama.lower():
+            return k
+    return 0
+
+
+# Komposisi harian. Sengaja menyentuh KELIMA tier, karena "mock-nya
 # jalan" dan "mock-nya menguji yang kamu kira" itu dua hal berbeda --
 # dan yang paling gampang rusak tanpa ketahuan justru jalur yang tidak
 # pernah dilewati.
 #
-#   rose    1 koin  -> tier 2      kucing  0 koin -> tier 1 (gift gratis)
-#   rosa   10 koin  -> tier 3
+#   Rose            1 koin  -> tier 2 (cakram biru)
+#   Finger Heart    5 koin  -> tier 2 (tak dikenal, dari harga)
+#   Rosa           10 koin  -> tier 3 (aura)
+#   Bouquet Flower 30 koin  -> tier 4 (nova)
+#   Doughnut       30 koin  -> tier 5 (raksasa)
+#   Kucing          0 koin  -> tier 1 (gift gratis)
 #
-# Porsinya miring TAJAM ke yang murah, meniru live. Ingat combo ikut
-# dikali: rosa x1 sudah tier 3, dan rose x10 juga -- jadi tier 3 muncul
-# lebih sering daripada porsi rosa-nya sendiri.
-GIFT = (["rose"] * 12) + (["rosa"] * 4) + (["singa"] * 1) + (["kucing"] * 3)
+# Porsinya miring ke yang murah, meniru live. Galaxy tidak ikut: gift
+# semahal itu memang jarang, dan jalurnya sudah dijamin skenario pembuka.
+#
+# Bouquet Flower dan Doughnut DINAIKKAN dari 1 ke 3 dan 2. Dengan porsi 1,
+# 300 kejadian (sekitar sepuluh menit mock) cuma menghasilkan 3 Bouquet dan
+# 1 Doughnut -- nova dan raksasa hampir tidak pernah terlihat, dan mock yang
+# jarang menyentuh dua adegan paling mahal tidak menguji yang paling perlu
+# diuji. Sekarang kira-kira satu Bouquet per menit.
+GIFT = ((["Rose"] * 12) + (["Finger Heart"] * 2) + (["Rosa"] * 4)
+        + (["Bouquet Flower"] * 3) + (["Doughnut"] * 2) + (["Kucing"] * 3))
 
-# Komposisi untuk --tier3: rosa saja. Dulu masih dicampur rose, tapi untuk
-# menilai panggung tier 3 campuran itu cuma bikin sorotannya jarang.
-GIFT_TIER3 = ["rosa"]
+# Komposisi untuk --tier2..5: satu gift saja, untuk menilai SATU jenis
+# adegan tanpa ketiban sorotan tier lain.
+GIFT_PER_TIER = {
+    2: ["Rose"],
+    3: ["Rosa"],
+    4: ["Bouquet Flower"],
+    5: ["Doughnut"],
+}
 
-# Komposisi untuk --tier4: singa saja (30 koin), jadi tiap gift jadi
-# raksasa. Dipakai menilai jalur kamera tiga perhentian tanpa ketiban
-# sorotan tier lain.
-GIFT_TIER4 = ["singa"]
 
-# Komposisi untuk --tier2: rose saja, jadi rosa tidak pernah muncul dan
-# sorotan tidak pernah jalan. Dipakai untuk melihat panggung sehari-hari:
-# mayoritas tier 1, sesekali ada yang menonjol.
-GIFT_TIER2 = ["rose"]
+# --------------------------------------------------------------- PEMBUKA --
+#
+# Campuran acak di bawah MIRIP live, tapi justru karena acak dia tidak
+# pernah menjamin apa pun: lima menit tanpa satu pun raksasa, jalur tap yang
+# tidak pernah tembus 1.000, gift 1.000 koin yang tidak pernah dikirim.
+# Semua itu jalur yang kalau rusak baru ketahuan waktu live.
+#
+# Jadi `make mock` membuka dengan skenario berurutan yang PASTI menyentuh
+# tiap jalur sekali, dan tiap skenario diperiksa hasilnya (bukan cuma
+# "tidak error"). Sesudah itu baru campuran acak.
+#
+# Penontonnya sengaja terpisah dari PENONTON dan username-nya tidak dipakai
+# dua kali: cooldown dan dedupe yang terbawa dari skenario sebelumnya akan
+# membuat skenario berikutnya gagal karena rem, bukan karena bug.
+#
+#   (judul, penonton, nama tampil, langkah, yang diharapkan)
+#   langkah: ("komen", teks) | ("gift", nama_gift, jumlah) | ("tap", jumlah)
+#   harapan: ("tier", [t, t, ...]) -- tier tiap spawn, URUT sesuai masuknya
+#            ("tolak",) | ("hangus",)
+T = LIKE_TIER
+SKENARIO = [
+    ("komentar biasa -> tier 1",
+     "cakupan_01", "Cakupan 1", [("komen", "Roblox")], ("tier", [1])),
+    ("Rose lalu username -> tier 2 (cakram biru)",
+     "cakupan_02", "Cakupan 2", [("gift", "Rose", 1), ("komen", "builderman")], ("tier", [2])),
+    ("Rosa lalu username -> tier 3 (aura)",
+     "cakupan_03", "Cakupan 3", [("gift", "Rosa", 1), ("komen", "Shedletsky")], ("tier", [3])),
+    ("Bouquet Flower lalu username -> tier 4 (nova)",
+     "cakupan_04", "Cakupan 4", [("gift", "Bouquet Flower", 1), ("komen", "Loleris")], ("tier", [4])),
+    ("Doughnut lalu username -> tier 5 (raksasa)",
+     "cakupan_05", "Cakupan 5", [("gift", "Doughnut", 1), ("komen", "TheGamer101")], ("tier", [5])),
+
+    # --- bug yang pernah terlihat di siaran: gift MENUMPUK jadi raksasa ---
+    ("BUG LAMA: Doughnut lalu Rose sebelum username -> raksasa DULU, baru Rose",
+     "cakupan_06", "Cakupan 6",
+     [("gift", "Doughnut", 1), ("gift", "Rose", 1), ("komen", "linkmon99")],
+     ("tier", [5, 2])),
+    ("BUG LAMA: username dulu, Doughnut, lalu Rose -> Rose, bukan raksasa lagi",
+     "cakupan_07", "Cakupan 7",
+     [("komen", "Telamon"), ("gift", "Doughnut", 1), ("gift", "Rose", 1)],
+     ("tier", [1, 5, 2])),
+    ("Bouquet dua kali -> nova dua kali, TIDAK naik ke raksasa",
+     "cakupan_08", "Cakupan 8",
+     [("komen", "Merely"), ("gift", "Bouquet Flower", 1), ("gift", "Bouquet Flower", 1)],
+     ("tier", [1, 4, 4])),
+    # --- combo: jumlah combo = jumlah spawn, Rose ditampung 10:1 ---
+    ("combo Rose x3 -> 3 spawn Rose",
+     "cakupan_09", "Cakupan 9", [("gift", "Rose", 3), ("komen", "badcc")], ("tier", [2, 2, 2])),
+    ("combo Rose x25 -> 2 Rosa DULU, lalu 5 Rose",
+     "cakupan_17", "Cakupan 17", [("gift", "Rose", 25), ("komen", "Stickmasterluke")],
+     ("tier", [3, 3, 2, 2, 2, 2, 2])),
+    ("combo Doughnut x3 -> 3 raksasa",
+     "cakupan_18", "Cakupan 18", [("gift", "Doughnut", 3), ("komen", "Sonicthehedgehog")],
+     ("tier", [5, 5, 5])),
+    ("Rose x5 lalu Rose x5 (DUA combo) -> 10 Rose, bukan Rosa",
+     "cakupan_19", "Cakupan 19",
+     [("gift", "Rose", 5), ("gift", "Rose", 5), ("komen", "MrBeast6000")],
+     ("tier", [2] * 10)),
+
+    # --- gift yang namanya tidak dikenal jatuh ke harga satuannya ---
+    ("Finger Heart 5 koin (tak dikenal) -> tier 2 dari harganya",
+     "cakupan_10", "Cakupan 10", [("gift", "Finger Heart", 1), ("komen", "Asimo3089")], ("tier", [2])),
+    ("Galaxy 1.000 koin (tak dikenal) -> tier 5, bukan tier 1",
+     "cakupan_11", "Cakupan 11", [("gift", "Galaxy", 1), ("komen", "KreekCraft")], ("tier", [5])),
+    ("gift gratis (0 koin) lalu username -> tetap tier 1",
+     "cakupan_12", "Cakupan 12", [("gift", "Kucing", 1), ("komen", "Flamingo")], ("tier", [1])),
+
+    # --- tap ---
+    (f"tap {LIKE_PODIUM} DULU, baru username -> tier {T} gratis",
+     "cakupan_13", "Cakupan 13", [("tap", LIKE_PODIUM), ("komen", "DenisDaily")], ("tier", [T])),
+    (f"username DULU, baru tap {LIKE_PODIUM} -> spawn tier {T} gratis",
+     "cakupan_14", "Cakupan 14", [("komen", "ReeseMcBlox"), ("tap", LIKE_PODIUM)], ("tier", [1, T])),
+
+    ("Rosa tanpa pernah mengetik username -> boost hangus",
+     "cakupan_15", "Cakupan 15", [("gift", "Rosa", 1)], ("hangus",)),
+    ("username yang tidak ada di Roblox -> ditolak",
+     "cakupan_16", "Cakupan 16", [("komen", "zxqwertyasdf12")], ("tolak",)),
+]
+
+
+async def jalankan_pembuka(pipeline: Pipeline, jeda: float) -> list[str]:
+    """Jalankan SKENARIO satu per satu. Mengembalikan judul yang GAGAL."""
+    gagal = []
+    log.info("===== cakupan: %s skenario pasti =====", len(SKENARIO))
+
+    # Tiap push yang BERHASIL dicatat tiernya, urut.
+    #
+    # Penghitung per tier saja tidak cukup untuk skenario di atas: "raksasa
+    # lalu Rose" dan "Rose lalu raksasa" menghasilkan hitungan yang sama
+    # persis, padahal yang diminta urutannya -- yang dikirim duluan tampil
+    # duluan, tidak ada yang dilewati.
+    urutan: list[int] = []
+    push_asli = pipeline.push
+
+    async def push_dicatat(username, nickname, tier=1, koin=0, podium=False):
+        ok = await push_asli(username, nickname, tier, koin, podium=podium)
+        if ok:
+            urutan.append(tier)
+        return ok
+
+    pipeline.push = push_dicatat
+
+    try:
+        for i, (judul, user, nick, langkah, harapan) in enumerate(SKENARIO, 1):
+            log.info("----- [%s/%s] %s", i, len(SKENARIO), judul)
+            urutan.clear()
+            tolak_sebelum = pipeline.rejected
+
+            for aksi in langkah:
+                if aksi[0] == "komen":
+                    log.info("💬 %s: %s", nick, aksi[1])
+                    await pipeline.handle(user, nick, aksi[1])
+                elif aksi[0] == "gift":
+                    await pipeline.handle_gift(user, nick, aksi[1], aksi[2],
+                                               koin_gift(aksi[1]))
+                elif aksi[0] == "tap":
+                    await pipeline.handle_like(user, nick, aksi[1])
+                if jeda > 0:
+                    await asyncio.sleep(min(jeda, 1.0))
+
+            if harapan[0] == "tier":
+                ok = urutan == harapan[1]
+                detail = f"masuk antrian sebagai {urutan or 'tidak ada'}, harusnya {harapan[1]}"
+            elif harapan[0] == "tolak":
+                ok = pipeline.rejected > tolak_sebelum
+                detail = "tidak ditolak"
+            else:
+                ok = user in pipeline._boost
+                detail = "gift-nya tidak tersimpan menunggu username"
+
+            if ok:
+                log.info("[cakupan] OK     %s", judul)
+            else:
+                log.warning("[cakupan] GAGAL  %s -- %s", judul, detail)
+                gagal.append(judul)
+
+            if jeda > 0:
+                await asyncio.sleep(jeda)
+    finally:
+        pipeline.push = push_asli
+
+    if gagal:
+        log.warning("===== cakupan: %s dari %s GAGAL =====", len(gagal), len(SKENARIO))
+    else:
+        log.info("===== cakupan: semua %s skenario OK, lanjut campuran acak =====",
+                 len(SKENARIO))
+    return gagal
 
 
 def buat_komentar(rng: random.Random) -> str:
@@ -166,7 +336,8 @@ async def lihat_antrian() -> None:
 async def main(count: int | None, min_delay: float | None, max_delay: float | None,
                seed: int | None, dry_run: bool,
                gift_rate: float, gift_pool: list[str], jeda_kunci: str | None,
-               gift_follow: float) -> None:
+               gift_follow: float, pembuka: bool = False,
+               tap_rate: float = 0.0, combo: bool = True) -> None:
     rng = random.Random(seed)
     pipeline = Pipeline(dry_run=dry_run)
     await pipeline.open()
@@ -182,7 +353,7 @@ async def main(count: int | None, min_delay: float | None, max_delay: float | No
         gap = setelan.get(jeda_kunci)
         if gap:
             min_delay, max_delay = gap * 0.8, gap * 1.3
-            log.info("Jeda sorotan server: %.0f detik -> rosa dikirim tiap ~%.0f detik, "
+            log.info("Jeda sorotan server: %.0f detik -> gift dikirim tiap ~%.0f detik, "
                      "jadi tiap satu benar-benar kebagian tampil.", gap, gap)
             log.info("Mau lebih rapat? Jalankan server dengan SPOTLIGHT_GAP_S=4.")
         else:
@@ -199,9 +370,26 @@ async def main(count: int | None, min_delay: float | None, max_delay: float | No
     log.info("Ctrl+C untuk berhenti." if count is None else f"{count} komentar.")
 
     dikirim = 0
+    gagal_cakupan: list[str] = []
     try:
+        if pembuka:
+            gagal_cakupan = await jalankan_pembuka(pipeline, max_delay)
+
         while count is None or dikirim < count:
             user, nick = rng.choice(PENONTON)
+
+            # Tap layar. Tiap kejadian cuma segenggam tap -- dari data live,
+            # TikTok mengirimnya dalam gumpalan puluhan -- jadi di campuran
+            # acak ambang LIKE_PODIUM jarang tembus. Yang menjamin jalur itu
+            # teruji skenario pembuka; di sini gunanya menguji penghitungan
+            # akumulatif dan log progresnya.
+            if tap_rate > 0 and rng.random() < tap_rate:
+                jumlah = rng.choice([10, 30, 80, 200])
+                await pipeline.handle_like(user, nick, jumlah)
+                dikirim += 1
+                if max_delay > 0:
+                    await asyncio.sleep(rng.uniform(min_delay, max_delay))
+                continue
 
             # Polanya ditiru dari live asli: orang kirim gift DULU, baru
             # ngetik username sedetik-dua kemudian. Seperempatnya sengaja
@@ -218,9 +406,16 @@ async def main(count: int | None, min_delay: float | None, max_delay: float | No
                 jumlah = rng.choices(
                     [1, 2, 3, 5, 10, 20],
                     weights=[60, 15, 10, 8, 5, 2],
-                )[0]
+                )[0] if combo else 1
+                # Combo = jumlah spawn sekarang, tanpa batas. Nova x20 itu
+                # 20 adegan 17 detik -- enam menit mock yang cuma berisi
+                # satu orang. Di live memang bisa terjadi, tapi mock yang
+                # meniru live tidak boleh macet karenanya; jalurnya sudah
+                # dijamin skenario pembuka.
+                if tier_dari_gift(gift, koin_gift(gift))[0] >= 4:
+                    jumlah = min(jumlah, 2)
                 await pipeline.handle_gift(user, nick, gift, jumlah,
-                                           GIFT_KOIN.get(gift, 0))
+                                           koin_gift(gift))
                 if rng.random() < gift_follow:
                     await asyncio.sleep(rng.uniform(0.3, 1.2))
                     nama = rng.choice(ROBLOX_ADA)
@@ -255,18 +450,22 @@ async def main(count: int | None, min_delay: float | None, max_delay: float | No
         #
         # Ini yang membedakan "mock-nya selesai tanpa error" dari
         # "mock-nya benar-benar menguji panggungmu". Jalan lima menit
-        # tanpa satu pun tier 3 berarti raksasanya tidak pernah dicoba
+        # tanpa satu pun tier 4 berarti novanya tidak pernah dicoba
         # sama sekali -- dan itu tidak akan terlihat di mana pun kecuali
         # di baris ini.
         per = pipeline.per_tier
         log.info("Per tier: %s",
-                 "  ".join(f"tier {t}={per.get(t, 0)}" for t in (1, 2, 3, 4)))
-        kosong = [t for t in (1, 2, 3, 4) if per.get(t, 0) == 0]
+                 "  ".join(f"tier {t}={per.get(t, 0)}" for t in (1, 2, 3, 4, 5)))
+        log.info("Tap: %s tap | %s kali tembus %s tap",
+                 pipeline.likes, pipeline.podium_like, LIKE_PODIUM)
+        if gagal_cakupan:
+            log.warning("Skenario cakupan yang GAGAL: %s", "; ".join(gagal_cakupan))
+        kosong = [t for t in (1, 2, 3, 4, 5) if per.get(t, 0) == 0]
         if kosong:
-            # Cuma tier 2-4 yang punya mode sendiri; tier 1 datang dari
+            # Cuma tier 2-5 yang punya mode sendiri; tier 1 datang dari
             # komentar biasa, jadi menyarankan "--tier1" berarti menyuruh
             # orang mengetik flag yang tidak ada.
-            punya_mode = [t for t in kosong if t in (2, 3)]
+            punya_mode = [t for t in kosong if t in GIFT_PER_TIER]
             saran = (f", atau pakai --tier{punya_mode[0]}"
                      if punya_mode else "")
             log.warning("Tier %s TIDAK pernah muncul -- jalurnya belum "
@@ -288,42 +487,40 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=None, help="Bikin urutannya bisa diulang persis")
     parser.add_argument("--dry-run", action="store_true", help="Jangan kirim ke /api/push")
     parser.add_argument("--tier2", action="store_true",
-                        help="Hanya tier 1 dan 2 (rose), tier 2-nya sedikit. Tanpa rosa/sorotan")
+                        help="Banjir Rose -- menguji cakram biru tier 2")
     parser.add_argument("--tier3", action="store_true",
-                        help="Banjir rosa (10 koin) -- menguji aura VFX tier 3")
+                        help="Banjir Rosa -- menguji aura VFX tier 3")
     parser.add_argument("--tier4", action="store_true",
-                        help="Banjir singa (30 koin) -- menguji raksasa tier 4")
+                        help="Banjir Bouquet Flower -- menguji adegan nova tier 4")
+    parser.add_argument("--tier5", action="store_true",
+                        help="Banjir Doughnut -- menguji raksasa tier 5")
+    parser.add_argument("--tanpa-pembuka", action="store_true",
+                        help="Lewati skenario pasti di awal, langsung campuran acak")
+    parser.add_argument("--tap-rate", type=float, default=None,
+                        help="Peluang satu kejadian berupa tap layar (0..1, default 0.08)")
     parser.add_argument("--gift-rate", type=float, default=None,
                         help="Peluang satu kejadian berupa gift (0..1, default 0.125)")
     parser.add_argument("--gift", action="append", metavar="NAMA",
-                        help="Batasi ke gift tertentu, boleh diulang (mis. --gift rosa)")
+                        help="Batasi ke gift tertentu, boleh diulang (mis. --gift Rosa)")
     args = parser.parse_args()
 
     min_delay, max_delay = (0.0, 0.0) if args.fast else (args.min_delay, args.max_delay)
 
-    # --tier2/--tier3 cuma menggeser dua angka default; --gift-rate dan
+    # --tier2..5 cuma menggeser dua angka default; --gift-rate dan
     # --gift tetap boleh menimpanya, jadi bisa dipakai bersamaan.
-    dipilih = [n for n, v in (("--tier2", args.tier2),
-                              ("--tier3", args.tier3),
-                              ("--tier4", args.tier4)) if v]
+    dipilih = [t for t in GIFT_PER_TIER if getattr(args, f"tier{t}")]
     if len(dipilih) > 1:
-        parser.error(" dan ".join(dipilih) + " tidak bisa dipakai bersamaan")
+        parser.error(" dan ".join(f"--tier{t}" for t in dipilih)
+                     + " tidak bisa dipakai bersamaan")
+    tier_mode = dipilih[0] if dipilih else None
 
-    # Mode tier 3/4 dipakai untuk MENILAI PANGGUNGNYA, bukan meniru live.
+    # Mode tier dipakai untuk MENILAI PANGGUNGNYA, bukan meniru live.
     # Jadi tiap kejadian adalah gift (rate 1.0) dan selalu disusul username
     # (follow 1.0) -- kalau tidak, tick yang sudah dilambatkan ke jeda
     # sorotan malah terbuang untuk obrolan biasa.
-    if args.tier4:
-        bawaan_pool, bawaan_rate = GIFT_TIER4, 1.0
-    elif args.tier3:
-        bawaan_pool, bawaan_rate = GIFT_TIER3, 1.0
-    elif args.tier2:
-        # 0.015, bukan angka bulat yang kelihatan masuk akal seperti 0.1.
-        # Alasannya: gift menembus cooldown dan dedupe, sementara komentar
-        # biasa banyak yang ditolak -- jadi porsi gift di ANTRIAN jauh lebih
-        # besar daripada porsinya di kejadian. Diukur: 0.1 -> 26% antrian,
-        # 0.02 -> 15%, 0.015 -> ~10%.
-        bawaan_pool, bawaan_rate = GIFT_TIER2, 0.015
+    mode_tier = tier_mode is not None
+    if mode_tier:
+        bawaan_pool, bawaan_rate = GIFT_PER_TIER[tier_mode], 1.0
     else:
         bawaan_pool, bawaan_rate = GIFT, 0.125
 
@@ -332,15 +529,26 @@ if __name__ == "__main__":
 
     # Berapa sering gift disusul username. Di mock biasa sengaja tidak
     # selalu -- itu kasus "boost hangus" yang perlu ikut teruji.
-    gift_follow = 1.0 if (args.tier3 or args.tier4) else 0.75
+    gift_follow = 1.0 if mode_tier else 0.75
 
     # Tiap tier punya jedanya sendiri di server, dan memakai jeda yang
     # salah membuat mock-nya menumpuk lagi -- persis masalah yang jeda
     # otomatis ini dibuat untuk menyelesaikan.
-    jeda_kunci = "spotlightGapTier3S" if args.tier3 else None
+    jeda_kunci = f"spotlightGapTier{tier_mode}S" if mode_tier else None
+
+    # Pembuka dan tap cuma untuk campuran harian. Mode --tier* dipakai
+    # menilai SATU jenis adegan, dan skenario lain yang menyela di tengahnya
+    # justru merusak yang sedang dinilai.
+    campuran = not mode_tier and not args.gift
+    pembuka = campuran and not args.tanpa_pembuka
+    tap_rate = (args.tap_rate if args.tap_rate is not None
+                else (0.08 if campuran else 0.0))
 
     try:
         asyncio.run(main(args.count, min_delay, max_delay, args.seed, args.dry_run,
-                         gift_rate, gift_pool, jeda_kunci, gift_follow))
+                         gift_rate, gift_pool, jeda_kunci, gift_follow,
+                         # Mode --tier* mengirim x1: combo Rose akan naik
+                         # jadi Rosa, dan yang sedang dinilai jadi tercampur.
+                         pembuka, tap_rate, combo=not mode_tier))
     except KeyboardInterrupt:
         log.info("Berhenti.")
