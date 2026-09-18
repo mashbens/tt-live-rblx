@@ -2101,8 +2101,8 @@ local DANCE_FALLBACK = "rbxassetid://106865236633450"
 
 local PLAYLIST = {
 	{ nama = "Lagu 1", musik = "", dance = "rbxassetid://106865236633450" },
-	{ nama = "Lagu 2", musik = "", dance = "rbxassetid://106865236633450" },
-	{ nama = "Lagu 3", musik = "", dance = "rbxassetid://106865236633450" },
+	{ nama = "Lagu 2", musik = "", dance = "rbxassetid://3695333486" },  -- Hype Dance
+	{ nama = "Lagu 3", musik = "", dance = "rbxassetid://4555808220" },  -- Keeping Time
 }
 
 -- Kalau satu lagu gagal dimuat, TimeLength-nya 0 dan Ended tidak pernah
@@ -4182,39 +4182,6 @@ local function fetchNext()
 	return nil
 end
 
-local musikSeq = nil   -- seq terakhir yang sudah dijadwalkan
-
-local function cekMusikApi()
-	local data = ambilJson("/api/music")
-	if not data or type(data.seq) ~= "number" or data.seq == musikSeq then
-		return
-	end
-	if type(data.index) ~= "number" or data.index < 1 then return end
-
-	musikSeq = data.seq
-	local seq  = data.seq
-	local sisa = (tonumber(data.sisa_ms) or 0) / 1000
-
-	-- Lagunya belum bunyi: tunggu sampai detik bunyinya. Sudah lewat
-	-- (server Roblox baru hidup di tengah lagu): ganti sekarang juga.
-	task.delay(math.max(0, sisa), function()
-		-- Keburu disusul lagu lain selama menunggu -> yang ini batal.
-		if musikSeq == seq then
-			putarLagu(data.index)
-		end
-	end)
-end
-
-local function startMusicApi()
-	if not (MUSIC_ENABLED and MUSIC_API) then return end
-	task.spawn(function()
-		while true do
-			cekMusikApi()
-			task.wait(POLL_MUSIK)
-		end
-	end)
-end
-
 -- ============ ANGKA KAMERA UNTUK CLIENT ============
 --
 -- DITARIK client saat dia mulai, bukan didorong lewat PlayerAdded:
@@ -4723,7 +4690,43 @@ if MUSIC_ENABLED then
 end
 
 startMusicLoop()
-startMusicApi()
+
+-- Polling /api/music di gelungnya sendiri -- lihat MUSIC_API.
+--
+-- Dibungkus do...end, bukan local function di tingkat atas: seluruh
+-- file ini satu fungsi dan sudah mepet batas 200 variabel lokal (lihat
+-- VISUAL). Lokal di dalam blok ini dilepas lagi begitu blok selesai.
+if MUSIC_ENABLED and MUSIC_API then
+	local musikSeq = nil   -- seq terakhir yang sudah dijadwalkan
+
+	local function cekMusikApi()
+		local data = ambilJson("/api/music")
+		if not data or type(data.seq) ~= "number" or data.seq == musikSeq then
+			return
+		end
+		if type(data.index) ~= "number" or data.index < 1 then return end
+
+		musikSeq = data.seq
+		local seq  = data.seq
+		local sisa = (tonumber(data.sisa_ms) or 0) / 1000
+
+		-- Lagunya belum bunyi: tunggu sampai detik bunyinya. Sudah lewat
+		-- (server Roblox baru hidup di tengah lagu): ganti sekarang juga.
+		task.delay(math.max(0, sisa), function()
+			-- Keburu disusul lagu lain selama menunggu -> yang ini batal.
+			if musikSeq == seq then
+				putarLagu(data.index)
+			end
+		end)
+	end
+
+	task.spawn(function()
+		while true do
+			cekMusikApi()
+			task.wait(POLL_MUSIK)
+		end
+	end)
+end
 
 while true do
 	local entry = fetchNext()

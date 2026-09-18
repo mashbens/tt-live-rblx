@@ -51,7 +51,10 @@ def daftar_lagu() -> list[str]:
 def lapor(body: bytes) -> tuple[int, bytes]:
     req = urllib.request.Request(
         BASE_URL + "/api/music", data=body, method="POST",
-        headers={"Content-Type": "application/json", "X-Token": API_TOKEN})
+        # User-Agent bawaan urllib ("Python-urllib/3.x") diblokir
+        # Cloudflare di depan VM -- balasannya "error code: 1010".
+        headers={"Content-Type": "application/json", "X-Token": API_TOKEN,
+                 "User-Agent": "tt-rblx-player/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=5) as res:
             return res.status, res.read()
