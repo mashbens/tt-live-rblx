@@ -286,7 +286,12 @@ deploy:
 	tar czf - Dockerfile .dockerignore main.py roblox_ssl.py deploy/docker-compose.yml \
 		| ssh $(VM_SSH) 'tar xzf - -C $(VM_DIR) && cd $(VM_DIR) && docker compose -f deploy/docker-compose.yml up -d --build'
 	@echo ""
-	@code=$$(curl -s -m 10 -o /dev/null -w '%{http_code}' $(PUBLIC_URL)/); echo "$(PUBLIC_URL) -> $$code"
+	@# Container baru butuh beberapa detik, dan nginx menyimpan IP container
+	@# lama sampai 10 detik -- cek sekali langsung selalu 502.
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		code=$$(curl -s -m 5 -o /dev/null -w '%{http_code}' $(PUBLIC_URL)/); \
+		[ "$$code" = 200 ] && break; sleep 2; \
+	done; echo "$(PUBLIC_URL) -> $$code"
 
 vm-logs:
 	ssh -t $(VM_SSH) 'docker logs -f --tail 100 tt-rblx'
