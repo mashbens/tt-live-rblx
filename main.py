@@ -219,16 +219,16 @@ TIER5_KOIN = int(_env_float("TIER5_KOIN", 30))
 # tiap detik di sini dikalikan dengan seberapa sering dia muncul.
 SPOTLIGHT_MS_T2 = int(_env_float("SPOTLIGHT_MS_TIER2", 3000))
 
-# Lama sorotan tier 3 (Rosa, aura). SEPULUH detik: adegan sinematik --
+# Lama sorotan tier 3 (Rose, aura). DELAPAN detik: adegan sinematik --
 # kamera menyapu kanan-kiri-kanan, naik-turun dua kali, lalu mendorong masuk
 # tepat saat angka auranya mendarat. Layarnya letterbox + warna + kilatan,
 # dan garis tepi avatarnya berdenyut. Rinciannya di KAMERA_TIER[3] dan
 # LAYAR di AvatarQueueV2.
 #
 # Naik dari 4 detik atas permintaan. Harganya: Rosa jauh lebih jarang
-# disorot saat live ramai (jedanya 12 detik), dan Rose atau Rosa yang
+# disorot saat live ramai (jedanya 10 detik), dan Rose atau Rosa yang
 # datang sesudahnya menunggu lebih lama di antrian berbayar.
-SPOTLIGHT_MS_T3 = int(_env_float("SPOTLIGHT_MS_TIER3", 10000))
+SPOTLIGHT_MS_T3 = int(_env_float("SPOTLIGHT_MS_TIER3", 8000))
 
 # Lama sorotan tier 4 (nova). DATAR, dan isinya berurutan:
 #
@@ -318,7 +318,7 @@ def durasi_sorotan(tier: int = 4) -> int:
     """Lama sorotan (ms) untuk sebuah tier. Tidak bergantung koin.
 
       tier 2  Rose: 3 detik, cukup untuk wajah dan angka auranya
-      tier 3  aura + adegan kamera sinematik, 10 detik
+      tier 3  aura + adegan kamera sinematik, 8 detik
       tier 4  adegan nova 10,3 detik, lalu menari 3 detik
       tier 5  raksasa itu pose diam -- panjangnya ditentukan berapa lama
               badan 4x perlu untuk dibaca mata, bukan oleh gerakannya
@@ -342,14 +342,19 @@ SPOTLIGHT_GAP_T2_S = _env_float("SPOTLIGHT_GAP_TIER2_S", 3.0)
 # harus SELESAI sebelum yang berikutnya mulai. SPOTLIGHT_NAPAS_S di bawah
 # yang menjaganya sekarang, tapi jeda yang lebih pendek dari sorotannya
 # sendiri berhenti bercerita jujur (lihat _cek_sorotan_vs_jeda).
-# 12 = sorotan 10 + napas. Lebih pendek dari itu tidak berarti apa-apa:
+# 10 = sorotan 8 + napas. Lebih pendek dari itu tidak berarti apa-apa:
 # napas sesudah sorotan selalu menang.
-SPOTLIGHT_GAP_T3_S = _env_float("SPOTLIGHT_GAP_TIER3_S", 12.0)
+SPOTLIGHT_GAP_T3_S = _env_float("SPOTLIGHT_GAP_TIER3_S", 10.0)
 
 # Jeda tier 4 (nova). Nova menyita kamera, panggung, DAN seluruh layar
 # sekaligus (letterbox, warna abu-abu, ledakan setinggi 300 stud), dan dua
 # nova yang menempel terbaca sebagai satu kekacauan, bukan dua kedatangan.
 # 17 = sorotan 15 + napas 2.
+#
+# Cuma berlaku ANTAR NOVA. Nova sesudah tier lain cukup menunggu sorotan
+# itu habis + SPOTLIGHT_NAPAS_S (lihat _ambil_entri): dihitung dari mulainya
+# Rose (8 detik), 17 detik berarti panggung diam sembilan detik dengan nova
+# yang sudah menunggu di depan antrian.
 SPOTLIGHT_GAP_T4_S = _env_float("SPOTLIGHT_GAP_TIER4_S", 17.0)
 
 # Jeda tier 5 (raksasa). Dua raksasa beruntun saling mengganti di slot yang
@@ -396,6 +401,10 @@ last_spotlight_at: float | None = None
 # cuma bisa menebak lewat jedanya sendiri, dan tebakan itu yang dulu
 # salah untuk pasangan raksasa -> tier 2.
 last_spotlight_lama_s: float = 0.0
+
+# Tier sorotan yang terakhir disajikan. Jeda nova (tier 4) cuma berlaku
+# kalau yang sebelumnya juga nova.
+last_spotlight_tier: int | None = None
 
 # Cache displayName supaya tidak bolak-balik memanggil API Roblox
 # untuk username yang sama. Roblox punya rate limit.
@@ -509,19 +518,26 @@ def push(req: PushRequest):
         # sisipan di bawah menjaga urutan kirim, jadi yang duluan dikirim
         # yang duluan tampil.
 
-        # Disisipkan SESUDAH gift-gift yang sudah menunggu, bukan di paling
-        # depan.
+        # Disisipkan SESUDAH semua yang tiernya sama atau lebih tinggi, jadi
+        # tier tinggi menyalip tier rendah, dan sesama tier tetap urut kirim:
         #
-        # Dulu ini appendleft, dan akibatnya urutan yang bayar jadi TERBALIK:
-        # tiap gift baru menyalip gift yang sudah antre, jadi orang yang bayar
-        # paling awal tampil paling akhir. Terukur: Andi-Budi-Cici mengirim
+        #   antrian Rose4..Rose10, Doughnut datang -> Doughnut Rose4..Rose10
+        #
+        # Tanpa ini Doughnut menunggu di belakang sepuluh Rose, sekitar 100
+        # detik -- yang bayar paling mahal justru menunggu paling lama.
+        #
+        # Yang SEDANG tampil tidak ikut terpotong: dia sudah keluar dari
+        # antrian begitu disajikan, jadi yang disalip cuma yang masih
+        # menunggu.
+        #
+        # Sesama tier TIDAK boleh saling salip. Dulu ini appendleft, dan
+        # akibatnya urutan yang bayar jadi TERBALIK: Andi-Budi-Cici mengirim
         # berurutan, yang keluar Cici-Budi-Andi.
         #
-        # Yang gratisan tetap tidak pernah didahulukan -- gift selalu berada
-        # di depan mereka semua, cuma sekarang sesama gift saling menghormati
-        # urutan bayar.
+        # Yang gratisan tetap tidak pernah didahulukan -- tier 1 selalu di
+        # belakang semua gift.
         sisip = 0
-        while sisip < len(queue) and queue[sisip]["tier"] >= 2:
+        while sisip < len(queue) and queue[sisip]["tier"] >= tier:
             sisip += 1
         queue.insert(sisip, entry)
 
@@ -551,7 +567,7 @@ def _ambil_entri() -> dict | None:
     kembalikan None: Studio menunggu satu-dua polling lagi, lebih baik daripada
     dua sorotan menempel.
     """
-    global last_spotlight_at, last_spotlight_lama_s
+    global last_spotlight_at, last_spotlight_lama_s, last_spotlight_tier
 
     if not queue:
         return None
@@ -578,8 +594,13 @@ def _ambil_entri() -> dict | None:
     # max(), bukan dijumlah: untuk pasangan yang jedanya memang sudah
     # lebih panjang dari sorotan sebelumnya, tidak ada yang berubah sama
     # sekali dari perilaku lama.
-    jeda = max(_jeda_sorotan(depan["tier"]),
-               last_spotlight_lama_s + SPOTLIGHT_NAPAS_S)
+    #
+    # Pengecualian: jeda nova cuma menjaga jarak nova ke NOVA. Sesudah tier
+    # lain, nova cukup menunggu sorotan itu habis + napas.
+    jeda_tier = _jeda_sorotan(depan["tier"])
+    if depan["tier"] == 4 and last_spotlight_tier != 4:
+        jeda_tier = 0.0
+    jeda = max(jeda_tier, last_spotlight_lama_s + SPOTLIGHT_NAPAS_S)
     boleh_sorot = last_spotlight_at is None or (now - last_spotlight_at) >= jeda
 
     if boleh_sorot:
@@ -587,6 +608,7 @@ def _ambil_entri() -> dict | None:
         if TIER_EFFECTS[entry["tier"]]["spotlight"]:
             last_spotlight_at = now
             last_spotlight_lama_s = durasi_sorotan(entry["tier"]) / 1000
+            last_spotlight_tier = entry["tier"]
         return entry
 
     # Sorotan sedang dijeda: cari entri pertama yang bukan sorotan.

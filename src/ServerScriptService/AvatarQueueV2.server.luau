@@ -1456,13 +1456,13 @@ LAYAR.PILIHAN = {
 -- Yang dijual adegan ini PENAMPILAN orangnya -- badan, kulit, pakaian --
 -- jadi kameranya dekat dan memperlihatkannya dari segala sisi:
 --
---   0,0 - 2,6   DARI BAWAH   kamera rendah dekat lantai memandang kakinya,
+--   0,0 - 2,0   DARI BAWAH   kamera rendah dekat lantai memandang kakinya,
 --                            lalu naik dan mendekat sampai setinggi dada
---   2,6 - 6,0   KELILING     satu putaran penuh di jarak dekat (7 stud) --
+--   2,0 - 4,6   KELILING     satu putaran penuh di jarak dekat (7 stud) --
 --                            depan, samping, belakang pakaiannya
---   6,0 - 8,6   POTRET       naik ke wajah, lalu dorong masuk pelan. Angka
---                            aura berputar di sini dan MENDARAT di 8,5
---   8,6 - 10,0  LEPAS        meluncur balik ke kamera sorotan biasa
+--   4,6 - 7,0   POTRET       naik ke wajah, lalu dorong masuk pelan. Angka
+--                            aura berputar di sini dan MENDARAT di 6,9
+--   7,0 - 8,0   LEPAS        meluncur balik ke kamera sorotan biasa
 --
 -- LATAR SINEMATIK selama adegan, semuanya LOKAL di tiap client:
 --
@@ -1483,11 +1483,11 @@ local ROSA = {}
 
 ROSA.JALUR = {
 	-- Lama tiap bidikan, detik. Jumlahnya HARUS muat di sorotan Rosa
-	-- (SPOTLIGHT_MS_TIER3, 10 detik) -- dijaga test_tier.py.
-	naik   = 2.6,
-	orbit  = 3.4,
-	potret = 2.6,
-	lepas  = 1.4,
+	-- (SPOTLIGHT_MS_TIER3, 8 detik) -- dijaga test_tier.py.
+	naik   = 2.0,
+	orbit  = 2.6,
+	potret = 2.4,
+	lepas  = 1.0,
 	masuk  = 0.4,   -- meluncur dari kamera biasa ke jalur ini
 
 	-- DARI BAWAH
@@ -1944,7 +1944,7 @@ local KAMERA_TIER = {
 		tunda = 0.5, roll = 2.2,
 		denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
 
-	-- Tier 3 (Rosa, aura): ADEGAN SINEMATIK 10 detik dengan JALUR KAMERA
+	-- Tier 3 (Rose, aura): ADEGAN SINEMATIK 8 detik dengan JALUR KAMERA
 	-- SENDIRI -- dari bawah, mengelilingi dekat, potret. Lihat ROSA.JALUR.
 	--
 	-- Selama adegannya kamera dikemudikan jalur itu, jadi angka zoom,
@@ -1952,8 +1952,8 @@ local KAMERA_TIER = {
 	-- client versi lama tidak mengenal jalurnya) dan lapisan di bawah yang
 	-- dituju jalur itu waktu dia melepaskan kamera.
 	--
-	-- Angka auranya ditunda ke bidikan POTRET: tunda 6,0 + roll 2,5 =
-	-- mendarat di 8,5, saat kamera memandang wajah dan papannya. Selama
+	-- Angka auranya ditunda ke bidikan POTRET: tunda 4,6 + roll 2,3 =
+	-- mendarat di 6,9, saat kamera memandang wajah dan papannya. Selama
 	-- bidikan dari bawah dan keliling, papan itu keluar-masuk frame -- dan
 	-- putaran yang tidak terlihat sama saja dengan tidak diundi.
 	--
@@ -1962,7 +1962,7 @@ local KAMERA_TIER = {
 	-- terbaca sebagai kamera yang tidak yakin ke mana dia menuju.
 	[3] = { tahan = 1.0, keluar = 2.5,               maks = 0.80,
 		arcDeg = 24, arcPutar = 1.5, naikAmp = 3.0, naikPutar = 2,
-		tunda = 6.0, roll = 2.5,
+		tunda = 4.6, roll = 2.3,
 		jalur = ROSA.JALUR,
 		-- Letterbox dan kawan-kawannya. nil kalau MODE_ROSA "mati" atau
 		-- salah ketik -- dan salah ketik diperingatkan saat server mulai.

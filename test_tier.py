@@ -985,6 +985,7 @@ print("\n8. Sorotan tidak boleh bertumpuk")
 srv.queue.clear()
 srv.last_spotlight_at = None
 srv.last_spotlight_lama_s = 0.0
+srv.last_spotlight_tier = None
 
 for nama, t in (("raksasa", 5), ("aura", 3), ("gratisan", 1)):
     srv.push(srv.PushRequest(username=nama, tier=t, koin=t * 10))
@@ -1019,6 +1020,7 @@ cek("sesudah jedanya lewat, tier 3 baru disorot",
 srv.queue.clear()
 srv.last_spotlight_at = None
 srv.last_spotlight_lama_s = 0.0
+srv.last_spotlight_tier = None
 
 # --- dua gift orang yang sama TIDAK digabung jadi satu ---
 #
@@ -1034,6 +1036,60 @@ cek("Doughnut lalu Rose untuk nama yang sama = DUA entri, berurutan",
 srv.queue.clear()
 srv.last_spotlight_at = None
 srv.last_spotlight_lama_s = 0.0
+srv.last_spotlight_tier = None
+
+# --- tier tinggi menyalip tier rendah yang masih menunggu ---
+#
+# Rose1-3 sudah/sedang tampil (sudah keluar antrian), Rose4-10 menunggu,
+# lalu Rosa dan Doughnut datang. Doughnut tidak boleh menunggu tujuh Rose,
+# dan sesama tier tetap urut kirim.
+for i in range(4, 11):
+    srv.push(srv.PushRequest(username=f"rose{i}", tier=3, koin=1))
+srv.push(srv.PushRequest(username="gratisan", tier=1, koin=0))
+srv.push(srv.PushRequest(username="rosa", tier=4, koin=1))
+srv.push(srv.PushRequest(username="donat1", tier=5, koin=30))
+srv.push(srv.PushRequest(username="rose11", tier=3, koin=1))
+srv.push(srv.PushRequest(username="donat2", tier=5, koin=30))
+_urut = [e["username"] for e in srv.queue]
+_harap = (["donat1", "donat2", "rosa"] + [f"rose{i}" for i in range(4, 12)]
+          + ["gratisan"])
+cek("tier tinggi menyalip, sesama tier urut kirim, gratisan paling belakang",
+    _urut == _harap, f"isi antrian: {_urut}")
+
+srv.queue.clear()
+srv.last_spotlight_at = None
+srv.last_spotlight_lama_s = 0.0
+srv.last_spotlight_tier = None
+
+# --- jeda nova cuma berlaku antar nova ---
+#
+# Rose baru mulai, nova menunggu di depan. Nova cukup menunggu Rose habis
+# + napas, bukan 17 detik dari mulainya Rose. Nova kedua tetap kena jeda
+# nova penuh.
+srv.push(srv.PushRequest(username="rose", tier=3, koin=1))
+cek("Rose disajikan", (srv._ambil_entri() or {}).get("username") == "rose")
+srv.push(srv.PushRequest(username="nova1", tier=4, koin=1))
+srv.push(srv.PushRequest(username="nova2", tier=4, koin=1))
+_rose_s = srv.SPOTLIGHT_MS_T3 / 1000 + srv.SPOTLIGHT_NAPAS_S
+srv.last_spotlight_at -= _rose_s - 0.1
+cek("nova sebelum Rose habis + napas: masih ditahan", srv._ambil_entri() is None)
+srv.last_spotlight_at -= 0.2
+cek(f"nova sesudah Rose: cukup {_rose_s:.1f}s, bukan jeda nova "
+    f"{srv.SPOTLIGHT_GAP_T4_S:.0f}s",
+    (srv._ambil_entri() or {}).get("username") == "nova1")
+_nova_s = max(srv.SPOTLIGHT_GAP_T4_S,
+              srv.SPOTLIGHT_MS_T4 / 1000 + srv.SPOTLIGHT_NAPAS_S)
+srv.last_spotlight_at -= _nova_s - 0.1
+cek("nova sesudah nova: jeda nova penuh tetap berlaku",
+    srv._ambil_entri() is None)
+srv.last_spotlight_at -= 0.2
+cek("nova kedua keluar sesudah jeda nova",
+    (srv._ambil_entri() or {}).get("username") == "nova2")
+
+srv.queue.clear()
+srv.last_spotlight_at = None
+srv.last_spotlight_lama_s = 0.0
+srv.last_spotlight_tier = None
 
 
 print("\n9. TierNova: jadwal fase dan palet")
