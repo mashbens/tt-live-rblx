@@ -104,7 +104,7 @@ def _env_float(name: str, default: float) -> float:
 #   tier 1  komentar biasa     -- ikut antre, tidak ada apa-apa
 #   tier 2  Rose               -- skip lane + cakram biru di kakinya,
 #                                 sorotan 3 detik, TANPA efek VFX acak
-#   tier 3  Rosa / 1.000 tap   -- AURA: border + efek VFX acak 1 dari 3 di
+#   tier 3  Rosa               -- AURA: border + efek VFX acak 1 dari 3 di
 #                                 badannya, kamera pelan 4 detik
 #   tier 4  Bouquet Flower     -- NOVA: melayang naik, waktu berhenti, lalu
 #                                 membanting diri ke tanah dan menyapu
@@ -153,7 +153,7 @@ TIER_EFFECTS = {
         "orbit": False,
     },
     3: {
-        # Rose, gift lain di bawah TIER5_KOIN, atau 1.000 tap (dulu Rosa).
+        # Rose, atau gift lain di bawah TIER5_KOIN (dulu Rosa).
         # Aura VFX acak di badan (satu dari tiga
         # asset, dipilih di Lua) plus border.
         "scale": _env_float("TIER3_SCALE", 1.0),
@@ -163,7 +163,7 @@ TIER_EFFECTS = {
         "orbit": False,
     },
     4: {
-        # Rosa, atau Rose x10 dalam satu combo (dulu Bouquet Flower).
+        # Rosa, Rose x10 dalam satu combo, atau 2.000 tap (dulu Bouquet Flower).
         # Badan normal; yang membuatnya terbaca UPACARANYA
         # (TierNova, dijalankan client). Aura VFX acaknya menyala saat avatar
         # aslinya muncul kembali.
@@ -724,7 +724,7 @@ def clear_cache():
 
 # ------------------------------------------------------------------ musik
 #
-# Lagunya diputar DI LAPTOP (music_player.py), bukan di Roblox: lagu
+# Lagunya diputar DI LAPTOP (dashboard.py), bukan di Roblox: lagu
 # berlisensi yang di-upload ke Roblox kena moderasi. Roblox cuma perlu tahu
 # lagu nomor berapa yang sedang jalan supaya tariannya ikut ganti.
 #
@@ -749,12 +749,18 @@ musik: dict = {"seq": 0, "index": 0, "nama": "", "mulai": 0.0}
 
 @app.post("/api/music", dependencies=[Depends(cek_token)])
 def set_music(req: MusicRequest):
-    """Dipanggil music_player.py tiap kali akan memulai lagu."""
+    """Dipanggil dashboard.py tiap kali akan memulai lagu."""
     musik["seq"] += 1
     musik["index"] = req.index
     musik["nama"] = req.nama
     musik["mulai"] = time.monotonic() + max(0, req.mulai_dalam_ms) / 1000
-    return {"ok": True, "seq": musik["seq"]}
+    # Pemutar menunggu sisa_ms INI, bukan menghitung sendiri dari saat ia
+    # mengirim: kalau laporannya tersendat di jalan (pernah terukur 8 detik),
+    # hitungan sendiri membuat lagu bunyi duluan dan tarian menyusul. Dengan
+    # patokan jam VM, pemutar dan Roblox cuma meleset sejauh perjalanan
+    # balasannya masing-masing -- puluhan ms.
+    return {"ok": True, "seq": musik["seq"],
+            "sisa_ms": round((musik["mulai"] - time.monotonic()) * 1000)}
 
 
 @app.get("/api/music")

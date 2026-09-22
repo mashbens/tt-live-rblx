@@ -2084,6 +2084,9 @@ local SPAWN_LURUS = true
 -- sudah berdiri sejak lagu sebelumnya.
 --
 -- `dance` boleh dikosongkan ("") -> dipakai DANCE_FALLBACK.
+-- `dance` boleh juga DAFTAR ID -> tarian bergiliran selama lagu itu,
+-- tiap tarian minimal `tiap_s` detik (bawaan 8) dan gantinya di ujung
+-- putaran supaya tidak terpotong di tengah gerakan.
 -- `musik` boleh dikosongkan ("") -> tarian ganti tanpa ada lagu (kalau
 -- musiknya kamu putar dari luar Roblox, misalnya OBS).
 --
@@ -2101,15 +2104,24 @@ local DANCE_FALLBACK = "rbxassetid://106865236633450"
 
 local PLAYLIST = {
 	{ nama = "Lagu 1", musik = "", dance = "rbxassetid://106865236633450" },
-	{ nama = "Lagu 2", musik = "", dance = "rbxassetid://3695333486" },  -- Hype Dance
-	{ nama = "Lagu 3", musik = "", dance = "rbxassetid://4555808220" },  -- Keeping Time
+	{ nama = "Lagu 2", musik = "", dance = "rbxassetid://140219184038687" },  -- Brazilian Funk Footwork
+	-- Lagu 3: lima tarian bergiliran -- lihat giliran di putarLagu.
+	{ nama = "Lagu 3", musik = "", dance = {
+		"rbxassetid://15679621440",  -- Festive Dance
+		"rbxassetid://15679623052",  -- BLACKPINK LISA Money
+		"rbxassetid://15679624464",  -- BLACKPINK ROSE On The Ground
+		"rbxassetid://15689279687",  -- Imagine Dragons Bones
+		"rbxassetid://15689278184",  -- GloRilla Tomorrow
+	} },
+	-- Dance-nya sengaja sama dengan Lagu 2 (Brazilian Funk Footwork).
+	{ nama = "MONTAGEM ALQUIMIA", musik = "", dance = "rbxassetid://140219184038687" },
 }
 
 -- Kalau satu lagu gagal dimuat, TimeLength-nya 0 dan Ended tidak pernah
 -- menyala -- tanpa batas ini playlist berhenti selamanya di lagu itu.
 local MUSIC_MAX_S = 300
 
--- Lagu diputar DI LUAR Roblox (music_player.py di laptop, masuk ke
+-- Lagu diputar DI LUAR Roblox (dashboard.py di laptop, masuk ke
 -- stream lewat OBS / Live Studio), Roblox cuma mengganti tariannya.
 --
 -- Kenapa di luar: lagu berlisensi yang di-upload ke Roblox kena
@@ -2618,11 +2630,14 @@ end
 local function danceSekarang()
 	local lagu = PLAYLIST[laguIndex]
 	local id   = lagu and lagu.dance
+	-- Daftar = beberapa tarian bergiliran dalam satu lagu; `giliran`
+	-- dimajukan putarLagu. Lihat PLAYLIST.
+	if type(id) == "table" then id = id[lagu.giliran or 1] end
 	if id and id ~= "" then return id end
 	return DANCE_FALLBACK
 end
 
-local function playDance(model, animId)
+local function playDance(model, animId, fade)
 	local hum = model:FindFirstChildOfClass("Humanoid")
 	if not hum then return nil end
 
@@ -2646,13 +2661,16 @@ local function playDance(model, animId)
 
 	track.Looped = true
 	-- Play(0) = tanpa fade-in. Fade default 0,1 detik bikin gerakan awal
-	-- terlihat meleset dari yang lain.
-	track:Play(0)
+	-- terlihat meleset dari yang lain. Pengecualiannya giliran tarian di
+	-- tengah lagu: di situ semua avatar ganti bersamaan, jadi fade tidak
+	-- membuat siapa pun meleset -- justru menghapus patahan di sambungan.
+	track:Play(fade or 0)
 	return track
 end
 
--- Ganti tarian SELURUH panggung. Dipanggil tiap lagu berganti.
-local function gantiTarianSemua()
+-- Ganti tarian SELURUH panggung. Dipanggil tiap lagu berganti, dan tiap
+-- giliran tarian di lagu yang berisi beberapa tarian (fade = crossfade).
+local function gantiTarianSemua(fade)
 	local id = danceSekarang()
 
 	for slot, model in pairs(avatars) do
@@ -2664,8 +2682,8 @@ local function gantiTarianSemua()
 		-- masuk ke koreografi kerumunan.
 		if model.Parent and slot ~= SLOT_RAKSASA then
 			local lama = tracks[slot]
-			if lama then pcall(function() lama:Stop(0.15) end) end
-			tracks[slot] = playDance(model, id)
+			if lama then pcall(function() lama:Stop(fade or 0.15) end) end
+			tracks[slot] = playDance(model, id, fade)
 		end
 	end
 end
@@ -2687,7 +2705,75 @@ local function putarLagu(index)
 	-- Tarian diganti DULU, sebelum lagunya bunyi: kalau sesudah,
 	-- ada sepersekian detik di mana lagu baru berjalan di atas gerakan
 	-- lagu lama.
+	lagu.giliran = 1
+	lagu.gen = (lagu.gen or 0) + 1
 	gantiTarianSemua()
+
+	-- Beberapa tarian dalam satu lagu: bergiliran, dan gantinya selalu
+	-- di UJUNG putaran tarian yang sedang jalan -- dipotong di tengah
+	-- gerakan itu yang terlihat patah. Tiap tarian minimal `tiap_s` detik
+	-- (bawaan 8), dibulatkan ke atas ke putaran penuh.
+	--
+	-- `gen` menghentikan gelung ini begitu lagu berganti ATAU lagu yang
+	-- sama dimulai ulang -- tanpa itu dua gelung lama dan baru saling
+	-- memajukan giliran.
+	if type(lagu.dance) == "table" and #lagu.dance > 1 then
+		local idx, gen = laguIndex, lagu.gen
+		task.spawn(function()
+			while laguIndex == idx and lagu.gen == gen do
+				local mulai = os.clock()
+				local idNow = danceSekarang()
+
+				-- Panjang tarian dibaca dari track yang benar-benar jalan.
+				-- Panggung kosong: tidak ada yang bisa patah, cukup tunggu.
+				local acuan
+				for _, t in pairs(tracks) do
+					if t and t.IsPlaying and t.Animation
+						and t.Animation.AnimationId == idNow then
+						acuan = t
+						break
+					end
+				end
+				local L = 0
+				if acuan then
+					while acuan.Length == 0 and os.clock() - mulai < 3 do
+						task.wait(0.1)
+					end
+					L = acuan.Length
+				end
+				local minS = lagu.tiap_s or 8
+
+				local function masihLagunya()
+					return laguIndex == idx and lagu.gen == gen
+				end
+
+				if L > 0 then
+					-- Dihitung dari DidLoop, bukan dari jam: track baru
+					-- benar-benar bergerak sesudah animasinya dimuat, dan
+					-- menghitung dari jam memotong ~0,25 detik sebelum
+					-- ujung putaran (terukur) -- persis patahan yang mau
+					-- dihindari.
+					local perlu, putaran = math.ceil(minS / L), 0
+					local conn = acuan.DidLoop:Connect(function()
+						putaran += 1
+					end)
+					while putaran < perlu and acuan.IsPlaying
+						and masihLagunya() do
+						task.wait(0.03)
+					end
+					conn:Disconnect()
+				else
+					while os.clock() - mulai < minS and masihLagunya() do
+						task.wait(0.05)
+					end
+				end
+				if laguIndex ~= idx or lagu.gen ~= gen then break end
+
+				lagu.giliran = lagu.giliran % #lagu.dance + 1
+				gantiTarianSemua(0.3)
+			end
+		end)
+	end
 
 	if lagu.musik and lagu.musik ~= "" then
 		local s = Instance.new("Sound")

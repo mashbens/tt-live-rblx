@@ -94,7 +94,7 @@ BLACKLIST_PATH = Path(os.environ.get("BLACKLIST_PATH", BASE_DIR / "roblox_blackl
 #
 #   tier 1  komentar biasa
 #   tier 2  Rose            skip lane + cakram biru, sorotan 3 detik
-#   tier 3  Rosa / tap      AURA (efek partikel acak di badan)
+#   tier 3  Rosa            AURA (efek partikel acak di badan)
 #   tier 4  Bouquet Flower  UPACARA (nova)
 #   tier 5  Doughnut        UKURAN (raksasa)
 #
@@ -315,14 +315,14 @@ GIFT_BOOST_TTL_S = _env_float("GIFT_BOOST_TTL_S", 90.0)
 
 # --------------------------------------------------------------------- LIKE --
 
-# Berapa kali tap layar untuk naik ke tier 2 (aura) tanpa mengeluarkan koin
-# sama sekali.
+# Berapa kali tap layar untuk dapat satu nova (LIKE_TIER) tanpa mengeluarkan
+# koin sama sekali.
 #
 # Ini jalur GRATIS, dan sengaja mahal dalam usaha. Gunanya bukan menyaingi
 # gift, tapi memberi penonton yang tidak mau bayar satu hal yang bisa mereka
 # kejar -- dan tap-tap itu yang mendorong live-nya naik di beranda TikTok.
 #
-# Turun 2.000 -> 1.000, dan alasannya data, bukan selera: tiga live
+# Dulu turun 2.000 -> 1.000, dan alasannya data, bukan selera: tiga live
 # sungguhan mencatat 296, 641, dan 897 tap SEPANJANG SIARAN, dijumlah dari
 # SEMUA penonton. TikTok tidak mengirim satu event per tap -- tap digabung
 # dan sebagian tidak pernah dikirim sama sekali -- jadi angka yang sampai ke
@@ -331,25 +331,30 @@ GIFT_BOOST_TTL_S = _env_float("GIFT_BOOST_TTL_S", 90.0)
 # muncul. Angka yang kebaca per orang sekarang ikut dicetak di [detak]
 # ("tap terbanyak"): setel angka ini dari situ, bukan dari tebakan.
 #
+# Sekarang NAIK lagi ke 2.000, bersamaan dengan hadiahnya naik ke nova:
+# hadiah yang lebih besar, usaha yang lebih besar. Kalau "tap terbanyak"
+# di [detak] tetap jauh di bawah 2.000 sepanjang live, jalur ini kembali
+# mustahil -- turunkan lewat .env.
+#
 # Hitungannya AKUMULATIF per penonton dan berulang: tiap kelipatan angka ini
-# tercapai, dia dapat satu kali tier 2 lagi, sisanya diteruskan ke hitungan
+# tercapai, dia dapat satu kali nova lagi, sisanya diteruskan ke hitungan
 # berikutnya. Tidak ada kedaluwarsa -- orang yang nyicil tap sepanjang
 # siaran tetap sampai.
-LIKE_PODIUM = int(_env_float("LIKE_PODIUM", 1000))
+LIKE_PODIUM = int(_env_float("LIKE_PODIUM", 2000))
 
 # Tier yang didapat lewat tap saja.
 #
-# Setara Rosa: AURA. Bukan lebih -- nova (Bouquet Flower) dan raksasa
-# (Doughnut) itu yang DIJUAL, dan kalau tap juga bisa sampai ke sana,
-# keduanya kehilangan alasannya untuk dibeli.
+# Setara Rosa: NOVA (tier 4). Dulu sengaja ditahan di bawah nova supaya
+# nova tetap cuma bisa dibeli; sekarang dilepas -- 2.000 tap per orang itu
+# usaha yang cukup besar untuk setara satu Rosa. Raksasa (Doughnut) tetap
+# cuma bisa dibeli: tap tidak pernah sampai tier 5.
 #
-# Naik dari tier Rose ke tier Rosa waktu Rose turun jadi "skip lane +
-# cakram biru" saja. Tap itu usaha yang besar (1.000 per orang), dan
-# hadiahnya tidak boleh lebih kecil daripada gift 1 koin.
+# Karena tiernya 4, tap-nova juga menyalip Rose yang sedang antre dan
+# membekukan panggung selama adegannya, persis seperti Rosa.
 #
 # Tap sekarang spawn SENDIRI, bukan digabung ke gift yang kebetulan
 # menunggu. Sama dengan aturan gift: tiap hal yang didapat = satu spawn.
-LIKE_TIER = int(_env_float("LIKE_TIER", 3))
+LIKE_TIER = int(_env_float("LIKE_TIER", 4))
 
 # Tiap kelipatan segini dicatat di log, supaya kamu bisa mengumumkan
 # progresnya saat live ("tinggal 500 lagi"). 0 = tidak usah dicatat.

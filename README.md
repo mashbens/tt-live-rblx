@@ -571,13 +571,14 @@ menunggu, `0` mematikan pra-muat.
 
 #### Tap-tap layar: podium gratis
 
-**1.000 tap = satu kali tier 3 (setara Rosa, aura)**, tanpa koin sama sekali
+**2.000 tap = satu kali nova (tier 4, setara Rosa)**, tanpa koin sama sekali
 (`LIKE_PODIUM` dan `LIKE_TIER` di `.env`). Hitungannya per penonton,
-akumulatif, dan berulang: tiap kelipatan 1.000 tercapai dia dapat tier 3 lagi,
-dan sisanya **tidak hangus** — 2.100 tap = dua kali plus 100 tap yang jalan
-terus ke hitungan berikutnya. Tap tidak pernah bisa sampai ke nova (tier 4)
-atau raksasa (tier 5): dua itu cuma bisa dibeli. Hadiah tap juga spawn
-**sendiri**, tidak digabung ke gift yang kebetulan sedang menunggu.
+akumulatif, dan berulang: tiap kelipatan 2.000 tercapai dia dapat nova lagi,
+dan sisanya **tidak hangus** — 4.100 tap = dua kali plus 100 tap yang jalan
+terus ke hitungan berikutnya. Tap tidak pernah bisa sampai ke raksasa
+(tier 5): itu cuma bisa dibeli. Hadiah tap juga spawn **sendiri**, tidak
+digabung ke gift yang kebetulan sedang menunggu. Karena tiernya 4, tap-nova
+menyalip Rose yang sedang antre dan membekukan panggung, persis seperti Rosa.
 
 Yang dipakai `event.count` (tap dari orang itu), **bukan** `event.total` (total
 like ruangan) — kalau yang kedua, satu orang naik podium karena tap ribuan
@@ -588,9 +589,9 @@ Dua urutan yang sama-sama jalan, persis seperti gift:
 - **tap dulu, baru username** — haknya disimpan `LIKE_PODIUM_TTL_S` (90 detik),
   menunggu komentar berikutnya dari orang itu
 - **username dulu, baru tap** — avatarnya sudah berdiri di kerumunan, jadi
-  langsung di-spawn lagi sebagai tier 3 tanpa dia mengetik lagi
+  langsung di-spawn lagi sebagai nova tanpa dia mengetik lagi
 
-**Koinnya tidak ikut dipalsukan.** Jalur tap mendorong tier 3 lewat penanda
+**Koinnya tidak ikut dipalsukan.** Jalur tap mendorong nova lewat penanda
 tersendiri, bukan dengan pura-pura dia mengirim 10 koin — papan namanya tetap
 menampilkan koin yang benar-benar dia keluarkan (0 kalau memang cuma tap).
 Kalau tap diterjemahkan jadi koin, papan berbohong ke penonton lain tentang
@@ -603,8 +604,9 @@ digabung dan sebagian tidak pernah dikirim — jadi angka yang sampai ke listene
 jauh di bawah yang dirasakan jari penontonnya. Tidak ada satu pun orang yang
 pernah bisa mencapai 2.000.
 
-Sekarang 1.000, dan baris `[detak]` listener ikut mencetak **tap terbanyak per
-orang** (`tap terbanyak <user> 312/1000`). Kalau angka itu tetap jauh di bawah
+Sempat diturunkan ke 1.000 (hadiahnya tier 3), sekarang naik lagi ke 2.000
+bersamaan dengan hadiahnya naik ke nova. Baris `[detak]` listener mencetak
+**tap terbanyak per orang** (`tap terbanyak <user> 312/2000`). Kalau angka itu tetap jauh di bawah
 ambangnya sepanjang live, turunkan `LIKE_PODIUM` di `.env` sampai jalurnya
 benar-benar bisa dicapai — tanpa itu tier dari tap tetap tidak akan muncul.
 

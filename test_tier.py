@@ -967,12 +967,12 @@ cek("ambang koin listener dan main.py sama",
     == (srv.TIER2_KOIN, srv.TIER3_KOIN, srv.TIER5_KOIN),
     f"listener {tl.TIER2_KOIN}/{tl.TIER3_KOIN}/{tl.TIER5_KOIN}, "
     f"main.py {srv.TIER2_KOIN}/{srv.TIER3_KOIN}/{srv.TIER5_KOIN}")
-cek(f"tap memberi tier aura ({int(angka('AURA_VFX_TIER'))})",
-    tl.LIKE_TIER == int(angka("AURA_VFX_TIER")),
+cek(f"tap memberi nova (tier {NOVA_TIER}), setara Rosa",
+    tl.LIKE_TIER == NOVA_TIER,
     f"LIKE_TIER {tl.LIKE_TIER}")
-cek(f"tap (tier {tl.LIKE_TIER}) tidak bisa sampai ke nova",
-    tl.LIKE_TIER < NOVA_TIER,
-    "nova dan raksasa cuma bisa dibeli")
+cek(f"tap (tier {tl.LIKE_TIER}) tidak bisa sampai ke raksasa",
+    tl.LIKE_TIER < GIANT_MIN,
+    "raksasa cuma bisa dibeli")
 
 
 print("\n8. Sorotan tidak boleh bertumpuk")
