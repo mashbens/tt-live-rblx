@@ -306,7 +306,7 @@ deploy:
 	@$(MAKE) --no-print-directory kirim-pembeli
 	grep -E '$(VM_ENV_KEYS)' .env | ssh $(VM_SSH) 'umask 077; cat > $(VM_DIR)/.env'
 	tar czf - Dockerfile .dockerignore main.py roblox_ssl.py deploy/docker-compose.yml \
-		| ssh $(VM_SSH) 'tar xzf - -C $(VM_DIR) && cd $(VM_DIR) && CONTAINER=$(CONTAINER) docker compose -p $(COMPOSE_PROJ) -f deploy/docker-compose.yml up -d --build'
+		| ssh $(VM_SSH) 'tar xzf - -C $(VM_DIR) && cd $(VM_DIR) && CONTAINER=$(CONTAINER) docker compose -p $(COMPOSE_PROJ) -f deploy/docker-compose.yml up -d --build --remove-orphans'
 	$(if $(INSTANCE),ssh $(VM_SSH) 'bash -s' -- $(INSTANCE) < deploy/nginx_route.sh)
 	@echo ""
 	@# Container baru butuh beberapa detik, dan nginx menyimpan IP container
