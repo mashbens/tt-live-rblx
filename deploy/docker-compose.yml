@@ -3,7 +3,11 @@
 # Ikut network milik nginx (nignx_app_net) supaya nginx memanggilnya
 # dengan nama container -- tidak ada port yang dibuka ke internet.
 services:
-  tt-rblx:
+  # BUKAN "tt-rblx": nama service ikut jadi nama DNS di network nginx, dan
+  # container semua pembeli memakai compose yang sama. Dengan nama itu,
+  # tt-rblx-arif ikut menjawab "tt-rblx" dan nginx membagi lalu lintas repo
+  # utama ke container pembeli. nginx memanggil container_name (unik).
+  server:
     build: ..
     # tt-rblx untuk repo utama, tt-rblx-<nama> untuk repo pembeli -- diisi
     # `make deploy` dari INSTANCE di .env.
