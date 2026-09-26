@@ -64,6 +64,52 @@ Cara lama, kalau VM bermasalah: kembalikan `rblx.conf.tunnel.bak` di VM,
 `GatewayPorts clientspecified` di
 `/etc/ssh/sshd_config.d/10-tt-rblx-tunnel.conf`).
 
+## Jual ke pembeli
+
+Pembeli tidak memegang skrip Lua. Tiap pembeli punya **repo, game Roblox,
+container, dan .exe sendiri**, jadi dance, tier, latar, lagu, dan setelannya
+bebas dikustom per orang:
+
+```
+../tt-rblx        (main)          kamu     -> container tt-rblx       https://rblx.buanaglobalcipta.com
+../tt-rblx-arif   (pembeli/arif)  arif     -> container tt-rblx-arif  https://rblx.buanaglobalcipta.com/arif
+```
+
+Repo pembeli adalah `git worktree` di branch `pembeli/<nama>`. Perbaikan di
+`main` tinggal di-merge ke branch itu (`git merge main` dari folder
+pembeli). `INSTANCE=<nama>` di `.env`-nya yang membuat `make deploy`,
+`make vm-logs`, dan `make exe` mengarah ke container dan URL milik pembeli
+itu. Repo utama (tanpa `INSTANCE`) tetap seperti biasa.
+
+Pembeli live di **Private Server** game-nya. `buyers.json` di repo pembeli
+berisi token + Roblox userId-nya. Karena itu hanya Private Server miliknya
+yang mengambil antrian, sedangkan server publik game itu kosong. Studio
+(tanpa `owner`) memakai `API_TOKEN` di `.env` repo pembeli, jadi kamu tetap
+bisa mengetes dengan `make mock` dari folder pembeli.
+
+Pembeli baru:
+
+```bash
+make pembeli-baru NAMA=arif ROBLOX_ID=10720653359   # dari repo utama
+cd ../tt-rblx-arif
+# kustom: src/ (Lua), asset/ (lagu), .env (tier, sorotan)
+make deploy      # container tt-rblx-arif + route nginx /arif/
+make rojo        # Studio: place kosong baru -> Rojo Connect -> Publish as NEW game
+make exe         # -> C:\tt-rblx-build\TikTokRoblox-arif.zip, kirim ke pembeli
+```
+
+Setelah publish, di Game Settings nyalakan Security > Allow HTTP Requests
+dan Monetization > Private Servers.
+
+- `make deploy` menambah `rblx.d/<nama>.conf` di nginx VM, lalu reload
+  sesudah `nginx -t` lolos. Kalau gagal, perubahannya dikembalikan
+  (`deploy/nginx_route.sh`).
+- `make exe` membangun .exe dari WSL memakai Python Windows portable yang
+  diunduh sendiri pada build pertama. Tidak ada yang perlu diinstal di
+  Windows.
+- `make pembeli-hapus NAMA=arif` dari folder pembeli langsung mencabut
+  tokennya.
+
 ## Alur antrian
 
 Penonton mengetik username Roblox di komentar live → `tiktok_listener.py`

@@ -27,6 +27,11 @@ tinggal "Sambung" detik, dan keduanya disilang-pudarkan.
 
 Lapor dan spawn lewat server kecil ini, bukan langsung dari browser, supaya
 API_TOKEN tidak pernah sampai ke halaman.
+
+MODE PEMBELI (.exe Windows, lihat tt_rblx.py): tidak ada `make` di sana,
+jadi tombolnya menjalankan perintahnya langsung dan cuma yang dipakai
+pembeli saat live -- listener, lihat/kosongkan antrian. Deploy, tunnel, dan
+Rojo urusan pemilik repo.
 """
 
 import atexit
@@ -47,9 +52,14 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# .exe PyInstaller membongkar dirinya ke folder sementara, jadi __file__
+# menunjuk ke sana. .env, asset/, dan blacklist ada di sebelah .exe-nya.
+BEKU = getattr(sys, "frozen", False)
+ROOT = Path(sys.executable).parent if BEKU else Path(__file__).parent
+MODE_PEMBELI = BEKU or os.name == "nt"
 
-ROOT = Path(__file__).parent
+load_dotenv(ROOT / ".env")
+
 FOLDER = ROOT / "asset"
 PORT = int(os.environ.get("PLAYER_PORT", "8765"))
 EKSTENSI = {".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav",
@@ -78,12 +88,42 @@ PERINTAH = {
     "deploy":   {"terus": False, "ket": "kirim server ke VM", "yakin": True},
 }
 
+# Perintah untuk pembeli: nilainya argumen tt_rblx.py (lihat di sana).
+#
+# Listener-nya TikFinity SAJA, bukan `auto`: pembeli tidak punya key
+# EulerStream, dan `auto` jatuh ke sana begitu TikFinity belum dibuka --
+# yang terlihat pembeli jadi error EulerStream, bukan "buka TikFinity".
+# Mode tikfinity cukup menunggu dan menyambung sendiri begitu aplikasinya
+# jalan. Username TikTok juga tidak perlu: akun yang dibaca ditentukan
+# TikFinity.
+PERINTAH_PEMBELI = {
+    "listener":    {"terus": True,  "ket": "baca komentar lewat TikFinity",
+                    "argv": ["listener", "--source", "tikfinity"]},
+    "mock":        {"terus": True,  "ket": "komentar palsu untuk tes, tanpa live",
+                    "argv": ["mock"]},
+    "peek":        {"terus": False, "ket": "lihat isi antrian",
+                    "argv": ["peek"]},
+    "clear":       {"terus": False, "ket": "kosongkan antrian", "yakin": True,
+                    "argv": ["clear"]},
+}
+if MODE_PEMBELI:
+    PERINTAH = PERINTAH_PEMBELI
+
+
+def perintah(nama: str) -> list[str]:
+    if not MODE_PEMBELI:
+        return ["make", "--no-print-directory", nama]
+    argv = PERINTAH_PEMBELI[nama]["argv"]
+    if BEKU:
+        return [sys.executable, *argv]
+    return [sys.executable, str(ROOT / "tt_rblx.py"), *argv]
+
 # Warna ANSI dari listener dan rojo tidak berarti apa-apa di HTML.
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
 class Job:
-    """Satu target make yang sedang atau pernah dijalankan."""
+    """Satu perintah yang sedang atau pernah dijalankan."""
 
     def __init__(self, nama: str):
         self.nama = nama
@@ -104,17 +144,22 @@ class Job:
     def start(self) -> None:
         if self.jalan():
             return
-        self.tulis(f"$ make {self.nama}   ({time.strftime('%H:%M:%S')})")
+        self.tulis(f"$ {self.nama}   ({time.strftime('%H:%M:%S')})")
         self.proc = subprocess.Popen(
-            ["make", "--no-print-directory", self.nama], cwd=ROOT,
+            perintah(self.nama), cwd=ROOT,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
             # Grup proses sendiri: Stop harus ikut mematikan anak-anaknya
-            # (python, rojo, autossh), bukan cuma `make`-nya.
-            start_new_session=True,
-            # Tanpa ini print() Python ditahan di buffer dan log listener
-            # baru muncul bergerombol tiap beberapa KB.
-            env={**os.environ, "PYTHONUNBUFFERED": "1"})
+            # (python, rojo, autossh), bukan cuma `make`-nya. Windows tidak
+            # punya grup proses POSIX -- di sana tidak ada `make` di tengah,
+            # jadi mematikan prosesnya sendiri sudah cukup.
+            start_new_session=os.name != "nt",
+            # Tanpa PYTHONUNBUFFERED print() Python ditahan di buffer dan
+            # log listener baru muncul bergerombol tiap beberapa KB.
+            # PYTHONIOENCODING: di Windows pipa memakai cp1252, dan emoji
+            # pertama di nama penonton TikTok mematikan listener.
+            env={**os.environ, "PYTHONUNBUFFERED": "1",
+                 "PYTHONIOENCODING": "utf-8"})
         threading.Thread(target=self._baca, args=(self.proc,),
                          daemon=True).start()
 
@@ -126,6 +171,9 @@ class Job:
 
     def stop(self) -> None:
         if not self.jalan():
+            return
+        if os.name == "nt":
+            self.proc.terminate()
             return
         try:
             os.killpg(self.proc.pid, signal.SIGTERM)
@@ -152,13 +200,16 @@ atexit.register(matikan_semua)
 
 
 def daftar_lagu() -> list[str]:
+    if not FOLDER.is_dir():
+        return []
     return sorted(p.name for p in FOLDER.iterdir()
                   if p.suffix.lower() in EKSTENSI)
 
 
-def kirim_ke_server(path: str, body: bytes) -> tuple[int, bytes]:
+def kirim_ke_server(path: str, body: bytes | None,
+                    method: str = "POST") -> tuple[int, bytes]:
     req = urllib.request.Request(
-        BASE_URL + path, data=body, method="POST",
+        BASE_URL + path, data=body, method=method,
         # User-Agent bawaan urllib ("Python-urllib/3.x") diblokir
         # Cloudflare di depan VM -- balasannya "error code: 1010".
         headers={"Content-Type": "application/json", "X-Token": API_TOKEN,
@@ -251,7 +302,7 @@ class Handler(BaseHTTPRequestHandler):
             print(f"[spawn] {body.decode(errors='replace')} -> {code}")
             self.kirim(code, isi, "application/json")
 
-        elif (m := re.fullmatch(r"/jobs/(\w+)/(start|stop)", self.path)) \
+        elif (m := re.fullmatch(r"/jobs/([\w-]+)/(start|stop)", self.path)) \
                 and m.group(1) in JOBS:
             job = JOBS[m.group(1)]
             job.start() if m.group(2) == "start" else job.stop()
@@ -376,7 +427,7 @@ async function muatJobs() {
 
 async function aksi(j, a) {
   if (a === "log") { gantiLog(j.nama); return; }
-  if (a === "start" && j.yakin && !confirm("Yakin menjalankan make " + j.nama + "?")) return;
+  if (a === "start" && j.yakin && !confirm("Yakin menjalankan " + j.nama + "?")) return;
   await kirim(`/jobs/${j.nama}/${a}`);
   gantiLog(j.nama);
   muatJobs();
@@ -596,7 +647,18 @@ def _keluar(*_):
     sys.exit(0)
 
 
-if __name__ == "__main__":
+def perintah_antrian(nama: str) -> int:
+    """`peek` / `clear` untuk mode pembeli: pengganti curl di Makefile."""
+    if nama == "peek":
+        code, isi = kirim_ke_server("/api/peek", None, "GET")
+    else:
+        code, isi = kirim_ke_server("/api/clear", None, "DELETE")
+    print(f"{BASE_URL} -> {code}")
+    print(isi.decode("utf-8", errors="replace"))
+    return 0 if code == 200 else 1
+
+
+def main() -> None:
     # SIGTERM juga, bukan cuma Ctrl+C: atexit tidak jalan kalau proses
     # dibunuh sinyal, dan listener yang yatim terus mengirim ke antrian.
     signal.signal(signal.SIGTERM, _keluar)
@@ -609,7 +671,16 @@ if __name__ == "__main__":
           + ("" if API_TOKEN else "  (API_TOKEN kosong!)"))
     print(f"Buka http://127.0.0.1:{PORT}   Ctrl+C mematikan dashboard "
           "dan semua proses yang dinyalakan dari sana.")
+    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    if BEKU:
+        # Pembeli mengklik .exe-nya dua kali, tidak mengetik alamat.
+        import webbrowser
+        webbrowser.open(f"http://127.0.0.1:{PORT}")
     try:
-        ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+        server.serve_forever()
     except KeyboardInterrupt:
         pass
+
+
+if __name__ == "__main__":
+    main()

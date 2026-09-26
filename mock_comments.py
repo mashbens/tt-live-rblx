@@ -27,7 +27,7 @@ import random
 
 import httpx
 
-from tiktok_listener import (LIKE_PODIUM, LIKE_TIER, PUSH_URL, Pipeline, log,
+from tiktok_listener import (API_TOKEN, LIKE_PODIUM, LIKE_TIER, PUSH_URL, Pipeline, log,
                              tier_dari_gift)
 
 # Semua nama ini sudah dicek dan memang ada di Roblox, jadi mock-nya menguji
@@ -325,7 +325,7 @@ async def lihat_antrian() -> None:
     peek_url = PUSH_URL.replace("/api/push", "/api/peek")
     try:
         async with httpx.AsyncClient(timeout=5) as c:
-            data = (await c.get(peek_url)).json()
+            data = (await c.get(peek_url, headers={"X-Token": API_TOKEN})).json()
     except Exception as e:
         log.warning("[peek] tidak bisa membaca antrian: %s", e.__class__.__name__)
         return
@@ -474,7 +474,7 @@ async def main(count: int | None, min_delay: float | None, max_delay: float | No
             await lihat_antrian()
 
 
-if __name__ == "__main__":
+def cli(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Simulasi komentar TikTok Live")
     parser.add_argument("--count", type=int, default=None,
                         help="Berhenti setelah sekian komentar (default: jalan terus)")
@@ -499,7 +499,7 @@ if __name__ == "__main__":
                         help="Peluang satu kejadian berupa gift (0..1, default 0.125)")
     parser.add_argument("--gift", action="append", metavar="NAMA",
                         help="Batasi ke gift tertentu, boleh diulang (mis. --gift Rosa)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     min_delay, max_delay = (0.0, 0.0) if args.fast else (args.min_delay, args.max_delay)
 
@@ -549,3 +549,7 @@ if __name__ == "__main__":
                          pembuka, tap_rate, combo=not mode_tier))
     except KeyboardInterrupt:
         log.info("Berhenti.")
+
+
+if __name__ == "__main__":
+    cli()

@@ -2083,10 +2083,12 @@ local SPAWN_LURUS = true
 -- seluruh avatar di panggung ganti tarian bersamaan -- termasuk yang
 -- sudah berdiri sejak lagu sebelumnya.
 --
--- `dance` boleh dikosongkan ("") -> dipakai DANCE_FALLBACK.
+-- `dance` boleh dikosongkan ("") -> dipakai DANCE.FALLBACK.
 -- `dance` boleh juga DAFTAR ID -> tarian bergiliran selama lagu itu,
--- tiap tarian minimal `tiap_s` detik (bawaan 8) dan gantinya di ujung
--- putaran supaya tidak terpotong di tengah gerakan.
+-- urut dari atas lalu balik ke yang pertama. Tiap tarian minimal
+-- `tiap_s` detik (bawaan 8) dan gantinya di ujung putaran supaya tidak
+-- terpotong di tengah gerakan. `tiap_s = 0` = sekali putaran penuh per
+-- tarian lalu langsung sambung ke berikutnya.
 -- `musik` boleh dikosongkan ("") -> tarian ganti tanpa ada lagu (kalau
 -- musiknya kamu putar dari luar Roblox, misalnya OBS).
 --
@@ -2100,21 +2102,51 @@ local MUSIC_VOLUME  = 0.5
 -- Jeda hening antar lagu, detik.
 local MUSIC_GAP     = 1.5
 
-local DANCE_FALLBACK = "rbxassetid://106865236633450"
+-- SATU tabel, bukan beberapa `local` terpisah: chunk ini sudah dekat
+-- batas 200 local register Luau, dan tiap nama baru di tingkat atas
+-- bisa membuat seluruh script gagal dimuat ("Out of local registers").
+local DANCE = {
+	FALLBACK = "rbxassetid://106865236633450",
+	FUNK     = "rbxassetid://140219184038687",  -- Brazilian Funk Footwork
+	-- BLACKPINK diisi di bawah.
+}
 
+-- Tujuh tarian BLACKPINK bergiliran, urut dari atas lalu balik ke yang
+-- pertama. Pasangannya `tiap_s = 0` -> tiap tarian diputar SEKALI (satu
+-- putaran penuh, ~62 detik untuk satu siklus) lalu langsung sambung ke
+-- berikutnya. Lihat giliran di putarLagu.
+--
+-- Aman dipakai bersama beberapa baris PLAYLIST: `giliran` dan `gen`
+-- disimpan di baris lagunya, bukan di daftar ini, jadi tiap lagu punya
+-- gilirannya sendiri.
+DANCE.BLACKPINK = {
+	"rbxassetid://14548619594",  -- Pink Venom - Get em Get em Get em
+	"rbxassetid://14548620495",  -- Pink Venom - I Bring the Pain Like...
+	"rbxassetid://14548621256",  -- Pink Venom - Straight to Ya Dome
+	"rbxassetid://14901306096",  -- Shut Down - Part 1
+	"rbxassetid://14901308987",  -- Shut Down - Part 2
+	"rbxassetid://15439354020",  -- JISOO Flower
+	"rbxassetid://15439356296",  -- JENNIE You and Me
+}
+
+-- `nama` TAMPIL DI LAYAR penonton ("♪ <nama>", lihat tampilkanLagu di
+-- KameraClientV2), jadi isinya judul lagu -- bukan catatan internal.
+-- Nama file-nya ditaruh di komentar tiap baris: file ke-N di asset/
+-- (urut nama) = baris ke-N di sini.
 local PLAYLIST = {
-	{ nama = "Lagu 1", musik = "", dance = "rbxassetid://106865236633450" },
-	{ nama = "Lagu 2", musik = "", dance = "rbxassetid://140219184038687" },  -- Brazilian Funk Footwork
-	-- Lagu 3: lima tarian bergiliran -- lihat giliran di putarLagu.
-	{ nama = "Lagu 3", musik = "", dance = {
-		"rbxassetid://15679621440",  -- Festive Dance
-		"rbxassetid://15679623052",  -- BLACKPINK LISA Money
-		"rbxassetid://15679624464",  -- BLACKPINK ROSE On The Ground
-		"rbxassetid://15689279687",  -- Imagine Dragons Bones
-		"rbxassetid://15689278184",  -- GloRilla Tomorrow
-	} },
+	-- asset/lagu1.mp3
+	{ nama = "Lagu 1", musik = "", dance = DANCE.FALLBACK },
+	-- asset/lagu2.mp3
+	{ nama = "Lagu 2", musik = "", dance = DANCE.FUNK },
+	-- asset/lagu3.mp3
+	{ nama = "BLACKPINK Mix", musik = "", tiap_s = 0, dance = DANCE.BLACKPINK },
+	-- asset/lagu4.mp3
 	-- Dance-nya sengaja sama dengan Lagu 2 (Brazilian Funk Footwork).
-	{ nama = "MONTAGEM ALQUIMIA", musik = "", dance = "rbxassetid://140219184038687" },
+	{ nama = "MONTAGEM ALQUIMIA", musik = "", dance = DANCE.FUNK },
+	-- asset/lagu5.mp3
+	{ nama = "Lagu 5", musik = "", tiap_s = 0, dance = DANCE.BLACKPINK },
+	-- asset/lagu6.mp3
+	{ nama = "Lagu 6", musik = "", dance = DANCE.FUNK },
 }
 
 -- Kalau satu lagu gagal dimuat, TimeLength-nya 0 dan Ended tidak pernah
@@ -2634,7 +2666,7 @@ local function danceSekarang()
 	-- dimajukan putarLagu. Lihat PLAYLIST.
 	if type(id) == "table" then id = id[lagu.giliran or 1] end
 	if id and id ~= "" then return id end
-	return DANCE_FALLBACK
+	return DANCE.FALLBACK
 end
 
 local function playDance(model, animId, fade)
@@ -2753,7 +2785,10 @@ local function putarLagu(index)
 					-- menghitung dari jam memotong ~0,25 detik sebelum
 					-- ujung putaran (terukur) -- persis patahan yang mau
 					-- dihindari.
-					local perlu, putaran = math.ceil(minS / L), 0
+					-- math.max(1, ...) supaya tiap_s = 0 berarti SEKALI
+					-- putaran penuh, bukan nol putaran (= ganti seketika,
+					-- gelung berputar liar dan tidak ada gerakan yang utuh).
+					local perlu, putaran = math.max(1, math.ceil(minS / L)), 0
 					local conn = acuan.DidLoop:Connect(function()
 						putaran += 1
 					end)
@@ -2763,7 +2798,11 @@ local function putarLagu(index)
 					end
 					conn:Disconnect()
 				else
-					while os.clock() - mulai < minS and masihLagunya() do
+					-- Panjang tarian tak terbaca (panggung kosong / animasi
+					-- belum dimuat). Tanpa lantai 3 detik, tiap_s = 0 bikin
+					-- gelung ini berputar ratusan kali per detik.
+					local tunggu = math.max(minS, 3)
+					while os.clock() - mulai < tunggu and masihLagunya() do
 						task.wait(0.05)
 					end
 				end
@@ -4238,6 +4277,16 @@ end
 -- ============ SERVER API ============
 
 local function ambilJson(path)
+	-- Di game yang sudah dipublish, VM memilih antrian lewat pemilik
+	-- Private Server: tiap pembeli live di Private Server-nya sendiri, dan
+	-- listener-nya mengisi antrian yang terikat ke Roblox userId-nya
+	-- (buyers.json di VM). Server publik mengirim 0 dan tidak dapat apa-apa.
+	--
+	-- Studio TIDAK mengirim owner -> kanal utama (API_TOKEN), seperti dulu.
+	if not RunService:IsStudio() then
+		path ..= (string.find(path, "?", 1, true) and "&" or "?")
+			.. "owner=" .. tostring(game.PrivateServerOwnerId)
+	end
 	local ok, res = pcall(function()
 		return HttpService:RequestAsync({
 			Url     = URL .. path,

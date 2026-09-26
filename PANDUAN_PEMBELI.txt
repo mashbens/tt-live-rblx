@@ -1,0 +1,159 @@
+==============================================================
+  TikTokRoblox -- komentar TikTok Live jadi avatar di Roblox
+  Panduan setup
+==============================================================
+
+Penonton live kamu mengetik username Roblox di kolom komentar, lalu avatarnya
+muncul dan menari di panggung Roblox. Kalau mereka kirim gift, avatarnya dapat
+efek khusus.
+
+
+--------------------------------------------------------------
+ YANG KAMU BUTUHKAN
+--------------------------------------------------------------
+
+  - PC/laptop Windows 10 atau 11
+  - Akun Roblox. Roblox userId-nya harus sudah kamu kirim ke penjual
+    SEBELUM setup, karena penjual mendaftarkan ID itu.
+  - Aplikasi Roblox (Roblox Player)
+  - OBS Studio atau TikTok LIVE Studio untuk siaran
+  - TikFinity Desktop (https://tikfinity.zerody.one), untuk membaca
+    komentar dan gift live kamu
+
+  Isi folder ini:
+      TikTokRoblox.exe      aplikasinya
+      .env                  setelan kamu (berisi token pribadi, jangan
+                            diubah dan jangan dibagikan)
+      asset\                lagu-lagu, diputar berurutan
+      roblox_blacklist.txt  username Roblox yang tidak boleh tampil
+      PANDUAN_PEMBELI.txt   file ini
+
+
+--------------------------------------------------------------
+ LANGKAH 1 -- Taruh foldernya
+--------------------------------------------------------------
+
+  Ekstrak zip ke folder biasa, misalnya:
+      C:\Users\<nama kamu>\Desktop\TikTokRoblox
+
+  Jangan jalankan langsung dari dalam zip.
+
+
+--------------------------------------------------------------
+ LANGKAH 2 -- Pasang TikFinity Desktop
+--------------------------------------------------------------
+
+  1. Unduh dan pasang TikFinity Desktop dari https://tikfinity.zerody.one
+  2. Buka, lalu sambungkan ke akun TikTok kamu.
+
+  Akun TikTok yang dibaca ditentukan oleh TikFinity, jadi tidak ada
+  username yang perlu diisi di tempat lain.
+
+
+--------------------------------------------------------------
+ LANGKAH 3 -- Buat Private Server di Roblox
+--------------------------------------------------------------
+
+  1. Buka link game dari penjual.
+  2. Pilih tab "Servers" > "Create Private Server".
+  3. Private Server-nya HARUS dibuat pakai akun Roblox yang ID-nya sudah
+     kamu kirim ke penjual.
+
+  Avatar cuma muncul di Private Server milikmu. Di server publik
+  panggungnya kosong, dan itu memang disengaja.
+
+
+--------------------------------------------------------------
+ LANGKAH 4 -- Jalankan aplikasinya
+--------------------------------------------------------------
+
+  1. Buka TikFinity Desktop dulu (sudah tersambung ke akun TikTok-mu).
+  2. Klik dua kali TikTokRoblox.exe.
+
+     Kalau muncul "Windows protected your PC": klik "More info" lalu
+     "Run anyway". Peringatan ini muncul karena aplikasinya belum
+     ditandatangani sertifikat berbayar, bukan karena virus.
+
+  3. Jendela hitam (konsol) terbuka, dan browser membuka dashboard di
+     http://127.0.0.1:8765
+
+     Jendela hitam itu JANGAN ditutup selama live. Menutupnya berarti
+     mematikan aplikasinya.
+
+
+--------------------------------------------------------------
+ LANGKAH 5 -- Mulai live
+--------------------------------------------------------------
+
+  1. Masuk ke Private Server-mu lewat Roblox Player.
+  2. Mulai live TikTok.
+  3. Di dashboard, bagian "Perintah", tekan Start di baris "listener".
+  4. Kotak Log di bawah menampilkan komentar yang masuk antrian.
+  5. Coba sendiri: dari HP, komentari live-mu dengan username Roblox
+     (misalnya: builderman). Dalam beberapa detik avatarnya muncul.
+
+
+--------------------------------------------------------------
+ MUSIK
+--------------------------------------------------------------
+
+  Lagu diputar di BROWSER (tab dashboard), bukan di Roblox, dan tarian
+  avatar ikut berganti mengikuti lagu.
+
+  - Tekan "Mulai" di bagian "Putar lagu".
+  - Supaya lagunya terdengar di siaran, OBS harus merekam suara desktop
+    (Desktop Audio).
+  - Lagu ke-1 di folder asset\ memakai tarian ke-1, dan seterusnya. Urutan
+    ditentukan nama file, jadi kalau mau mengganti lagu, pakai nama yang
+    sama (lagu1.mp3, lagu2.mp3, ...).
+  - Kalau tarian terlihat telat atau mendahului lagu, ubah angka
+    "Geser suara".
+
+
+--------------------------------------------------------------
+ EFEK GIFT (setelan bawaan)
+--------------------------------------------------------------
+
+  Komentar biasa        ikut antre, tampil biasa
+  Rose, atau gift lain  sorotan kamera sinematik + aura
+    di bawah 30 koin
+  Rosa / Rose x10 /     NOVA: melayang, membanting ke tanah,
+    2.000 tap layar       menyapu barisan
+  Doughnut, atau gift   RAKSASA 4x di belakang barisan
+    >= 30 koin
+
+  Yang kirim gift tidak ikut antre, jadi langsung didahulukan.
+
+  "Spawn manual" di dashboard memunculkan avatar tanpa komentar, bisa
+  dipakai untuk tes.
+
+
+--------------------------------------------------------------
+ KALAU ADA MASALAH
+--------------------------------------------------------------
+
+  Avatar tidak muncul sama sekali
+    - Pastikan kamu di Private Server milikmu sendiri, bukan server publik
+      atau Private Server milik orang lain.
+    - Pastikan listener berstatus jalan (titik hijau) di dashboard.
+    - Tekan Start di "peek". Kalau nama-nama menumpuk di situ tapi tidak
+      muncul di Roblox, hubungi penjual dan sebutkan Roblox userId-mu.
+
+  Log berisi "401" atau "token salah"
+    - Baris API_TOKEN di .env berubah atau terhapus. Minta file .env baru
+      ke penjual.
+
+  Log diam saja
+    - Log cuma menulis komentar yang BERISI username Roblox yang valid.
+      Obrolan biasa memang tidak ditampilkan.
+    - Pastikan TikFinity Desktop jalan dan tersambung ke akunmu. Kalau
+      belum, log menulis "Tidak bisa menghubungi TikFinity" dan listener
+      menyambung sendiri begitu TikFinity dibuka.
+
+  Antrian penuh
+    - Wajar kalau live sedang ramai. Nama yang datang saat antrian penuh
+      dilewati, sedangkan yang kirim gift tetap masuk.
+    - Tekan Start di "clear" untuk mengosongkan antrian.
+
+  Browser tidak terbuka sendiri
+    - Buka manual: http://127.0.0.1:8765

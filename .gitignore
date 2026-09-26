@@ -1,4 +1,4 @@
-.venv/
+.venv
 __pycache__/
 *.pyc
 .env
@@ -9,3 +9,10 @@ __pycache__/
 
 # Lagu untuk music_player.py. Repo ini publik -- file lagu jangan ikut.
 asset/*
+
+# Token semua pembeli (pembeli.py). Repo ini publik.
+buyers.json
+paket_pembeli/
+# Hasil PyInstaller kalau spec-nya dijalankan manual.
+build/
+dist/

@@ -5,11 +5,21 @@
 services:
   tt-rblx:
     build: ..
-    container_name: tt-rblx
+    # tt-rblx untuk repo utama, tt-rblx-<nama> untuk repo pembeli -- diisi
+    # `make deploy` dari INSTANCE di .env.
+    container_name: ${CONTAINER:-tt-rblx}
     restart: unless-stopped
     # .env di VM berisi setelan server saja (tier, sorotan, QUEUE_MAX,
     # API_TOKEN) -- disaring `make deploy` dari .env laptop.
     env_file: ../.env
+    # Daftar pembeli. Foldernya yang dipasang, bukan buyers.json langsung:
+    # file yang belum ada di VM akan dibuat docker sebagai FOLDER kosong.
+    # main.py membaca ulang file ini sendiri tiap berubah, jadi
+    # `make pembeli` tidak perlu restart container.
+    environment:
+      BUYERS_PATH: /app/data/buyers.json
+    volumes:
+      - ../data:/app/data:ro
     networks: [nignx_app_net]
 
 networks:

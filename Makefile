@@ -25,7 +25,17 @@ PORT          ?= 8000
 # alamat VM tidak ditulis di sini.
 TUNNEL_SSH    ?= $(shell grep -E '^TUNNEL_SSH=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ')
 TUNNEL_BIND   ?= 172.17.0.1:9000
-PUBLIC_URL    ?= https://rblx.buanaglobalcipta.com
+
+# Repo pembeli (worktree dari `make pembeli-baru`) punya INSTANCE=<nama> di
+# .env-nya: container, folder VM, dan URL-nya sendiri. Kosong = repo utama,
+# persis seperti sebelum ada pembeli.
+INSTANCE      ?= $(shell grep -E '^INSTANCE=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ')
+CONTAINER     := tt-rblx$(if $(INSTANCE),-$(INSTANCE))
+# Project compose repo utama "deploy" (nama folder compose-nya, dari
+# sebelum ada INSTANCE). Diganti = compose membuat container baru bernama
+# sama dan gagal karena tt-rblx yang lama masih memegang namanya.
+COMPOSE_PROJ  := $(if $(INSTANCE),$(CONTAINER),deploy)
+PUBLIC_URL    ?= https://rblx.buanaglobalcipta.com$(if $(INSTANCE),/$(INSTANCE))
 
 # autossh menyambung ulang sendiri kalau wifi putus di tengah live.
 # ExitOnForwardFailure: kalau port 9000 masih dipegang sesi lama yang basi,
@@ -54,7 +64,7 @@ API_TOKEN    ?= $(shell grep -E '^API_TOKEN=' .env 2>/dev/null | cut -d= -f2- | 
 
 # Server di VM (`make deploy`). Login SSH-nya sama dengan tunnel.
 VM_SSH ?= $(TUNNEL_SSH)
-VM_DIR ?= /root/tt-rblx
+VM_DIR ?= /root/$(CONTAINER)
 # Kunci .env yang dibaca main.py. Cuma ini yang dikirim ke VM -- kunci
 # EulerStream, login VM, dan setelan listener tetap di laptop.
 VM_ENV_KEYS := ^(TIER[0-9]_(SCALE|KOIN)|SPOTLIGHT_[A-Z0-9_]+|QUEUE_MAX|API_TOKEN)=
@@ -63,11 +73,11 @@ VM_ENV_KEYS := ^(TIER[0-9]_(SCALE|KOIN)|SPOTLIGHT_[A-Z0-9_]+|QUEUE_MAX|API_TOKEN
 # jalan juga di shell yang belum memuat ~/.aftman/env.
 ROJO      ?= $(HOME)/.aftman/bin/rojo
 
-.PHONY: help install server dev tunnel listener player dashboard listener-tf watch watch-tf up mock mock-tier3 mock-tier4 mock-tier5 selftest test test-tier test-sync lint rojo rojo-build peek clear status clean deploy vm-logs
+.PHONY: help install server dev tunnel listener player dashboard listener-tf watch watch-tf up pembeli pembeli-baru pembeli-hapus pembeli-daftar kirim-pembeli exe mock mock-tier3 mock-tier4 mock-tier5 selftest test test-tier test-sync lint rojo rojo-build peek clear status clean deploy vm-logs
 
 help:
 	@echo ""
-	@echo "  tt-rblx -- komentar TikTok Live -> antrian -> Roblox Studio"
+	@echo "  tt-rblx$(if $(INSTANCE), [pembeli $(INSTANCE)]) -- komentar TikTok Live -> antrian -> Roblox Studio"
 	@echo ""
 	@echo "  PERSIAPAN"
 	@echo "    make install     pasang dependency ke .venv"
@@ -110,6 +120,13 @@ help:
 	@echo ""
 	@echo "  VM"
 	@echo "    make deploy      kirim server + setelan .env ke VM, build, jalankan"
+	@echo "    make pembeli NAMA=andi ROBLOX_ID=123"
+	@echo "                     daftarkan pembeli, cetak tokennya, kirim ke VM"
+	@echo "    make pembeli-baru NAMA=andi ROBLOX_ID=123"
+	@echo "                     repo sendiri untuk pembeli (../tt-rblx-andi)"
+	@echo "    make pembeli-hapus NAMA=andi   cabut akses pembeli"
+	@echo "    make pembeli-daftar            lihat semua pembeli"
+	@echo "    make exe [NAMA=andi]           bangun TikTokRoblox.exe + zip siap kirim"
 	@echo "    make vm-logs     log server antrian di VM (Ctrl+C keluar)"
 	@echo ""
 	@echo "  LAIN"
@@ -256,7 +273,7 @@ rojo-build:
 # ------------------------------------------------------------------- antrian
 
 peek:
-	@curl -s $(BASE_URL)/api/peek || echo "server antrian tidak menyahut -- sudah `make server`?"
+	@curl -s -H "X-Token: $(API_TOKEN)" $(BASE_URL)/api/peek || echo "server antrian tidak menyahut -- sudah `make server`?"
 	@echo ""
 
 clear:
@@ -270,7 +287,7 @@ status:
 		case $$code in 2*|3*|404) echo "hidup di $(PUBLIC_URL)";; \
 		502|504) echo "MATI -- VM menyahut ($$code), tapi tunnel/server laptop tidak";; \
 		*) echo "MATI ($$code)";; esac
-	@printf 'antrian         : '; curl -s -m 2 $(BASE_URL)/api/peek 2>/dev/null \
+	@printf 'antrian         : '; curl -s -m 2 -H "X-Token: $(API_TOKEN)" $(BASE_URL)/api/peek 2>/dev/null \
 		| $(PY) -c "import json,sys; print(json.load(sys.stdin)['size'], 'nama menunggu')" 2>/dev/null \
 		|| echo "-"
 
@@ -285,10 +302,12 @@ status:
 deploy:
 	@test -n "$(VM_SSH)" || { echo "TUNNEL_SSH belum diisi di .env"; exit 1; }
 	@test -n "$(API_TOKEN)" || { echo "API_TOKEN belum diisi di .env -- server di VM terbuka ke internet"; exit 1; }
-	ssh $(VM_SSH) 'mkdir -p $(VM_DIR)/deploy'
+	ssh $(VM_SSH) 'mkdir -p $(VM_DIR)/deploy $(VM_DIR)/data'
+	@$(MAKE) --no-print-directory kirim-pembeli
 	grep -E '$(VM_ENV_KEYS)' .env | ssh $(VM_SSH) 'umask 077; cat > $(VM_DIR)/.env'
 	tar czf - Dockerfile .dockerignore main.py roblox_ssl.py deploy/docker-compose.yml \
-		| ssh $(VM_SSH) 'tar xzf - -C $(VM_DIR) && cd $(VM_DIR) && docker compose -f deploy/docker-compose.yml up -d --build'
+		| ssh $(VM_SSH) 'tar xzf - -C $(VM_DIR) && cd $(VM_DIR) && CONTAINER=$(CONTAINER) docker compose -p $(COMPOSE_PROJ) -f deploy/docker-compose.yml up -d --build'
+	$(if $(INSTANCE),ssh $(VM_SSH) 'bash -s' -- $(INSTANCE) < deploy/nginx_route.sh)
 	@echo ""
 	@# Container baru butuh beberapa detik, dan nginx menyimpan IP container
 	@# lama sampai 10 detik -- cek sekali langsung selalu 502.
@@ -297,8 +316,46 @@ deploy:
 		[ "$$code" = 200 ] && break; sleep 2; \
 	done; echo "$(PUBLIC_URL) -> $$code"
 
+# Pembeli: satu token + Roblox userId pemilik Private Server-nya. Lihat
+# bagian KANAL di main.py. buyers.json disimpan di laptop (tidak di-commit)
+# dan disalin utuh ke VM; server di sana membacanya ulang tanpa restart,
+# jadi aman dijalankan saat pembeli lain sedang live.
+pembeli:
+	@test -n "$(NAMA)" -a -n "$(ROBLOX_ID)" || { echo "make pembeli NAMA=andi ROBLOX_ID=12345678"; exit 1; }
+	PUBLIC_URL=$(PUBLIC_URL) $(PY) pembeli.py tambah $(NAMA) $(ROBLOX_ID)
+	@$(MAKE) --no-print-directory kirim-pembeli
+
+# Repo sendiri untuk satu pembeli: worktree ../tt-rblx-<NAMA> di branch
+# pembeli/<NAMA>, dengan .env, container, URL, dan game Roblox-nya sendiri.
+# Lihat README, "Jual ke pembeli".
+pembeli-baru:
+	@test -n "$(NAMA)" -a -n "$(ROBLOX_ID)" || { echo "make pembeli-baru NAMA=andi ROBLOX_ID=12345678"; exit 1; }
+	@test -z "$(INSTANCE)" || { echo "Jalankan dari repo utama, bukan dari repo pembeli."; exit 1; }
+	$(PY) pembeli.py repo $(NAMA) $(ROBLOX_ID)
+
+pembeli-hapus:
+	@test -n "$(NAMA)" || { echo "make pembeli-hapus NAMA=andi"; exit 1; }
+	$(PY) pembeli.py hapus $(NAMA)
+	@$(MAKE) --no-print-directory kirim-pembeli
+
+pembeli-daftar:
+	@$(PY) pembeli.py daftar
+
+# .exe Windows untuk pembeli, dibangun dari WSL lewat Python Windows
+# portable. Hasilnya C:\tt-rblx-build\TikTokRoblox[-NAMA].zip.
+exe:
+	NAMA=$(or $(NAMA),$(INSTANCE)) ./build_exe.sh
+
+kirim-pembeli:
+	@test -n "$(VM_SSH)" || { echo "TUNNEL_SSH belum diisi di .env"; exit 1; }
+	@test -f buyers.json || echo '{}' > buyers.json
+	@# Ditulis ke file sementara lalu di-rename: main.py tidak pernah membaca
+	@# buyers.json yang baru tersalin separuh.
+	ssh $(VM_SSH) 'umask 077; mkdir -p $(VM_DIR)/data && cat > $(VM_DIR)/data/buyers.json.tmp && mv $(VM_DIR)/data/buyers.json.tmp $(VM_DIR)/data/buyers.json' < buyers.json
+	@echo "buyers.json terkirim ke VM."
+
 vm-logs:
-	ssh -t $(VM_SSH) 'docker logs -f --tail 100 tt-rblx'
+	ssh -t $(VM_SSH) 'docker logs -f --tail 100 $(CONTAINER)'
 
 # ------------------------------------------------------------------------ lain
 

@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -46,9 +47,12 @@ from TikTokLive.events import (CommentEvent, ConnectEvent, DisconnectEvent,
 # nanti cukup satu tempat yang diubah.
 from roblox_ssl import USERS_API, _make_ssl_context
 
-load_dotenv()
+# Di .exe (tt_rblx.py lewat PyInstaller) __file__ ada di folder bongkaran
+# sementara; .env dan roblox_blacklist.txt ada di sebelah .exe-nya.
+BASE_DIR = (Path(sys.executable).parent if getattr(sys, "frozen", False)
+            else Path(__file__).resolve().parent)
 
-BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
 
 
 def _env_float(name: str, default: float) -> float:
@@ -1305,7 +1309,7 @@ async def run_self_test(texts: list[str]) -> None:
         log.info("Self-test selesai. %s masuk antrian, %s ditolak.", pipeline.pushed, pipeline.rejected)
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Antrikan username Roblox dari komentar TikTok Live"
     )
@@ -1323,7 +1327,7 @@ if __name__ == "__main__":
                              "Desktop kalau jalan, kalau tidak jatuh ke "
                              "EulerStream. 'tikfinity': paksa TikFinity. "
                              "'euler': paksa EulerStream (butuh username)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     try:
         if args.self_test:
@@ -1342,3 +1346,7 @@ if __name__ == "__main__":
                                  args.show_comments))
     except KeyboardInterrupt:
         log.info("Berhenti.")
+
+
+if __name__ == "__main__":
+    main()

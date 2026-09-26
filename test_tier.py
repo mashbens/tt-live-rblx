@@ -982,10 +982,10 @@ print("\n8. Sorotan tidak boleh bertumpuk")
 # keduanya kehilangan sorotannya, tanpa error apa pun.
 #
 # Yang menjaganya sekarang SPOTLIGHT_NAPAS_S di _ambil_entri.
-srv.queue.clear()
-srv.last_spotlight_at = None
-srv.last_spotlight_lama_s = 0.0
-srv.last_spotlight_tier = None
+srv.KANAL_UTAMA.queue.clear()
+srv.KANAL_UTAMA.last_spotlight_at = None
+srv.KANAL_UTAMA.last_spotlight_lama_s = 0.0
+srv.KANAL_UTAMA.last_spotlight_tier = None
 
 for nama, t in (("raksasa", 5), ("aura", 3), ("gratisan", 1)):
     srv.push(srv.PushRequest(username=nama, tier=t, koin=t * 10))
@@ -1008,19 +1008,19 @@ cek(f"jeda yang berlaku menutupi seluruh sorotan raksasa "
     jeda_berlaku >= lama_t4 + srv.SPOTLIGHT_NAPAS_S - 1e-9)
 
 # Sedetik sebelum jeda itu lewat: masih ditahan.
-srv.last_spotlight_at -= jeda_berlaku - 1.0
+srv.KANAL_UTAMA.last_spotlight_at -= jeda_berlaku - 1.0
 cek("sebelum jedanya lewat, tier 3 masih ditahan",
     srv._ambil_entri() is None,
     "tier 3 masuk selagi sorotan raksasa belum tuntas")
 
-srv.last_spotlight_at -= 1.1
+srv.KANAL_UTAMA.last_spotlight_at -= 1.1
 cek("sesudah jedanya lewat, tier 3 baru disorot",
     (srv._ambil_entri() or {}).get("username") == "aura")
 
-srv.queue.clear()
-srv.last_spotlight_at = None
-srv.last_spotlight_lama_s = 0.0
-srv.last_spotlight_tier = None
+srv.KANAL_UTAMA.queue.clear()
+srv.KANAL_UTAMA.last_spotlight_at = None
+srv.KANAL_UTAMA.last_spotlight_lama_s = 0.0
+srv.KANAL_UTAMA.last_spotlight_tier = None
 
 # --- dua gift orang yang sama TIDAK digabung jadi satu ---
 #
@@ -1030,13 +1030,13 @@ srv.last_spotlight_tier = None
 srv.push(srv.PushRequest(username="sama", tier=5, koin=30, tiktokUser="x"))
 srv.push(srv.PushRequest(username="sama", tier=2, koin=1, tiktokUser="x"))
 cek("Doughnut lalu Rose untuk nama yang sama = DUA entri, berurutan",
-    [(e["username"], e["tier"]) for e in srv.queue] == [("sama", 5), ("sama", 2)],
-    f"isi antrian: {[(e['username'], e['tier']) for e in srv.queue]}")
+    [(e["username"], e["tier"]) for e in srv.KANAL_UTAMA.queue] == [("sama", 5), ("sama", 2)],
+    f"isi antrian: {[(e['username'], e['tier']) for e in srv.KANAL_UTAMA.queue]}")
 
-srv.queue.clear()
-srv.last_spotlight_at = None
-srv.last_spotlight_lama_s = 0.0
-srv.last_spotlight_tier = None
+srv.KANAL_UTAMA.queue.clear()
+srv.KANAL_UTAMA.last_spotlight_at = None
+srv.KANAL_UTAMA.last_spotlight_lama_s = 0.0
+srv.KANAL_UTAMA.last_spotlight_tier = None
 
 # --- tier tinggi menyalip tier rendah yang masih menunggu ---
 #
@@ -1050,16 +1050,16 @@ srv.push(srv.PushRequest(username="rosa", tier=4, koin=1))
 srv.push(srv.PushRequest(username="donat1", tier=5, koin=30))
 srv.push(srv.PushRequest(username="rose11", tier=3, koin=1))
 srv.push(srv.PushRequest(username="donat2", tier=5, koin=30))
-_urut = [e["username"] for e in srv.queue]
+_urut = [e["username"] for e in srv.KANAL_UTAMA.queue]
 _harap = (["donat1", "donat2", "rosa"] + [f"rose{i}" for i in range(4, 12)]
           + ["gratisan"])
 cek("tier tinggi menyalip, sesama tier urut kirim, gratisan paling belakang",
     _urut == _harap, f"isi antrian: {_urut}")
 
-srv.queue.clear()
-srv.last_spotlight_at = None
-srv.last_spotlight_lama_s = 0.0
-srv.last_spotlight_tier = None
+srv.KANAL_UTAMA.queue.clear()
+srv.KANAL_UTAMA.last_spotlight_at = None
+srv.KANAL_UTAMA.last_spotlight_lama_s = 0.0
+srv.KANAL_UTAMA.last_spotlight_tier = None
 
 # --- jeda nova cuma berlaku antar nova ---
 #
@@ -1071,25 +1071,25 @@ cek("Rose disajikan", (srv._ambil_entri() or {}).get("username") == "rose")
 srv.push(srv.PushRequest(username="nova1", tier=4, koin=1))
 srv.push(srv.PushRequest(username="nova2", tier=4, koin=1))
 _rose_s = srv.SPOTLIGHT_MS_T3 / 1000 + srv.SPOTLIGHT_NAPAS_S
-srv.last_spotlight_at -= _rose_s - 0.1
+srv.KANAL_UTAMA.last_spotlight_at -= _rose_s - 0.1
 cek("nova sebelum Rose habis + napas: masih ditahan", srv._ambil_entri() is None)
-srv.last_spotlight_at -= 0.2
+srv.KANAL_UTAMA.last_spotlight_at -= 0.2
 cek(f"nova sesudah Rose: cukup {_rose_s:.1f}s, bukan jeda nova "
     f"{srv.SPOTLIGHT_GAP_T4_S:.0f}s",
     (srv._ambil_entri() or {}).get("username") == "nova1")
 _nova_s = max(srv.SPOTLIGHT_GAP_T4_S,
               srv.SPOTLIGHT_MS_T4 / 1000 + srv.SPOTLIGHT_NAPAS_S)
-srv.last_spotlight_at -= _nova_s - 0.1
+srv.KANAL_UTAMA.last_spotlight_at -= _nova_s - 0.1
 cek("nova sesudah nova: jeda nova penuh tetap berlaku",
     srv._ambil_entri() is None)
-srv.last_spotlight_at -= 0.2
+srv.KANAL_UTAMA.last_spotlight_at -= 0.2
 cek("nova kedua keluar sesudah jeda nova",
     (srv._ambil_entri() or {}).get("username") == "nova2")
 
-srv.queue.clear()
-srv.last_spotlight_at = None
-srv.last_spotlight_lama_s = 0.0
-srv.last_spotlight_tier = None
+srv.KANAL_UTAMA.queue.clear()
+srv.KANAL_UTAMA.last_spotlight_at = None
+srv.KANAL_UTAMA.last_spotlight_lama_s = 0.0
+srv.KANAL_UTAMA.last_spotlight_tier = None
 
 
 print("\n9. TierNova: jadwal fase dan palet")

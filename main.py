@@ -14,10 +14,12 @@ Perubahan dari versi sebelumnya:
   tidak bisa diambil dari dalam Studio. Python yang mengambilkannya.
 """
 
+import json
 import os
 import secrets
 import time
 from collections import deque
+from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
@@ -55,21 +57,12 @@ app = FastAPI(title="Roblox Avatar Queue Server")
 # dan HttpService Studio tidak perlu tahu rahasia apa pun.
 API_TOKEN = os.environ.get("API_TOKEN", "")
 
-
-def cek_token(x_token: str = Header(default="")) -> None:
-    if API_TOKEN and not secrets.compare_digest(x_token, API_TOKEN):
-        raise HTTPException(status_code=401, detail="token salah")
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Antrian. Isinya dict, bukan string polos, karena tiap entri sekarang membawa
-# tier dan siapa yang memanggilnya.
-queue: deque[dict] = deque()
 
 # Batas panjang antrian. Ini BUKAN soal memori (ribuan string itu remeh) --
 # ini soal jarak waktu antara orang mengetik dan avatarnya muncul.
@@ -393,19 +386,6 @@ def _jeda_sorotan(tier: int) -> float:
         return SPOTLIGHT_GAP_T4_S
     return SPOTLIGHT_GAP_T5_S
 
-# Kapan sorotan terakhir disajikan. None = belum pernah.
-last_spotlight_at: float | None = None
-
-# Berapa lama sorotan yang terakhir disajikan itu, detik. Dipakai
-# _ambil_entri untuk tahu kapan dia habis -- tanpa ini yang berikutnya
-# cuma bisa menebak lewat jedanya sendiri, dan tebakan itu yang dulu
-# salah untuk pasangan raksasa -> tier 2.
-last_spotlight_lama_s: float = 0.0
-
-# Tier sorotan yang terakhir disajikan. Jeda nova (tier 4) cuma berlaku
-# kalau yang sebelumnya juga nova.
-last_spotlight_tier: int | None = None
-
 # Cache displayName supaya tidak bolak-balik memanggil API Roblox
 # untuk username yang sama. Roblox punya rate limit.
 #
@@ -419,6 +399,128 @@ display_cache: dict[str, tuple[str, int | None]] = {}
 
 _cek_sorotan_vs_jeda()
 _cek_kunci_lama()
+
+
+# ------------------------------------------------------------------ KANAL --
+#
+# Satu KANAL = satu antrian + satu keadaan sorotan + satu lagu yang sedang
+# jalan. Tiap pembeli dapat kanalnya sendiri, supaya dua orang yang live
+# bersamaan tidak saling menjejalkan komentar ke panggung yang lain.
+#
+# Game-nya SATU (dipublish pemilik repo), pembeli main di Private Server
+# masing-masing. Yang memisahkan mereka:
+#
+#   listener/dashboard pembeli --X-Token--> kanal pembeli
+#   Roblox --?owner=PrivateServerOwnerId--> kanal pembeli yang sama
+#
+# Pasangan token <-> Roblox userId ditulis di buyers.json (`make pembeli`).
+# Kanal "utama" milik pemilik repo: API_TOKEN, dan Roblox Studio (yang tidak
+# mengirim owner sama sekali).
+class Kanal:
+    def __init__(self, nama: str):
+        self.nama = nama
+        # Isinya dict, bukan string polos, karena tiap entri membawa tier dan
+        # siapa yang memanggilnya.
+        self.queue: deque[dict] = deque()
+        # Kapan sorotan terakhir disajikan. None = belum pernah.
+        self.last_spotlight_at: float | None = None
+        # Berapa lama sorotan yang terakhir disajikan itu, detik. Dipakai
+        # _ambil_entri untuk tahu kapan dia habis -- tanpa ini yang berikutnya
+        # cuma bisa menebak lewat jedanya sendiri, dan tebakan itu yang dulu
+        # salah untuk pasangan raksasa -> tier 2.
+        self.last_spotlight_lama_s: float = 0.0
+        # Tier sorotan yang terakhir disajikan. Jeda nova (tier 4) cuma
+        # berlaku kalau yang sebelumnya juga nova.
+        self.last_spotlight_tier: int | None = None
+        # Lagu yang sedang jalan, lihat bagian musik di bawah.
+        self.musik: dict = {"seq": 0, "index": 0, "nama": "", "mulai": 0.0}
+
+
+KANAL_UTAMA = Kanal("utama")
+_kanal: dict[str, Kanal] = {"utama": KANAL_UTAMA}
+
+
+def ambil_kanal(nama: str) -> Kanal:
+    if nama not in _kanal:
+        _kanal[nama] = Kanal(nama)
+    return _kanal[nama]
+
+
+# Daftar pembeli. Dibaca ulang sendiri kalau filenya berubah, jadi
+# menambah pembeli tidak perlu restart (restart = semua antrian kosong).
+#
+# Bentuknya:
+#   { "andi": {"token": "…", "robloxId": 12345678}, … }
+BUYERS_PATH = Path(os.environ.get("BUYERS_PATH",
+                                  Path(__file__).with_name("buyers.json")))
+_pembeli: dict = {"mtime": None, "token": {}, "roblox": {}}
+
+
+def _muat_pembeli() -> None:
+    try:
+        mtime = BUYERS_PATH.stat().st_mtime
+    except OSError:
+        _pembeli.update(mtime=None, token={}, roblox={})
+        return
+    if mtime == _pembeli["mtime"]:
+        return
+    try:
+        data = json.loads(BUYERS_PATH.read_text() or "{}")
+        token = {v["token"]: nama for nama, v in data.items() if v.get("token")}
+        roblox = {int(v["robloxId"]): nama for nama, v in data.items()
+                  if v.get("robloxId")}
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        # Daftar lama tetap dipakai: file yang rusak separuh jalan (sedang
+        # disalin) tidak boleh memutus semua pembeli di tengah live.
+        print(f"[pembeli] {BUYERS_PATH} tidak terbaca, pakai daftar lama: {e}")
+        return
+    _pembeli.update(mtime=mtime, token=token, roblox=roblox)
+    print(f"[pembeli] {len(token)} pembeli dimuat dari {BUYERS_PATH}")
+
+
+def kanal_dari_token(x_token: str = Header(default="")) -> Kanal:
+    """Kunci untuk endpoint yang MENGUBAH antrian, sekaligus pemilih kanal.
+
+    Server ini dibuka ke internet lewat subdomain publik, dan tanpa kunci
+    siapa pun yang tahu alamatnya bisa menjejalkan nama ke panggung atau
+    mengosongkan antrian di tengah live.
+
+    API_TOKEN kosong = tanpa kunci, untuk `make server` di laptop. Di VM
+    wajib diisi.
+    """
+    _muat_pembeli()
+    if x_token:
+        for token, nama in _pembeli["token"].items():
+            if secrets.compare_digest(x_token, token):
+                return ambil_kanal(nama)
+    if not API_TOKEN or secrets.compare_digest(x_token, API_TOKEN):
+        return KANAL_UTAMA
+    raise HTTPException(status_code=401, detail="token salah")
+
+
+# Owner yang sudah pernah dilaporkan tidak dikenal. Roblox polling tiap
+# detik, dan tanpa ini log VM penuh satu baris yang sama.
+_owner_asing: set[int] = set()
+
+
+def kanal_dari_owner(owner: int | None = None) -> Kanal | None:
+    """Kanal untuk server Roblox yang sedang polling.
+
+    Tanpa `owner` = Roblox Studio -> kanal utama. Dengan `owner` = game yang
+    sudah dipublish: PrivateServerOwnerId, 0 untuk server publik. Yang tidak
+    ada di buyers.json dapat None -- server publik dan Private Server orang
+    yang belum membeli tidak boleh ikut mengambil antrian siapa pun.
+    """
+    if owner is None:
+        return KANAL_UTAMA
+    _muat_pembeli()
+    nama = _pembeli["roblox"].get(owner)
+    if nama:
+        return ambil_kanal(nama)
+    if owner and owner not in _owner_asing:
+        _owner_asing.add(owner)
+        print(f"[pembeli] Private Server milik {owner} tidak ada di buyers.json")
+    return None
 
 
 class PushRequest(BaseModel):
@@ -483,9 +585,15 @@ def health():
     return {"test": "ok"}
 
 
-@app.post("/api/push", dependencies=[Depends(cek_token)])
-def push(req: PushRequest):
+@app.post("/api/push")
+def api_push(req: PushRequest, k: Kanal = Depends(kanal_dari_token)):
     """Masukkan username ke antrian. Nanti dipanggil listener TikTok."""
+    return push(req, k)
+
+
+def push(req: PushRequest, k: Kanal | None = None):
+    k = k or KANAL_UTAMA
+    queue = k.queue
     name = req.username.strip()
     if not name:
         return {"ok": False, "error": "username kosong"}
@@ -554,7 +662,7 @@ def push(req: PushRequest):
             "size": len(queue)}
 
 
-def _ambil_entri() -> dict | None:
+def _ambil_entri(k: Kanal | None = None) -> dict | None:
     """Pilih entri yang disajikan berikutnya, dengan menjaga jarak antar sorotan.
 
     Entri tier 2-5 memicu sorotan yang memakai kamera beberapa detik.
@@ -567,8 +675,8 @@ def _ambil_entri() -> dict | None:
     kembalikan None: Studio menunggu satu-dua polling lagi, lebih baik daripada
     dua sorotan menempel.
     """
-    global last_spotlight_at, last_spotlight_lama_s, last_spotlight_tier
-
+    k = k or KANAL_UTAMA
+    queue = k.queue
     if not queue:
         return None
 
@@ -598,17 +706,18 @@ def _ambil_entri() -> dict | None:
     # Pengecualian: jeda nova cuma menjaga jarak nova ke NOVA. Sesudah tier
     # lain, nova cukup menunggu sorotan itu habis + napas.
     jeda_tier = _jeda_sorotan(depan["tier"])
-    if depan["tier"] == 4 and last_spotlight_tier != 4:
+    if depan["tier"] == 4 and k.last_spotlight_tier != 4:
         jeda_tier = 0.0
-    jeda = max(jeda_tier, last_spotlight_lama_s + SPOTLIGHT_NAPAS_S)
-    boleh_sorot = last_spotlight_at is None or (now - last_spotlight_at) >= jeda
+    jeda = max(jeda_tier, k.last_spotlight_lama_s + SPOTLIGHT_NAPAS_S)
+    boleh_sorot = (k.last_spotlight_at is None
+                   or (now - k.last_spotlight_at) >= jeda)
 
     if boleh_sorot:
         entry = queue.popleft()
         if TIER_EFFECTS[entry["tier"]]["spotlight"]:
-            last_spotlight_at = now
-            last_spotlight_lama_s = durasi_sorotan(entry["tier"]) / 1000
-            last_spotlight_tier = entry["tier"]
+            k.last_spotlight_at = now
+            k.last_spotlight_lama_s = durasi_sorotan(entry["tier"]) / 1000
+            k.last_spotlight_tier = entry["tier"]
         return entry
 
     # Sorotan sedang dijeda: cari entri pertama yang bukan sorotan.
@@ -621,7 +730,7 @@ def _ambil_entri() -> dict | None:
 
 
 @app.get("/api/next")
-def next_username():
+def next_username(k: Kanal | None = Depends(kanal_dari_owner)):
     """Roblox polling ke sini tiap 1-2 detik.
 
     Mengembalikan satu entri lengkap dengan data tier-nya, lalu menghapus dari
@@ -631,9 +740,11 @@ def next_username():
     versi sebelum ada tier -- skrip Lua lama tetap jalan, cuma belum memakai
     field tier yang baru.
     """
-    entry = _ambil_entri()
+    if k is None:
+        return {"username": None, "displayName": None, "size": 0}
+    entry = _ambil_entri(k)
     if entry is None:
-        return {"username": None, "displayName": None, "size": len(queue)}
+        return {"username": None, "displayName": None, "size": len(k.queue)}
 
     name = entry["username"]
     display, user_id = lookup_user(name)
@@ -658,7 +769,7 @@ def next_username():
         "spotlightMs": durasi_sorotan(tier) if efek["spotlight"] else 0,
         "koin": koin,
         "tiktokUser": entry.get("tiktokUser"),
-        "size": len(queue),
+        "size": len(k.queue),
     }
 
 
@@ -692,8 +803,12 @@ def settings():
 
 
 @app.get("/api/peek")
-def peek():
-    """Lihat isi antrian tanpa menghapus. Debugging saja."""
+def peek(k: Kanal = Depends(kanal_dari_token)):
+    """Lihat isi antrian tanpa menghapus. Debugging saja.
+
+    Pakai token sejak ada pembeli: isinya username penonton milik kanal itu.
+    """
+    queue = k.queue
     return {
         # Ringkas "nama" untuk tier 1 dan "nama(T2/5koin)" untuk yang ber-gift,
         # supaya `make peek` tetap kebaca sekilas di terminal.
@@ -707,15 +822,15 @@ def peek():
     }
 
 
-@app.delete("/api/clear", dependencies=[Depends(cek_token)])
-def clear():
+@app.delete("/api/clear")
+def clear(k: Kanal = Depends(kanal_dari_token)):
     """Kosongkan antrian. Debugging saja."""
-    n = len(queue)
-    queue.clear()
+    n = len(k.queue)
+    k.queue.clear()
     return {"ok": True, "cleared": n}
 
 
-@app.delete("/api/cache", dependencies=[Depends(cek_token)])
+@app.delete("/api/cache", dependencies=[Depends(kanal_dari_token)])
 def clear_cache():
     """Kosongkan cache displayName. Berguna kalau ada yang ganti nama."""
     n = len(display_cache)
@@ -744,12 +859,10 @@ class MusicRequest(BaseModel):
     mulai_dalam_ms: int = 0
 
 
-musik: dict = {"seq": 0, "index": 0, "nama": "", "mulai": 0.0}
-
-
-@app.post("/api/music", dependencies=[Depends(cek_token)])
-def set_music(req: MusicRequest):
+@app.post("/api/music")
+def set_music(req: MusicRequest, k: Kanal = Depends(kanal_dari_token)):
     """Dipanggil dashboard.py tiap kali akan memulai lagu."""
+    musik = k.musik
     musik["seq"] += 1
     musik["index"] = req.index
     musik["nama"] = req.nama
@@ -764,10 +877,11 @@ def set_music(req: MusicRequest):
 
 
 @app.get("/api/music")
-def get_music():
+def get_music(k: Kanal | None = Depends(kanal_dari_owner)):
     """Dibaca Roblox. seq naik tiap lagu baru, termasuk lagu yang sama diulang."""
-    if not musik["seq"]:
+    if k is None or not k.musik["seq"]:
         return {}
+    musik = k.musik
     return {
         "seq": musik["seq"],
         "index": musik["index"],
