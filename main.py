@@ -85,6 +85,19 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+# Komentar GRATIS yang sudah menunggu lebih lama dari ini (detik) dibuang
+# begitu giliran berikutnya diambil. 0 = mati.
+#
+# Pasangan QUEUE_MAX. Sejak panggung Roblox bergiliran (satu orang, tunggu
+# undian auranya mendarat -- GILIRAN di AvatarQueueV2), tier 1 cuma keluar
+# kira-kira satu per 6-7 detik, jadi antrian gampang menumpuk. QUEUE_MAX
+# membatasi PANJANGNYA; yang ini membatasi UMURNYA -- komentar semenit lalu
+# yang baru tampil sekarang sudah tidak nyambung dengan obrolan live.
+#
+# Yang bayar (tier >= 2) TIDAK PERNAH dibuang, berapa pun lamanya menunggu.
+QUEUE_BASI_S = _env_float("QUEUE_BASI_S", 60.0)
+
+
 # ---------------------------------------------------------------------- TIER --
 
 # Arti VISUAL tiap tier. Tabel ini sengaja ada di sini, bukan di listener:
@@ -232,18 +245,22 @@ SPOTLIGHT_MS_T3 = int(_env_float("SPOTLIGHT_MS_TIER3", 8000))
 #   6,5 - 7,1    slam: banting dari 45 stud, kamera meluncur ke atas
 #   7,1 - 10,3   impact: shockwave, pilar, petir, kristal -- DAN barisan
 #                tersapu, dia jadi orang pertama barisan yang baru
-#   10,3 - 13,3  menari sendirian di panggung kosong
+#   11,0 - 19,0  sinematik Rosa sesudah mendarat: dari bawah, keliling 360,
+#                potret (ROSA.JALUR) -- sambil menari, angka auranya
+#                mendarat di 17,9
 #
-# 15 detik: tunggu aset 0,6 + nova 10,3 + tarian 3,0 = 13,9, sisanya margin.
+# 20 detik: tunggu aset 0,6 + nova 10,3 + 0,1 + jalur Rosa 8,0 = 19,0,
+# sisanya margin.
 # Rinciannya di NOVA di AvatarQueueV2. Uji di test_tier.py menjaga seluruh
 # adegan + tarian 3 detik tetap di dalam angka ini, DAN menjaga papan auranya
 # tidak dikirim sebelum avatar aslinya dimunculkan kembali.
-SPOTLIGHT_MS_T4 = int(_env_float("SPOTLIGHT_MS_TIER4", 15000))
+SPOTLIGHT_MS_T4 = int(_env_float("SPOTLIGHT_MS_TIER4", 20000))
 
-# Lama sorotan tier 5 (raksasa). Juga DATAR: raksasa itu pose diam -- dia
-# melambai sekali lalu berdiri saja. Tujuh detik karena badan 4x butuh
-# waktu paling lama untuk dibaca mata.
-SPOTLIGHT_MS_T5 = int(_env_float("SPOTLIGHT_MS_TIER5", 7000))
+# Lama sorotan tier 5 (raksasa). Juga DATAR. Sekarang raksasa dapat jalur
+# sinematik Rosa yang diperbesar (8 detik: dari bawah, keliling 360,
+# potret); angkanya mendarat di 6,9 dan papannya dirapikan 2,5 detik
+# sesudahnya -- 10 detik memuat semuanya.
+SPOTLIGHT_MS_T5 = int(_env_float("SPOTLIGHT_MS_TIER5", 10000))
 
 # Sanity guard untuk angka yang masuk lewat /api/push. Sama dengan
 # KOIN_WARAS di tiktok_listener.py.
@@ -342,13 +359,13 @@ SPOTLIGHT_GAP_T3_S = _env_float("SPOTLIGHT_GAP_TIER3_S", 10.0)
 # Jeda tier 4 (nova). Nova menyita kamera, panggung, DAN seluruh layar
 # sekaligus (letterbox, warna abu-abu, ledakan setinggi 300 stud), dan dua
 # nova yang menempel terbaca sebagai satu kekacauan, bukan dua kedatangan.
-# 17 = sorotan 15 + napas 2.
+# 22 = sorotan 20 + napas 2.
 #
 # Cuma berlaku ANTAR NOVA. Nova sesudah tier lain cukup menunggu sorotan
 # itu habis + SPOTLIGHT_NAPAS_S (lihat _ambil_entri): dihitung dari mulainya
-# Rose (8 detik), 17 detik berarti panggung diam sembilan detik dengan nova
-# yang sudah menunggu di depan antrian.
-SPOTLIGHT_GAP_T4_S = _env_float("SPOTLIGHT_GAP_TIER4_S", 17.0)
+# Rose (8 detik), 22 detik berarti panggung diam empat belas detik dengan
+# nova yang sudah menunggu di depan antrian.
+SPOTLIGHT_GAP_T4_S = _env_float("SPOTLIGHT_GAP_TIER4_S", 22.0)
 
 # Jeda tier 5 (raksasa). Dua raksasa beruntun saling mengganti di slot yang
 # sama, jadi yang pertama butuh waktu untuk sempat dilihat.
@@ -607,6 +624,9 @@ def push(req: PushRequest, k: Kanal | None = None):
         "tier": tier,
         "tiktokUser": req.tiktokUser,
         "koin": koin,
+        # Kapan masuk antrian, untuk QUEUE_BASI_S. Monotonic: jam dinding
+        # VM yang disetel ulang tidak boleh membuang satu antrian penuh.
+        "ts": time.monotonic(),
     }
 
     # Yang bayar tidak ikut antre dan tidak kena batas antrian. Dari sisi dia,
@@ -677,10 +697,22 @@ def _ambil_entri(k: Kanal | None = None) -> dict | None:
     """
     k = k or KANAL_UTAMA
     queue = k.queue
+    now = time.monotonic()
+
+    # Buang komentar gratis yang sudah basi (QUEUE_BASI_S). Di sini, bukan
+    # di timer terpisah: antrian cuma penting di detik giliran diambil.
+    # Entri tanpa "ts" (dibuat sebelum kolom ini ada) dibiarkan.
+    if QUEUE_BASI_S > 0:
+        basi = [e for e in queue
+                if e["tier"] < 2 and now - e.get("ts", now) > QUEUE_BASI_S]
+        for e in basi:
+            queue.remove(e)
+        if basi:
+            print(f"[antrian] {len(basi)} komentar dibuang (menunggu > "
+                  f"{QUEUE_BASI_S:.0f}s), sisa {len(queue)}")
+
     if not queue:
         return None
-
-    now = time.monotonic()
 
     # Jedanya dihitung dari tier entri yang sedang di depan, bukan satu
     # angka untuk semua: tier 2 (5 detik) boleh menyusul lebih cepat
@@ -783,6 +815,7 @@ def settings():
     """
     return {
         "queueMax": QUEUE_MAX,
+        "queueBasiS": QUEUE_BASI_S,
         "spotlightGapTier2S": SPOTLIGHT_GAP_T2_S,
         "spotlightGapTier3S": SPOTLIGHT_GAP_T3_S,
         "spotlightGapTier4S": SPOTLIGHT_GAP_T4_S,

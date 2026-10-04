@@ -198,11 +198,20 @@ local HIDE_PLAYER_AVATAR = false
 -- memakainya tidak berubah, cuma titiknya menggantikan garis bawah.
 local PLATE = {}
 
-PLATE.ENABLED = false
+--
+-- DINYALAKAN LAGI: aura sudah pindah ke tengah layar (AURA_DI_LAYAR), jadi
+-- tanpa papan ini tidak ada satu pun nama di atas kepala.
+PLATE.ENABLED = true
 PLATE.OFFSET  = 2.2
 PLATE.WIDTH   = 130
 PLATE.HEIGHT  = 24
 PLATE.DIST    = 200
+-- Tier yang TIDAK dapat papan nama. Namanya sudah ditulis besar di aura
+-- layar tiap kali orangnya datang; papan kecil di kepala cuma tulisan
+-- kedua yang menumpuk. Komentar biasa (1), Rose (3), dan Rosa (4) atas
+-- permintaan -- yang tersisa cuma tier 2 (tidak dipakai gift apa pun) dan
+-- raksasa (5).
+PLATE.TANPA_TIER = { [1] = true, [3] = true, [4] = true }
 -- Font papan nama. FontFace, bukan Enum.Font: Enum.Font isinya keluarga
 -- bawaan Roblox yang dipakai semua game, dan bobot hurufnya tidak bisa
 -- dipilih. Montserrat Bold geometris dan bersih -- huruf UI game modern,
@@ -264,7 +273,14 @@ local AURA_ROLL  = 3
 -- titiknya menggantikan garis bawah. Alasan lengkapnya di PLATE.
 local SFX_AURA = {}
 
-SFX_AURA.ID  = "rbxassetid://15627079894"
+-- Putaran roda hadiah ala mesin kasino (4 detik, klik-klik yang makin
+-- pelan). Lebih panjang dari AURA_ROLL, jadi selalu dipotong IKUT_ROLL
+-- tepat saat angkanya mendarat. Cadangan yang sudah dicek bisa dimuat:
+--   134228333363922  drum roll (4,7 dtk)
+--   95483613271993   roll Sol's RNG (5 dtk)
+--   9120658280       wheel spin PSE (3,5 dtk)
+--   70482547486758   satu "tik" RNG (0,1 dtk) -- wajib SFX_AURA.LOOP = true
+SFX_AURA.ID  = "rbxassetid://9128579655"
 SFX_AURA.VOL = 0.7
 
 -- Kecepatan putar bunyinya. 1 = asli, 2 = dua kali lebih cepat (dan
@@ -347,7 +363,9 @@ SFX_AURA.HIT_TINGGI_VOL = 0.9
 -- keluar dari speaker kecil. Kalau nanti ada asset audio sendiri yang
 -- lebih megah, yang diganti cuma baris id ini.
 SFX_AURA.HIT_RAKSASA_ID   = SFX_AURA.HIT_TINGGI_ID
-SFX_AURA.HIT_RAKSASA_VOL  = 1.0
+-- Volume Roblox bisa lewat 1 (maks 10). 1,0 -> 2,0 atas permintaan:
+-- bunyi raksasa dibuat FULL, paling keras di panggung.
+SFX_AURA.HIT_RAKSASA_VOL  = 2.0
 SFX_AURA.HIT_RAKSASA_NADA = 0.75
 
 -- Bunyi PUTARAN angka khusus raksasa. Berkasnya sama dengan putaran
@@ -360,6 +378,37 @@ SFX_AURA.HIT_RAKSASA_NADA = 0.75
 -- menukar nada Sound yang sedang berbunyi membuat putaran orang lain ikut
 -- berubah nada di tengah jalan.
 SFX_AURA.ROLL_RAKSASA_NADA = 0.8
+-- Volumenya sendiri, bukan SFX_AURA.VOL milik semua orang: dibuat FULL
+-- sama seperti hentakan mendaratnya.
+SFX_AURA.ROLL_RAKSASA_VOL  = 2.0
+
+-- --- Suara REAKSI sesudah angkanya mendarat ---
+--
+-- TIGA kategori, ambangnya sama dengan warna angkanya di client
+-- (TIER di KameraClientV2), jadi yang terdengar cocok dengan yang
+-- terlihat:
+--
+--   kecil   < JELEK_MAKS             biru    "FAHH"
+--   sedang  JELEK_MAKS..BAGUS_MIN-1  ungu    "Nice"
+--   bagus   >= BAGUS_MIN             oranye  "woww"
+--
+-- Ini MENAMBAH, bukan mengganti hentakan mendarat di atas: hentakan itu
+-- penanda "angkanya berhenti", suara ini reaksi penonton terhadap
+-- angkanya -- dua hal yang berbeda, dan dibunyikan sedikit sesudahnya
+-- (REAKSI_TUNDA) supaya tidak menumpuk di frame yang sama.
+--
+-- ID KOSONG ("") = suara kategori itu mati. Pilih yang pendek (< 2
+-- detik): panggung bergiliran, dan orang berikutnya datang AURA_NAPAS
+-- sesudah angkanya mendarat.
+SFX_AURA.JELEK_ID   = "rbxassetid://116069970994133"   -- FAHHH, 1,6 dtk
+SFX_AURA.JELEK_VOL  = 1.0
+SFX_AURA.JELEK_MAKS = 600    -- angka < ini = kecil
+SFX_AURA.SEDANG_ID  = "rbxassetid://78280559086303"    -- "Nice", 0,8 dtk
+SFX_AURA.SEDANG_VOL = 1.0
+SFX_AURA.BAGUS_ID   = "rbxassetid://137612233332702"   -- anime wow, 2,4 dtk
+SFX_AURA.BAGUS_VOL  = 1.0
+SFX_AURA.BAGUS_MIN  = 850    -- angka >= ini = bagus (oranye)
+SFX_AURA.REAKSI_TUNDA = 0.15
 
 -- --- BUNYI KEDATANGAN TIER BERBAYAR ---
 --
@@ -437,8 +486,9 @@ local SFX_TIER = {
 	-- 0,6 menurunkan berkas yang sama hampir satu oktaf -- itu yang membuat
 	-- raksasa terdengar seperti sesuatu yang BESAR mendarat, bukan seperti
 	-- notifikasi yang kebetulan lebih keras.
+	-- Volume 0,9 -> 2,0 atas permintaan (FULL).
 	[5] = {
-		vol = 0.9, nada = 0.6,
+		vol = 2.0, nada = 0.6,
 		kandidat = {
 			"rbxasset://sounds/action_jump_land.mp3",
 			"rbxasset://sounds/bass.wav",
@@ -472,8 +522,13 @@ local AURA_TINGGI_MIN = 900
 --
 -- Boleh dua-duanya true. Boleh dua-duanya false (aura mati, tinggal
 -- panggung menari).
-local AURA_DI_KEPALA = true
-local AURA_DI_LAYAR  = false
+--
+-- Sekarang di LAYAR, atas permintaan: angkanya tetap di tengah layar
+-- selagi kamera berputar, jadi tidak ada lagi papan yang keluar-masuk
+-- frame. Sejak ini panggung juga bergiliran satu per satu (GILIRAN) --
+-- aura di layar cuma bisa menampilkan satu orang sekaligus.
+local AURA_DI_KEPALA = false
+local AURA_DI_LAYAR  = true
 
 -- --- Papan aura di atas kepala ---
 --
@@ -519,7 +574,12 @@ local AURA_FADE_OUT   = 0.3
 --
 -- Diturunkan dari 0.22: kepala avatar barisan depan berada di sekitar
 -- sepertiga layar, dan tulisan yang mulai di 0.22 menutupi mereka.
-local AURA_Y     = 0.12
+--
+-- Sempat 0.22 ("di tengah"), tapi di situ tulisannya menutupi badan
+-- orang yang sedang disorot. Sekarang 0.09: tepat di bawah letterbox
+-- atas adegan sinematik (~8% layar), dan kamera yang dinaikkan
+-- (CAMERA_NAIK_SEMUA) menurunkan avatarnya menjauh dari tulisan ini.
+local AURA_Y     = 0.09
 
 -- Tinggi blok tiga barisnya, juga pecahan tinggi layar. Ini yang
 -- menentukan BESAR HURUFNYA -- ketiga baris pakai TextScaled, jadi
@@ -527,7 +587,11 @@ local AURA_Y     = 0.12
 -- lebih besar; tapi ingat blok ini mulai di AURA_Y, jadi AURA_Y +
 -- AURA_H tidak boleh lewat dari 1 kalau tidak baris "AURA" terpotong
 -- di bawah layar.
-local AURA_H     = 0.32
+--
+-- 0.32 -> 0.38 -> 0.30 -> 0.26: dikecilkan lagi sedikit supaya tidak
+-- menutupi avatar. Barisnya juga dirapatkan di client
+-- (lblNama/lblAura/lblPersen).
+local AURA_H     = 0.26
 
 -- ============ TIER ============
 --
@@ -547,7 +611,9 @@ local TIER_ENABLED = true
 -- utuh dari jauh.
 local BORDER_ENABLED = true
 local BORDER_GARIS   = true
-local BORDER_CAKRAM  = true
+-- DIMATIKAN atas permintaan: cakram biru menyala di bawah kaki tidak
+-- dipakai lagi. Nyalakan (true) kalau mau dikembalikan.
+local BORDER_CAKRAM  = false
 
 -- Dari tier berapa GARIS TEPI ikut dipasang. Di bawahnya cuma cakram.
 --
@@ -656,7 +722,12 @@ local GIANT_Z = 18
 -- untuk kerumunan biasa, dan raksasa tidak lagi punya jalur khusus yang
 -- bisa gagal sendirian.
 
--- Emote-nya. Melambai, bukan menari.
+-- Emote-nya. DIMATIKAN (""): raksasa sekarang MENARI sama seperti yang
+-- lain, atas permintaan -- tarian yang sama, ikut ganti lagu, dan ikut
+-- disamakan client (dia dikelompokkan per AnimationId). Isi ID di bawah
+-- lagi kalau mau dia kembali melambai.
+--
+-- Alasan dulu dia melambai, disimpan untuk riwayat:
 --
 -- Dua alasan, dan yang kedua yang menentukan: (1) badan 10x yang
 -- ngedance gerakannya menyapu belasan stud tiap ketukan dan terbaca
@@ -667,7 +738,7 @@ local GIANT_Z = 18
 --
 -- R15Wave (507770239) bawaan Roblox. Alternatif yang juga sudah dicek
 -- ada: 507770677 R15Cheer, 507770453 R15Point, 507770818 R15Laugh.
-local GIANT_EMOTE_ID    = "rbxassetid://507770239"
+local GIANT_EMOTE_ID    = ""     -- dulu "rbxassetid://507770239"
 local GIANT_EMOTE_SPEED = 0.55   -- dilambatkan: gerakan raksasa yang
                                  -- secepat orang biasa terlihat gugup
 
@@ -1166,10 +1237,33 @@ local BEKU_EKOR      = 0.8
 -- suatu saat KOIN_SPOT_MAX_MUL di .env dinaikkan tanpa sengaja, angka
 -- itu langsung jadi lama panggung ini mati. Salah ketik satu digit
 -- tidak boleh berarti siaran diam semenit.
--- Sorotan nova (tier 4) sekarang 15 detik + BEKU_EKOR 0,8 = 15,8, jadi 20 masih
--- longgar. Diuji di test_tier.py supaya angka ini tidak diam-diam jadi
--- yang memotong nova kalau fase-fasenya dipanjangkan lagi.
-local BEKU_MAKS      = 20
+-- Sorotan nova (tier 4) sekarang 20 detik (adegan nova + jalur Rosa sesudah
+-- mendarat) + BEKU_EKOR 0,8 = 20,8, jadi 25 masih longgar. Diuji di
+-- test_tier.py supaya angka ini tidak diam-diam jadi yang memotong nova
+-- kalau fase-fasenya dipanjangkan lagi.
+local BEKU_MAKS      = 25
+
+-- --- PANGGUNG BERGILIRAN: satu orang, satu undian aura ---
+--
+-- Orang berikutnya baru diambil dari antrian SESUDAH angka aura orang ini
+-- mendarat (plus NAPAS untuk membaca angkanya dan mendengar "faaahh" /
+-- "waaaw"-nya). Dulu tiap ~1 detik ada yang masuk dan undiannya saling
+-- menimpa; sejak aura pindah ke tengah layar (AURA_DI_LAYAR) cuma satu
+-- angka yang bisa tampil, jadi undian yang ditimpa sama dengan undian
+-- yang tidak pernah terlihat.
+--
+-- Yang bayar juga menunggu SOROTANNYA habis, bukan cuma angkanya -- kalau
+-- tidak, angka orang gratisan muncul di tengah adegan orang yang bayar.
+--
+-- Harganya: panggung jauh lebih lambat (tier 1 sekitar 5-6 detik per
+-- orang). Antrian yang menumpuk dibuang di main.py (QUEUE_MAX dan
+-- QUEUE_BASI_S), bukan di sini.
+--
+-- Tabel, bukan konstanta lepas: chunk utama file ini sudah dekat batas
+-- 200 variabel lokal (lihat PLATE).
+local GILIRAN = {}
+GILIRAN.ENABLED = true
+GILIRAN.NAPAS   = 1.2   -- detik sesudah angkanya mendarat
 
 -- --- LANTAI AURA UNTUK YANG BAYAR ---
 --
@@ -1313,6 +1407,33 @@ local AURA_VFX_IDS = {
 	            zOffset = -1.0, terang = 0.60 } },
 }
 
+-- Aura KHUSUS RAKSASA (tier GIANT_MIN_TIER ke atas). Tetap, tidak diacak:
+-- dia cuma satu di panggung, dan yang dijual ukurannya -- jadi auranya
+-- dipilih satu yang cocok, lalu DITIPISKAN supaya badannya tetap yang
+-- terbaca, bukan awan partikelnya.
+--
+-- Asset ini rig R6 utuh dengan partikel di tiap bagian badan. Semuanya
+-- dikumpulkan ke satu bagian (lihat pasangAuraVfx), jadi tanpa dua knob
+-- di bawah dia jadi gumpalan tebal:
+--   unik   emitter kembar (tekstur, rate, ukuran, umur, laju sama)
+--          cuma diambil SATU. Aslinya tiap bagian badan punya lima
+--          "DarkAura" yang sama -- dikumpulkan jadi tiga puluhan.
+--   buang  nama emitter yang tidak diambil sama sekali. "2" dan "3"
+--          ledakan yang tumbuh sampai 19 stud (dikali skala raksasa),
+--          "Detail" percikan yang terlempar jauh (laju 20).
+-- `laju` di redam = pengali kecepatan partikel. Kecepatan ikut dikali
+-- skala badan, dan itu yang membuat auranya melebar jauh dari badan.
+--
+-- nil = raksasa polos tanpa aura, seperti dulu.
+local AURA_VFX_RAKSASA = {
+	nama  = "raksasa",
+	id    = "rbxassetid://106192507657319",
+	unik  = true,
+	buang = { ["2"] = true, ["3"] = true, Detail = true },
+	redam = { rate = 0.40, tembus = 0.35, ukuran = 0.50, laju = 0.50,
+	          zOffset = -1.0, terang = 0.50 },
+}
+
 -- Naikkan seluruh titik sebuah NumberSequence ke arah 1 (makin tembus).
 --
 -- Dikerjakan per titik, bukan dengan satu angka datar: bentuk
@@ -1357,6 +1478,11 @@ local function redamEfek(e, r)
 		pcall(function() e.Transparency = tembuskanSeq(e.Transparency, r.tembus) end)
 		pcall(function() e.Size = skalaSeq(e.Size, r.ukuran) end)
 		pcall(function() if r.zOffset then e.ZOffset = e.ZOffset + r.zOffset end end)
+		pcall(function()
+			if r.laju then
+				e.Speed = NumberRange.new(e.Speed.Min * r.laju, e.Speed.Max * r.laju)
+			end
+		end)
 	elseif e:IsA("Light") then
 		pcall(function() if r.terang then e.Brightness = e.Brightness * r.terang end end)
 	elseif e:IsA("Fire") or e:IsA("Smoke") then
@@ -1506,12 +1632,32 @@ ROSA.JALUR = {
 	potretJauh   = 9,     -- mundur sedikit supaya papan auranya masuk
 	potretDekat  = 6.5,   -- lalu dorong masuk pelan
 	potretTinggi = 0.80,  -- pecahan badan
-	potretBidik  = 0.8,   -- stud DI ATAS kepalanya: kepala + papan aura
+	-- Stud dari UBUN-UBUN; negatif = di bawahnya. Dulu +0,8 (kepala + papan
+	-- aura di atasnya); papan itu sekarang di layar (AURA_DI_LAYAR), dan
+	-- bidikan di atas kepala ditambah kamera yang dinaikkan
+	-- (CAMERA_NAIK_SEMUA) menjatuhkan avatarnya ke tepi bawah layar --
+	-- cuma kepalanya yang kelihatan. -1,8 = sekitar wajah.
+	potretBidik  = -1.8,
 
 	-- LATAR
 	sepi  = 14,    -- tetangga dalam radius ini disembunyikan
 	redup = 0.7,   -- ExposureCompensation diturunkan sebanyak ini
 }
+
+-- Jalur yang SAMA untuk raksasa (tier 5): dari bawah, keliling 360, potret.
+--
+-- Semua jarak di atas (radius, jauh-dekat, lampu, radius sepi) ditulis
+-- untuk badan setinggi orang biasa. Radius 7 di badan 4x berarti kameranya
+-- berputar DI DALAM tulang kering raksasanya. `ikutBadan` menyuruh client
+-- mengalikan semua jarak itu dengan tinggi badannya / tinggiNormal, jadi
+-- satu tabel ini tetap benar berapa pun TIER5_SCALE di .env.
+--
+-- Lamanya tidak ikut dikali: jalur yang sama cepatnya di badan 4x terbaca
+-- sebagai kamera yang melayang pelan, dan itu justru yang menjual ukurannya.
+ROSA.JALUR_RAKSASA = { ikutBadan = true, tinggiNormal = 5.5 }
+for kunci, nilai in pairs(ROSA.JALUR) do
+	ROSA.JALUR_RAKSASA[kunci] = nilai
+end
 
 -- Tiga tema warna latarnya, DIUNDI tiap Rosa -- alasannya sama dengan
 -- NOVA.PALET: dua orang yang sama-sama kirim Rosa harus tampil berbeda.
@@ -1566,7 +1712,10 @@ local SINEMA_UP      = 5.5
 -- Jangan lebih dekat dari sekitar -8: baris kerumunan berjarak
 -- SPACING_Z = 8, jadi kamera yang masuk lebih dekat dari itu berakhir
 -- DI DALAM badan avatar yang berdiri di depan si fokus.
-local CAMERA_BACK      = -11   -- jarak mundur (negatif = di belakang)
+--
+-- -11 -> -9: mundur penuhnya (kamera diam, dan sesudah tiap zoom-in)
+-- terasa terlalu jauh. Masih di luar batas -8 di atas.
+local CAMERA_BACK      = -9    -- jarak mundur (negatif = di belakang)
 
 -- Tinggi kamera saat MERAPAT (zoom masuk).
 --
@@ -1576,6 +1725,18 @@ local CAMERA_BACK      = -11   -- jarak mundur (negatif = di belakang)
 -- keluar lewat tepi bawah. Dari 2,5 sumbu pandangnya nyaris mendatar --
 -- avatarnya berdiri tegak di layar, utuh dari kepala sampai kaki.
 local CAMERA_UP        = 2.5
+
+-- Semua kamera dinaikkan sekian stud, di ujung paling akhir client --
+-- kamera spawn, sorotan tiap tier, jalur Rosa, nova, raksasa, semuanya.
+--
+-- DIGESER lurus ke atas, TIDAK ikut menunduk: arah pandangnya tetap,
+-- jadi avatarnya turun sedikit di frame dan bagian atas layar lebih
+-- lega untuk tulisan aura (AURA_Y). Kalau dibuat menunduk ke titik yang
+-- sama, avatarnya tetap di tengah dan tulisannya menutupi dia lagi.
+--
+-- 1,5 stud di jarak biasa (~11 stud) menurunkan avatar sekitar sepersepuluh
+-- layar -- kakinya masih di dalam frame. 0 = mati.
+local CAMERA_NAIK_SEMUA = 1.5
 
 -- Tinggi kamera saat MUNDUR PENUH (zoom keluar).
 --
@@ -1593,7 +1754,11 @@ local CAMERA_UP        = 2.5
 --
 -- Perpindahannya ikut zoom, jadi tidak ada gerakan tambahan yang harus
 -- dijadwalkan: dia naik sambil mundur, dan turun lagi sambil merapat.
-local CAMERA_UP_JAUH   = 7
+--
+-- 7 -> 5,5 bersama CAMERA_BACK -11 -> -9: kamera yang mendekat tapi tetap
+-- setinggi dulu menunduk lebih curam. Ditambah CAMERA_NAIK_SEMUA (1,5)
+-- tingginya tetap 7 seperti sebelum semua kamera dinaikkan.
+local CAMERA_UP_JAUH   = 5.5
 
 -- Tinggi kamera saat mundur penuh SELAMA ADA RAKSASA BERDIRI.
 --
@@ -1678,10 +1843,13 @@ local ZOOM_ENABLED = true
 -- Sedekat apa awalnya, sebagai pecahan dari jarak biasa. 0.45 = mulai
 -- di 45% jarak normal (kira-kira setengah badan mengisi frame).
 --
--- Jangan di bawah ~0.3: pada CAMERA_BACK -11 itu berarti 3,3 stud, dan
+-- Jangan di bawah ~0.35: pada CAMERA_BACK -9 itu berarti 3,2 stud, dan
 -- di jarak segitu kamera sudah masuk ke dalam kepala avatar yang
 -- berdiri di depan si fokus.
-local ZOOM_MASUK = 0.45
+--
+-- 0.45 -> 0.55 waktu CAMERA_BACK didekatkan -11 -> -9: jarak rapatnya
+-- tetap ~5 stud seperti dulu, yang berubah cuma ujung mundurnya.
+local ZOOM_MASUK = 0.55
 
 -- Berapa lama dia MENAHAN dekat sebelum mulai mundur, detik.
 --
@@ -1926,7 +2094,7 @@ local KAMERA_TIER = {
 	-- biasa sudah menggerakkan gambarnya.
 	[1] = { tahan = 1.0, keluar = ZOOM_KELUAR,       maks = 1.00,
 		arcDeg = 0,  arcPutar = 0,   naikAmp = 0,   naikPutar = 1,
-		tunda = 1.2, roll = AURA_ROLL,
+		tunda = 0, roll = AURA_ROLL,
 		denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
 
 	-- Tier 2 (Rose): 3 detik, dan kameranya yang PALING tenang dari semua
@@ -1941,7 +2109,7 @@ local KAMERA_TIER = {
 	-- detik habis (dijaga test_tier.py).
 	[2] = { tahan = 0.5, keluar = 1.5,               maks = 0.75,
 		arcDeg = 10, arcPutar = 0.5, naikAmp = 0.8, naikPutar = 1,
-		tunda = 0.5, roll = 2.2,
+		tunda = 0, roll = 2.2,
 		denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
 
 	-- Tier 3 (Rose, aura): ADEGAN SINEMATIK 8 detik dengan JALUR KAMERA
@@ -1962,7 +2130,7 @@ local KAMERA_TIER = {
 	-- terbaca sebagai kamera yang tidak yakin ke mana dia menuju.
 	[3] = { tahan = 1.0, keluar = 2.5,               maks = 0.80,
 		arcDeg = 24, arcPutar = 1.5, naikAmp = 3.0, naikPutar = 2,
-		tunda = 4.6, roll = 2.3,
+		tunda = 0, roll = 2.3,
 		jalur = ROSA.JALUR,
 		-- Letterbox dan kawan-kawannya. nil kalau MODE_ROSA "mati" atau
 		-- salah ketik -- dan salah ketik diperingatkan saat server mulai.
@@ -1988,16 +2156,25 @@ local KAMERA_TIER = {
 	-- meleset setengah detik, dan setengah detik itu persis lebar
 	-- lubangnya.
 	--
-	-- 0,6 + 10,3 + 0,1 = 11,0; + tunda 0,1 + roll 2,4 = 13,5, masih di
-	-- dalam sorotan 15 detik (dijaga test_tier.py, yang juga mengunci
-	-- auraMulai >= tunggu aset + novaTotal()).
+	-- SESUDAH MENDARAT: adegan sinematik Rosa (jalurSesudah) -- dari
+	-- bawah, keliling 360, potret -- dikirim sebagai pesan "fokus" kedua
+	-- tepat di auraMulai, bersamaan dengan pesan auranya. Tunda dan
+	-- roll-nya disamakan dengan Rosa supaya angkanya mendarat di bidikan
+	-- POTRET, sama seperti tier 3.
+	--
+	-- 0,6 + 10,3 + 0,1 = 11,0; + tunda 4,6 + roll 2,3 = 17,9, masih di
+	-- dalam sorotan 20 detik (dijaga test_tier.py, yang juga mengunci
+	-- auraMulai >= tunggu aset + novaTotal()). Jalur Rosa-nya sendiri
+	-- 11,0 + 8,0 = 19,0.
 	--
 	-- bunyiSaatNova: bunyi kedatangannya dibunyikan client saat dia
 	-- MEMBANTING DIRI ke tanah, bukan saat avatarnya dibuat.
 	[4] = { tahan = 0.3, keluar = 1.2,               maks = 0.75,
 		arcDeg = 12, arcPutar = 1.0, naikAmp = 1.0, naikPutar = 1,
-		tunda = 0.1, roll = 2.4,
+		tunda = 0, roll = 2.3,
 		auraMulai = SPAWN_SIAP_MAKS + novaTotal() + 0.1,
+		jalurSesudah = ROSA.JALUR,
+		layarSesudah = LAYAR.PILIHAN[LAYAR.MODE_ROSA],
 		bunyiSaatNova = true,
 		denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
 
@@ -2035,11 +2212,19 @@ local KAMERA_TIER = {
 	-- Yang kedua akibat papannya sekarang berisi ANGKA: tunda 0 dulu
 	-- benar karena tidak ada yang berputar, cuma nama. Sekarang
 	-- putarannya harus menunggu kameranya cukup mundur, sama seperti
-	-- tier lain. 0,8 + roll 3,0 = 3,8, masih separuh dari sorotan 7
-	-- detik (dijaga test_tier.py).
+	-- tier lain.
+	--
+	-- SEKARANG adegan sinematik Rosa juga (jalur ROSA.JALUR_RAKSASA, jarak
+	-- dikali ukuran badannya): dari bawah, keliling 360, potret. Angka zoom
+	-- dan busur di baris ini jadi cadangan + lapisan yang dituju sesudah
+	-- jalurnya lepas, sama seperti tier 3. Tunda dan roll disamakan dengan
+	-- Rosa: 4,6 + 2,3 = 6,9, mendarat di bidikan potret, di dalam sorotan
+	-- 10 detik (dijaga test_tier.py).
 	[5] = { masuk = 0.95, tahan = 0.8, keluar = ZOOM_KELUAR_GIANT, maks = 1.00,
 		arcDeg = 20, arcPutar = 1.0, naikAmp = 5.0, naikPutar = 1,
-		tunda = 0.8, roll = AURA_ROLL,
+		tunda = 0, roll = 2.3,
+		jalur = ROSA.JALUR_RAKSASA,
+		layar = LAYAR.PILIHAN[LAYAR.MODE_ROSA],
 		denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
 }
 
@@ -2106,8 +2291,8 @@ local MUSIC_GAP     = 1.5
 -- batas 200 local register Luau, dan tiap nama baru di tingkat atas
 -- bisa membuat seluruh script gagal dimuat ("Out of local registers").
 local DANCE = {
-	FALLBACK = "rbxassetid://106865236633450",
-	FUNK     = "rbxassetid://140219184038687",  -- Brazilian Funk Footwork
+	FALLBACK = "rbxassetid://106865236633450",  -- Jamal
+	FUNK     = "rbxassetid://140219184038687",  -- Funkot (Brazilian Funk Footwork)
 	-- BLACKPINK diisi di bawah.
 }
 
@@ -2135,18 +2320,15 @@ DANCE.BLACKPINK = {
 -- (urut nama) = baris ke-N di sini.
 local PLAYLIST = {
 	-- asset/lagu1.mp3
-	{ nama = "Lagu 1", musik = "", dance = DANCE.FALLBACK },
-	-- asset/lagu2.mp3
-	{ nama = "Lagu 2", musik = "", dance = DANCE.FUNK },
-	-- asset/lagu3.mp3
-	{ nama = "BLACKPINK Mix", musik = "", tiap_s = 0, dance = DANCE.BLACKPINK },
-	-- asset/lagu4.mp3
-	-- Dance-nya sengaja sama dengan Lagu 2 (Brazilian Funk Footwork).
-	{ nama = "MONTAGEM ALQUIMIA", musik = "", dance = DANCE.FUNK },
-	-- asset/lagu5.mp3
-	{ nama = "Lagu 5", musik = "", tiap_s = 0, dance = DANCE.BLACKPINK },
-	-- asset/lagu6.mp3
-	{ nama = "Lagu 6", musik = "", dance = DANCE.FUNK },
+	{ nama = "Brazil Dance Jamal", musik = "", dance = DANCE.FALLBACK },
+	-- asset/lagu2-DJ-BERETTA-THAILAND.mp3
+	{ nama = "DJ Beretta Thailand", musik = "", dance = DANCE.FUNK },
+	-- asset/lagu3-TAKA-LA-DENTRO.mp3
+	{ nama = "Taka La Dentro", musik = "", dance = DANCE.FALLBACK },
+	-- asset/lagu4-TAKA-LA-DENTRO.mp3
+	{ nama = "Taka La Dentro", musik = "", dance = DANCE.FALLBACK },
+	-- asset/lagu5-Helikopter-turun-padang.mp3
+	{ nama = "Helikopter Turun Padang", musik = "", dance = DANCE.FUNK },
 }
 
 -- Kalau satu lagu gagal dimuat, TimeLength-nya 0 dan Ended tidak pernah
@@ -2709,10 +2891,11 @@ local function gantiTarianSemua(fade)
 		-- Yang sedang mengambang dilewati: dia memang sengaja tidak
 		-- menari, dan tarian baru di sini akan menghidupkannya kembali
 		-- di tengah udara. Dia menyusul sendiri waktu mendarat.
-		-- Raksasa juga dilewati: dia sengaja melambai, bukan menari,
-		-- dan lagu yang berganti tidak boleh diam-diam menariknya
-		-- masuk ke koreografi kerumunan.
-		if model.Parent and slot ~= SLOT_RAKSASA then
+		-- Raksasa dilewati HANYA kalau dia melambai (GIANT_EMOTE_ID
+		-- diisi): lagu yang berganti tidak boleh diam-diam menariknya
+		-- masuk ke koreografi kerumunan. Kalau kosong dia ikut menari.
+		if model.Parent
+			and (slot ~= SLOT_RAKSASA or GIANT_EMOTE_ID == "") then
 			local lama = tracks[slot]
 			if lama then pcall(function() lama:Stop(fade or 0.15) end) end
 			tracks[slot] = playDance(model, id, fade)
@@ -2935,7 +3118,9 @@ local AURA_VFX_TANDA = "AuraVfx"
 local auraVfxAsli  = {}   -- [id] = Folder berisi emitter
 local auraVfxGagal = {}   -- [id] = true kalau sudah pernah gagal
 
-local function muatAuraVfx(id, redam)
+-- `opsi` = entri auranya sendiri (AURA_VFX_IDS / AURA_VFX_RAKSASA), untuk
+-- `unik` dan `buang`. Boleh nil.
+local function muatAuraVfx(id, redam, opsi)
 	if auraVfxAsli[id] then return auraVfxAsli[id] end
 	-- Sudah pernah gagal? Jangan dicoba lagi tiap kedatangan -- kalau
 	-- asset-nya memang tidak bisa diambil, mencobanya seratus kali cuma
@@ -2972,8 +3157,17 @@ local function muatAuraVfx(id, redam)
 	-- modelnya.
 	local kotak = Instance.new("Folder")
 	local jumlah = 0
+	local buang = (opsi and opsi.buang) or {}
+	local sudah = {}
 	for _, d in ipairs(wadah:GetDescendants()) do
-		if AURA_VFX_KELAS[d.ClassName] then
+		local ambilIni = AURA_VFX_KELAS[d.ClassName] and not buang[d.Name]
+		if ambilIni and opsi and opsi.unik and d:IsA("ParticleEmitter") then
+			local kunci = table.concat({ d.Texture, tostring(d.Rate),
+				tostring(d.Size), tostring(d.Lifetime), tostring(d.Speed) }, "|")
+			if sudah[kunci] then ambilIni = false end
+			sudah[kunci] = true
+		end
+		if ambilIni then
 			local k = d:Clone()
 			-- Diredam di sini, pada salinan INDUK yang disimpan cache.
 			-- Jadi tiap kedatangan cuma meng-clone yang sudah diredam,
@@ -3022,7 +3216,7 @@ local function pilihAuraVfx()
 	local mulai = math.random(1, n)
 	for i = 0, n - 1 do
 		local pilihan = AURA_VFX_IDS[((mulai - 1 + i) % n) + 1]
-		local asli = muatAuraVfx(pilihan.id, pilihan.redam)
+		local asli = muatAuraVfx(pilihan.id, pilihan.redam, pilihan)
 		if asli then return asli, pilihan.nama end
 	end
 	return nil, nil
@@ -3032,8 +3226,15 @@ end
 -- Namanya dipakai log di spawnAvatar: "dapat aura" tanpa menyebut yang
 -- mana tidak bisa menjawab "kenapa yang merah tidak pernah keluar".
 local function pasangAuraVfx(model, tier, skala)
-	if not layakAuraVfx(tier) then return nil end
-	local asli, nama = pilihAuraVfx()
+	local asli, nama
+	if AURA_VFX_ENABLED and AURA_VFX_RAKSASA and tier and tier >= GIANT_MIN_TIER then
+		-- Raksasa: auranya sendiri, tetap, bukan undian tiga aura.
+		asli = muatAuraVfx(AURA_VFX_RAKSASA.id, AURA_VFX_RAKSASA.redam,
+			AURA_VFX_RAKSASA)
+		nama = AURA_VFX_RAKSASA.nama
+	elseif layakAuraVfx(tier) then
+		asli, nama = pilihAuraVfx()
+	end
 	if not asli then return nil end
 
 	-- Bagian badan yang tidak ikut terayun animasi tangan, lihat
@@ -3833,6 +4034,12 @@ local function spawnAvatar(entry, slot)
 
 	local userId = cariUserId(username, entry.userId)
 	local desc   = Players:GetHumanoidDescriptionFromUserId(userId)
+	-- Animasi mood (ekspresi wajah) dikosongkan. Banyak avatar memakai
+	-- mood buatan kreator lain, dan game ini tidak punya izin memakainya:
+	-- hasilnya cuma peringatan merah "doesn't have access permission"
+	-- di Output tiap kali orangnya datang, wajahnya tetap diam. Mood
+	-- bawaan (0) tidak butuh izin apa pun.
+	pcall(function() desc.MoodAnimation = 0 end)
 
 	local model  = Players:CreateHumanoidModelFromDescription(
 		desc, Enum.HumanoidRigType.R15)
@@ -3951,7 +4158,9 @@ local function spawnAvatar(entry, slot)
 
 	model.Parent = workspace
 
-	createNameplate(model, username)
+	if not PLATE.TANPA_TIER[tier] then
+		createNameplate(model, username)
+	end
 
 	-- Satu frame: HipHeight baru final setelah modelnya masuk workspace,
 	-- dan tinggi yang meleset sedikit langsung terlihat sebagai kaki
@@ -4020,10 +4229,9 @@ local function spawnAvatar(entry, slot)
 	if nova then buangNova() end
 	avatars[kunci] = model
 
-	-- Raksasa MELAMBAI, bukan menari. Alasan lengkapnya di
-	-- GIANT_EMOTE_ID; ringkasnya, yang diam di antara yang bergerak
-	-- justru yang ditonton.
-	if raksasa then
+	-- Raksasa menari seperti yang lain, KECUALI GIANT_EMOTE_ID diisi
+	-- (lihat di sana): baru dia melambai.
+	if raksasa and GIANT_EMOTE_ID ~= "" then
 		local emote = playDance(model, GIANT_EMOTE_ID)
 		if emote then
 			pcall(function() emote:AdjustSpeed(GIANT_EMOTE_SPEED) end)
@@ -4107,6 +4315,30 @@ local function spawnAvatar(entry, slot)
 	local orbitKamera = (not raksasa) and orbit or false
 	local kam = kameraTier(tier)
 	fokusKamera(fokusPos, lamaS, orbitKamera, jauh, kam, tier, jauhY, model)
+
+	-- Raksasa: begitu sorotannya habis, kamera PULANG ke barisan.
+	--
+	-- Tanpa ini titik pandangnya tertinggal di dada raksasa, dan jarak
+	-- sinematiknya (2,9x) kembali ke jarak biasa -- yang terlihat cuma
+	-- badannya dari 11 stud sampai ada kedatangan berikutnya. Sejak
+	-- panggung bergiliran (GILIRAN) dan antrian gratisan dibuang kalau basi,
+	-- "sampai ada kedatangan berikutnya" bisa lama sekali.
+	--
+	-- zoomMasuk = zoomMaks = 1: pindah fokus tanpa rapatan, supaya tidak
+	-- terbaca sebagai kedatangan orang baru. 0,1 detik sesudah sorotan
+	-- habis, karena client mengabaikan pesan biasa selama adegan masih
+	-- jalan.
+	if raksasa and lamaS > 0 then
+		task.delay(lamaS + 0.1, function()
+			if avatars[SLOT_RAKSASA] ~= model then return end
+			V2Event:FireAllClients("fokus", {
+				pos       = titikPanggung(),
+				upJauh    = CAMERA_UP_JAUH_GIANT,
+				zoomMasuk = 1,
+				zoomMaks  = 1,
+			})
+		end)
+	end
 
 	if nova then
 		-- Seed diundi SEKALI di sini dan dikirim ke semua client, jadi
@@ -4231,9 +4463,28 @@ local function spawnAvatar(entry, slot)
 	if auraMulai > 0 then
 		local namaTampil = entry.displayName or username
 		task.delay(auraMulai, function()
-			if model.Parent then
-				tampilkanAura(model, namaTampil, persen, slotPapan, tier)
+			if not model.Parent then return end
+
+			-- Nova SESUDAH mendarat: adegan sinematik Rosa (dari bawah,
+			-- keliling 360, potret) di avatar aslinya yang sekarang
+			-- berdiri di slot pendaratan. Pesan "fokus" kedua, dikirim
+			-- bersamaan dengan auranya supaya tunda + roll di KAMERA_TIER
+			-- menjatuhkan angkanya di bidikan potret -- sama seperti Rosa.
+			--
+			-- Salinan dari `kam`, bukan `kam` yang ditimpa: tabel itu
+			-- dipakai semua nova berikutnya, dan pesan "fokus" pertama
+			-- (awal adegan nova) tidak boleh ikut membawa jalur ini.
+			local sisa = lamaS - auraMulai
+			if kam.jalurSesudah and sisa > 0 then
+				local kSesudah = {}
+				for kunci, nilai in pairs(kam) do kSesudah[kunci] = nilai end
+				kSesudah.jalur = kam.jalurSesudah
+				kSesudah.layar = kam.layarSesudah
+				fokusKamera(titikPandang(SLOT_NOVA_MENDARAT), sisa, false,
+					1, kSesudah, tier, 1, model)
 			end
+
+			tampilkanAura(model, namaTampil, persen, slotPapan, tier)
 		end)
 	else
 		tampilkanAura(model, entry.displayName or username, persen,
@@ -4282,10 +4533,20 @@ local function ambilJson(path)
 	-- listener-nya mengisi antrian yang terikat ke Roblox userId-nya
 	-- (buyers.json di VM). Server publik mengirim 0 dan tidak dapat apa-apa.
 	--
+	-- Game yang dipublish LANGSUNG di akun pembeli dan disetel Private
+	-- (cuma pemiliknya yang bisa masuk) jalan di server biasa, jadi
+	-- PrivateServerOwnerId-nya 0. Di situ pemilik GAME-nya yang dikirim:
+	-- CreatorId = userId pembeli, yang sama dengan robloxId di buyers.json.
+	-- Game milik grup tidak ikut -- CreatorId-nya id grup, bukan user.
+	--
 	-- Studio TIDAK mengirim owner -> kanal utama (API_TOKEN), seperti dulu.
 	if not RunService:IsStudio() then
+		local owner = game.PrivateServerOwnerId
+		if owner == 0 and game.CreatorType == Enum.CreatorType.User then
+			owner = game.CreatorId
+		end
 		path ..= (string.find(path, "?", 1, true) and "&" or "?")
-			.. "owner=" .. tostring(game.PrivateServerOwnerId)
+			.. "owner=" .. tostring(owner)
 	end
 	local ok, res = pcall(function()
 		return HttpService:RequestAsync({
@@ -4336,6 +4597,7 @@ V2Config.OnServerInvoke = function(pemain)
 
 	return {
 		up       = CAMERA_UP,
+		kameraNaik = CAMERA_NAIK_SEMUA,
 		upJauh   = CAMERA_UP_JAUH,
 		back     = CAMERA_BACK,
 		sweepDeg = CAMERA_SWEEP_DEG,
@@ -4362,6 +4624,17 @@ V2Config.OnServerInvoke = function(pemain)
 		auraSfxHitRaksasaVol  = SFX_AURA.HIT_RAKSASA_VOL,
 		auraSfxHitRaksasaNada = SFX_AURA.HIT_RAKSASA_NADA,
 		auraSfxRollRaksasaNada = SFX_AURA.ROLL_RAKSASA_NADA,
+		auraSfxRollRaksasaVol  = SFX_AURA.ROLL_RAKSASA_VOL,
+		-- Suara reaksi FAHH / Nice / woww. Lihat SFX_AURA.JELEK_ID.
+		auraSfxJelek     = SFX_AURA.JELEK_ID,
+		auraSfxJelekVol  = SFX_AURA.JELEK_VOL,
+		auraJelekMaks    = SFX_AURA.JELEK_MAKS,
+		auraSfxSedang    = SFX_AURA.SEDANG_ID,
+		auraSfxSedangVol = SFX_AURA.SEDANG_VOL,
+		auraSfxBagus     = SFX_AURA.BAGUS_ID,
+		auraSfxBagusVol  = SFX_AURA.BAGUS_VOL,
+		auraBagusMin     = SFX_AURA.BAGUS_MIN,
+		auraReaksiTunda  = SFX_AURA.REAKSI_TUNDA,
 		-- Bunyi kedatangan per tier. Dikirim sebagai tabel utuh, bukan
 		-- dipecah jadi sfxTier2/sfxTier3/...: menambah tier kelima nanti
 		-- cukup menambah satu baris di SFX_TIER, tanpa menyentuh baris
@@ -4727,9 +5000,13 @@ if not okVisual then
 	warn("[visual] gagal dipasang, panggung tetap jalan:", errVisual)
 end
 
-local okLantai, errLantai = pcall(warnaiLantai)
-if not okLantai then
-	warn("[lantai] gagal diwarnai, panggung tetap jalan:", errLantai)
+-- Di dalam `do`: dua variabel ini cuma dipakai di sini, dan chunk utama
+-- file ini sudah menempel di batas 200 variabel lokal (lihat PLATE).
+do
+	local okLantai, errLantai = pcall(warnaiLantai)
+	if not okLantai then
+		warn("[lantai] gagal diwarnai, panggung tetap jalan:", errLantai)
+	end
 end
 
 print("V2 -- polling:", URL)
@@ -4743,8 +5020,8 @@ if TIER_ENABLED then
 	print(("Lantai aura: Rose = %d%%, Rosa = %d%%, nova = %d%%; raksasa " ..
 		"TIDAK diundi -- selalu %d%%")
 		:format(AURA_LANTAI_T2, AURA_LANTAI_T3, AURA_LANTAI_T4, AURA_RAKSASA))
-	print(("Border: tier %d cuma cakram, garis tepi dari tier %d")
-		:format(2, BORDER_GARIS_MIN_TIER))
+	print(("Border: cakram %s, garis tepi dari tier %d")
+		:format(BORDER_CAKRAM and "on" or "off", BORDER_GARIS_MIN_TIER))
 	if LAYAR.MODE_ROSA ~= "mati" and not LAYAR.PILIHAN[LAYAR.MODE_ROSA] then
 		warn(("[layar] LAYAR.MODE_ROSA = '%s' tidak dikenal -- Rosa jalan " ..
 			"tanpa efek layar. Pilihannya: tipis, warna, penuh, mati.")
@@ -4791,10 +5068,12 @@ if TIER_ENABLED then
 		:format(SEMBUNYI_PENONTON
 			and "disembunyikan (badan, bayangan, nama) -- aman di-capture"
 			or "TERLIHAT -- avatarmu sendiri ikut terekam di siaran"))
-	print(("Tier %d: raksasa %s (batas %dx) di z=%d, emote %s, tanpa efek " ..
-		"dan tanpa aura VFX, bertahan lewat reset")
+	print(("Tier %d: raksasa %s (batas %dx) di z=%d, emote %s, tanpa efek, " ..
+		"aura VFX %s, bertahan lewat reset")
 		:format(GIANT_MIN_TIER, GIANT_ENABLED and "on" or "off", GIANT_SKALA_MAKS,
-			GIANT_Z, GIANT_EMOTE_ID ~= "" and "on" or "off"))
+			GIANT_Z, GIANT_EMOTE_ID ~= "" and "on" or "off",
+			AURA_VFX_RAKSASA and ("'" .. AURA_VFX_RAKSASA.nama .. "' (ditipiskan)")
+				or "off"))
 	print(("Raksasa: papan %d%% dengan putaran %.1fs, bunyi mendarat " ..
 		"sendiri (nada %.2f), dan kamera panggung turun ke %d stud " ..
 		"selama dia berdiri (biasanya %d)")
@@ -4902,15 +5181,34 @@ while true do
 			and tierMasuk >= BEKU_MIN_TIER
 			and entry.spotlight == true
 
+		-- Mengembalikan berapa lama panggung harus menunggu sebelum orang
+		-- berikutnya (GILIRAN), dihitung dari SEKARANG -- sesudah
+		-- spawnAvatar kembali, yaitu detik pesan auranya dikirim (atau
+		-- dijadwalkan, untuk nova: auraMulai).
 		local function jalankan()
-			local ok, err = pcall(spawnAvatar, entry, slot)
+			local ok, hasil = pcall(spawnAvatar, entry, slot)
 			if not ok then
 				warn(("Gagal load '%s': %s")
-					:format(tostring(entry.username), tostring(err)))
+					:format(tostring(entry.username), tostring(hasil)))
+				return 0
 			end
+			-- nil = modelnya dibuang di tengah jalan, tidak ada undian.
+			if not (GILIRAN.ENABLED and hasil) then return 0 end
+
+			local k = kameraTier(tierMasuk)
+			local tunggu = (tonumber(k.auraMulai) or 0) + (k.tunda or 0)
+				+ (k.roll or AURA_ROLL) + GILIRAN.NAPAS
+			if entry.spotlight == true then
+				local sorot = math.min(
+					(tonumber(entry.spotlightMs) or 0) / 1000, BEKU_MAKS)
+				tunggu = math.max(tunggu, sorot + BEKU_EKOR)
+			end
+			return tunggu
 		end
 
-		if beku then
+		if GILIRAN.ENABLED then
+			task.wait(jalankan())
+		elseif beku then
 			jalankan()
 			task.wait(BEKU_EKOR)
 		else

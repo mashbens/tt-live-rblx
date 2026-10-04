@@ -998,3 +998,6 @@ tier 3 rosa
 2.setelah spwan role di gint atau text aura di giant hapus sisakan usernamenya saja(saya mau coba juga kasih random aura dari 3 pilihan aura)
 3. masalah 1 kadang avatar itu kaki tidak ada atau rambut nya telat muncu setelah spawn itu gimana ya?
 4. masalah 2 nova kadang tidak keluar hanya kamera nya saya vfx dan sfx tidak keluar itu kenapa?
+
+
+room : https://www.roblox.com/share?code=03128a1d528df14ab13e93efb1d2c303&type=ExperienceDetails&stamp=1790435438011

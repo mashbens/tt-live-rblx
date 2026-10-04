@@ -61,7 +61,7 @@ local V2Config = ReplicatedStorage:WaitForChild("V2Config")
 -- terlihat cuma "kamera tidak bergerak", tanpa satu pun petunjuk bahwa
 -- yang gagal sebenarnya pengambilan angka.
 local CADANGAN = {
-	up = 2.5, upJauh = 7, back = -11, sweepDeg = 5, sweepS = 9, moveS = 0.8,
+	up = 2.5, upJauh = 5.5, kameraNaik = 1.5, back = -9, sweepDeg = 5, sweepS = 9, moveS = 0.8,
 	auraTime = 3.5, auraRoll = 0.6, auraY = 0.12, auraH = 0.32,
 	auraKepala = true, auraLayar = false,
 	auraKepalaY = 3.2, auraKepalaW = 190, auraKepalaH = 96,
@@ -72,12 +72,16 @@ local CADANGAN = {
 	auraSfxHitTinggi = "", auraSfxHitTinggiVol = 0.9,
 	auraSfxHitRaksasa = "", auraSfxHitRaksasaVol = 1.0,
 	auraSfxHitRaksasaNada = 0.75, auraSfxRollRaksasaNada = 0.8,
+	auraSfxJelek = "", auraSfxJelekVol = 1.0, auraJelekMaks = 600,
+	auraSfxSedang = "", auraSfxSedangVol = 1.0,
+	auraSfxBagus = "", auraSfxBagusVol = 1.0, auraBagusMin = 850,
+	auraReaksiTunda = 0.15,
 	auraTinggiMin = 900,
 	-- Kosong = tidak ada bunyi kedatangan. Cadangan ini cuma dipakai
 	-- kalau V2Config gagal ditarik; daftar aslinya ada di SFX_TIER.
 	sfxTier = {},
 	sinema = true, sinemaOrbitS = 14, sinemaBack = -12, sinemaUp = 5.5,
-	zoom = true, zoomMasuk = 0.45, zoomTahan = 1.0, zoomKeluar = 1.8,
+	zoom = true, zoomMasuk = 0.55, zoomTahan = 1.0, zoomKeluar = 1.8,
 	spawnLurus = true,
 	spawnSiap = true, spawnSiapMaks = 0.6, spawnSiapFade = 0.12,
 	sembunyiPenonton = true,
@@ -604,7 +608,12 @@ local function kameraRosa(s, t)
 
 	local g, H = s.tanah, s.tinggi
 	local atas = Vector3.new(0, 1, 0)
-	local r = tonumber(J.radius) or 7
+	-- Pengali JARAK untuk badan besar (raksasa, `ikutBadan`). 1 untuk
+	-- Rosa dan nova. Yang ditulis sebagai pecahan badan (tinggiOrbit,
+	-- potretTinggi, ...) sudah ikut H dengan sendirinya; yang dikali di
+	-- sini cuma yang ditulis dalam STUD.
+	local kB = s.k or 1
+	local r = (tonumber(J.radius) or 7) * kB
 	local tOrbit = H * (tonumber(J.tinggiOrbit) or 0.55)
 	local bOrbit = H * (tonumber(J.bidikOrbit) or 0.55)
 
@@ -613,9 +622,9 @@ local function kameraRosa(s, t)
 		-- DARI BAWAH. Ujung bidikan ini SAMA PERSIS dengan titik awal
 		-- keliling di bawah (sudut 0), jadi pergantiannya tanpa loncatan.
 		local u = haluskan(e / math.max(naik, 0.01))
-		local jarak = antara(tonumber(J.naikJauh) or 10, r, u)
+		local jarak = antara((tonumber(J.naikJauh) or 10) * kB, r, u)
 		pos   = g + Vector3.new(0,
-			antara(tonumber(J.naikBawah) or 0.6, tOrbit, u), -jarak)
+			antara((tonumber(J.naikBawah) or 0.6) * kB, tOrbit, u), -jarak)
 		bidik = g + atas * antara(H * (tonumber(J.naikBidik) or 0.3), bOrbit, u)
 	elseif e < mulaiLepas - potret then
 		-- KELILING. Sudutnya dihaluskan di kedua ujung, jadi putarannya
@@ -623,7 +632,7 @@ local function kameraRosa(s, t)
 		-- dari keadaan diam. Putarannya bulat: pulang ke depan.
 		local u = (e - naik) / math.max(orbit, 0.01)
 		local a = 2 * math.pi * (tonumber(J.putaran) or 1) * haluskan(u)
-		local y = tOrbit + math.sin(math.pi * u) * (tonumber(J.orbitNaik) or 0)
+		local y = tOrbit + math.sin(math.pi * u) * (tonumber(J.orbitNaik) or 0) * kB
 		pos   = g + Vector3.new(math.sin(a) * r, y, -math.cos(a) * r)
 		bidik = g + atas * bOrbit
 	else
@@ -631,9 +640,9 @@ local function kameraRosa(s, t)
 		-- (supaya papan auranya masuk frame), sisanya dorong masuk pelan.
 		local u = math.clamp((e - naik - orbit) / math.max(potret, 0.01), 0, 1)
 		local tP = H * (tonumber(J.potretTinggi) or 0.8)
-		local bP = H + (tonumber(J.potretBidik) or 0.8)
-		local jauhP  = tonumber(J.potretJauh) or 9
-		local dekatP = tonumber(J.potretDekat) or 6.5
+		local bP = H + (tonumber(J.potretBidik) or 0.8) * kB
+		local jauhP  = (tonumber(J.potretJauh) or 9) * kB
+		local dekatP = (tonumber(J.potretDekat) or 6.5) * kB
 		local jarak, y, b
 		if u < 0.35 then
 			local v = haluskan(u / 0.35)
@@ -998,6 +1007,12 @@ RunService.RenderStepped:Connect(function(dt)
 	-- dunia: goyangan yang selalu ke arah +X dunia terbaca berbeda-beda
 	-- tergantung kamera sedang menghadap ke mana, dan di sudut tertentu
 	-- dia berubah jadi zoom yang bergetar alih-alih guncangan.
+	-- SEMUA kamera naik sedikit (CAMERA_NAIK_SEMUA di server). Di sini,
+	-- sesudah semua jalur dicampur, supaya satu angka berlaku untuk
+	-- kamera spawn, sorotan, Rosa, nova, dan raksasa sekaligus. Digeser
+	-- lurus -- arah pandangnya tidak diubah.
+	cf = cf + Vector3.new(0, tonumber(CFG.kameraNaik) or 0, 0)
+
 	novaGetarFrame()
 	if novaGetarOffset ~= Vector3.zero then
 		cf = cf * CFrame.new(novaGetarOffset)
@@ -1135,9 +1150,10 @@ end
 -- Yang menggantikannya tetap dingin (biar satu keluarga dengan
 -- panggungnya) tapi jauh lebih terang: putih ke biru es. Terangnya
 -- itu yang mengangkatnya dari latar, bukan warnanya.
-local GRAD_NAMA = grad(Color3.fromRGB(255, 255, 255),
-                       Color3.fromRGB(226, 243, 255),
-                       Color3.fromRGB(168, 214, 255))
+--
+-- Sekarang PUTIH POLOS atas permintaan (dulu putih -> biru es 168,214,255).
+local PUTIH     = Color3.fromRGB(255, 255, 255)
+local GRAD_NAMA = grad(PUTIH, PUTIH)
 local GLOW_NAMA = Color3.fromRGB(150, 200, 255)
 
 -- CATATAN: papan latar gelap di belakang tulisan sempat ada di sini dan
@@ -1318,12 +1334,25 @@ kotak.Parent                 = gui
 -- Aura di layar: ukuran hurufnya besar, jadi stroke dan glow-nya ikut
 -- tebal. Angkanya yang paling menyala; nama dan kata AURA di bawahnya
 -- lebih tenang supaya matanya tetap jatuh ke angka.
-local lblNama = teksGaya(kotak, "Nama", 0.00, 0.22, FONT_NAMA,
-	GRAD_NAMA, GLOW_NAMA, 2, 0, 70)
-local lblPersen = teksGaya(kotak, "Persen", 0.22, 0.48, FONT_ANGKA,
-	TIER[#TIER].warna, TIER[#TIER].glow, 3, 0, 200)
-local lblAura = teksGaya(kotak, "Aura", 0.72, 0.26, FONT_KATA,
-	grad(Color3.fromRGB(225, 232, 245), Color3.fromRGB(170, 182, 210)),
+-- Batas ukuran huruf sempat dinaikkan bersama AURA_H (0.32 -> 0.38): di
+-- layar besar batas lama yang kena duluan, dan bloknya membesar tanpa
+-- hurufnya ikut membesar.
+--
+-- Urutannya NAMA / AURA / ANGKA: kata AURA di tengah, di antara nama
+-- dan angkanya.
+--
+-- Barisnya DIRAPATKAN: kotak label TextScaled menyisakan ruang kosong di
+-- atas dan bawah hurufnya sendiri, jadi label yang cuma berdempetan tetap
+-- terlihat renggang. Kotaknya sedikit saling menumpuk (nama sampai 0.26,
+-- AURA 0.23-0.41, angka mulai 0.34) -- yang bertumpuk cuma ruang
+-- kosongnya, hurufnya tidak. Angkanya sempat mulai di 0.37, dinaikkan
+-- sedikit supaya lebih rapat ke kata AURA.
+local lblNama = teksGaya(kotak, "Nama", 0.00, 0.26, FONT_NAMA,
+	GRAD_NAMA, GLOW_NAMA, 2, 0, 84)
+local lblPersen = teksGaya(kotak, "Persen", 0.34, 0.56, FONT_ANGKA,
+	TIER[#TIER].warna, TIER[#TIER].glow, 3, 0, 240)
+local lblAura = teksGaya(kotak, "Aura", 0.23, 0.18, FONT_KATA,
+	grad(PUTIH, PUTIH),
 	nil, 1.5, 0.1, 90)
 lblAura.TextXAlignment = Enum.TextXAlignment.Center
 
@@ -1383,11 +1412,11 @@ local function tampilkanAura(d)
 		-- Sentakan kecil di angka akhirnya. Ini penanda "sudah, ini
 		-- angkanya" -- tanpa itu hitungannya cuma berhenti.
 		for _, t in ipairs(lapisan({ lblPersen })) do
-			t.Size = UDim2.new(1, 0, 0.54, 0)
+			t.Size = UDim2.new(1, 0, 0.62, 0)
 			TweenService:Create(t,
 				TweenInfo.new(0.25, Enum.EasingStyle.Back,
 					Enum.EasingDirection.Out),
-				{ Size = UDim2.new(1, 0, 0.48, 0) }):Play()
+				{ Size = UDim2.new(1, 0, 0.56, 0) }):Play()
 		end
 
 		task.wait(math.max((d.lama or CFG.auraTime or 3.5) - roll, 0.2))
@@ -1525,7 +1554,7 @@ local function auraDiKepala(d)
 	-- terjaga lewat UKURAN dan glow, bukan lewat membuatnya nyaris
 	-- hilang.
 	local lblAura   = teksGaya(gui, "Aura", 0.72, 0.24, FONT_KATA,
-		grad(Color3.fromRGB(238, 244, 255), Color3.fromRGB(190, 202, 226)),
+		grad(PUTIH, PUTIH),
 		nil, 1.5, 0.12)
 
 	setTeks(lblNama, d.nama or "?")
@@ -1941,7 +1970,7 @@ local sfxHitRaksasa = buatSfx("AuraHitRaksasaSfx", CFG.auraSfxHitRaksasa,
 -- nada Sound yang sedang berbunyi membuat putaran orang lain ikut berubah
 -- nada di tengah jalan.
 local sfxAuraRaksasa = buatSfx("AuraRollRaksasaSfx", CFG.auraSfx,
-	CFG.auraSfxVol or 0.7)
+	CFG.auraSfxRollRaksasaVol or CFG.auraSfxVol or 0.7)
 if sfxAuraRaksasa then
 	sfxAuraRaksasa.PlaybackSpeed = math.max(CFG.auraSfxSpeed or 1, 0.1)
 		* math.max(tonumber(CFG.auraSfxRollRaksasaNada) or 1, 0.1)
@@ -1951,6 +1980,17 @@ if sfxHitRaksasa then
 	sfxHitRaksasa.PlaybackSpeed =
 		math.max(tonumber(CFG.auraSfxHitRaksasaNada) or 1, 0.1)
 end
+
+-- Suara reaksi sesudah angkanya mendarat: FAHH untuk angka kecil, Nice
+-- untuk sedang, woww untuk bagus (SFX_AURA.JELEK_ID / SEDANG_ID /
+-- BAGUS_ID di server). nil kalau id-nya kosong -- reaksinya diam,
+-- hentakan mendaratnya tetap.
+local sfxJelek = buatSfx("AuraJelekSfx", CFG.auraSfxJelek,
+	CFG.auraSfxJelekVol or 1.0)
+local sfxSedang = buatSfx("AuraSedangSfx", CFG.auraSfxSedang,
+	CFG.auraSfxSedangVol or 1.0)
+local sfxBagus = buatSfx("AuraBagusSfx", CFG.auraSfxBagus,
+	CFG.auraSfxBagusVol or 1.0)
 
 -- --- BUNYI KEDATANGAN PER TIER ---
 --
@@ -2179,6 +2219,33 @@ local function bunyiAura(roll, persen, tundaS, raksasa)
 	else
 		mulaiBunyi()
 	end
+end
+
+-- FAHH / Nice / woww, sekali, sesaat SESUDAH angkanya mendarat.
+--
+-- Terpisah dari bunyiAura: yang itu urusan putaran dan hentakan (yang
+-- saling memotong dan dituntaskan lewat hitTertunda), yang ini reaksi
+-- terhadap HASILNYA. Tiga kategori, ambangnya sama dengan warna angka
+-- (biru / ungu / oranye).
+local function reaksiAura(persen, roll, tundaS)
+	local p = tonumber(persen) or 0
+	local s
+	if p < (tonumber(CFG.auraJelekMaks) or 600) then
+		s = sfxJelek
+	elseif p >= (tonumber(CFG.auraBagusMin) or 850) then
+		s = sfxBagus
+	else
+		s = sfxSedang
+	end
+	if not s then return end
+
+	local kapan = math.max(tonumber(tundaS) or 0, 0)
+		+ math.max(tonumber(roll) or CFG.auraRoll or 0.6, 0.05)
+		+ math.max(tonumber(CFG.auraReaksiTunda) or 0, 0)
+	task.delay(kapan, function()
+		s.TimePosition = 0
+		s:Play()
+	end)
 end
 
 
@@ -2944,7 +3011,16 @@ local function panggungRosa(d)
 		tinggi = math.max(kepala.Position.Y + kepala.Size.Y / 2 - tanah.Y, 2)
 	end
 
-	rosaKam = { j = J, mulai = os.clock(), tanah = tanah, tinggi = tinggi }
+	-- Pengali jarak untuk badan besar. Diukur dari badannya sendiri, bukan
+	-- dari skala yang dikirim server: tinggi yang terukur inilah yang
+	-- harus muat di frame, apa pun alasan badannya sebesar itu.
+	local kB = 1
+	if J.ikutBadan then
+		kB = math.max(tinggi / math.max(tonumber(J.tinggiNormal) or 5.5, 1), 1)
+	end
+
+	rosaKam = { j = J, mulai = os.clock(), tanah = tanah, tinggi = tinggi,
+		k = kB }
 
 	local naik   = tonumber(J.naik) or 2.6
 	local orbit  = tonumber(J.orbit) or 3.4
@@ -2982,9 +3058,13 @@ local function panggungRosa(d)
 	end
 
 	-- --- lampu sorot dari atas ---
-	local atasPart = bagianTakKasatMata(CFrame.new(tanah + Vector3.new(0, tinggi + 9, 0)))
+	-- Semua jarak di bawah dikali kB (1 untuk badan biasa). Range cahaya
+	-- dibatasi 60 -- batas Roblox.
+	local atasPart = bagianTakKasatMata(CFrame.new(
+		tanah + Vector3.new(0, tinggi + 9 * kB, 0)))
 	local sorot = Instance.new("SpotLight")
-	sorot.Face, sorot.Angle, sorot.Range = Enum.NormalId.Bottom, 40, 26
+	sorot.Face, sorot.Angle, sorot.Range = Enum.NormalId.Bottom, 40,
+		math.min(26 * kB, 60)
 	sorot.Brightness, sorot.Shadows = 0, true
 	sorot.Color = warna(tema.sorot, Color3.fromRGB(255, 225, 180))
 	sorot.Parent = atasPart
@@ -2992,9 +3072,9 @@ local function panggungRosa(d)
 
 	-- --- cahaya dari belakang: memisahkan siluetnya dari latar gelap ---
 	local belakangPart = bagianTakKasatMata(CFrame.new(
-		tanah + Vector3.new(0, tinggi * 0.6, 3)))
+		tanah + Vector3.new(0, tinggi * 0.6, 3 * kB)))
 	local belakang = Instance.new("PointLight")
-	belakang.Range, belakang.Brightness = 11, 0
+	belakang.Range, belakang.Brightness = math.min(11 * kB, 60), 0
 	belakang.Color = warna(tema.belakang, Color3.fromRGB(120, 170, 255))
 	belakang.Parent = belakangPart
 	tw(belakang, 0.6, { Brightness = 2.5 })
@@ -3002,7 +3082,7 @@ local function panggungRosa(d)
 	-- --- partikel cahaya yang melayang ---
 	local partikelPart = bagianTakKasatMata(CFrame.new(
 		tanah + Vector3.new(0, tinggi * 0.5, 0)))
-	partikelPart.Size = Vector3.new(7, tinggi, 7)
+	partikelPart.Size = Vector3.new(7 * kB, tinggi, 7 * kB)
 	local debu = Instance.new("ParticleEmitter")
 	debu.Texture = "rbxasset://textures/particles/sparkles_main.dds"
 	debu.Color = ColorSequence.new(warna(tema.partikel, Color3.new(1, 1, 1)))
@@ -3026,7 +3106,7 @@ local function panggungRosa(d)
 	tw(Lighting, 0.6, { ExposureCompensation = exposAsli - (tonumber(J.redup) or 0.7) })
 
 	-- --- tetangga disembunyikan ---
-	local radius = tonumber(J.sepi) or 14
+	local radius = (tonumber(J.sepi) or 14) * kB
 	local datar = Vector3.new(tanah.X, 0, tanah.Z)
 	local dilacak = {}   -- BasePart -> true
 	local dimatikan = {} -- benda ber-Enabled yang KITA matikan -> true
@@ -3647,6 +3727,7 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 		-- satu frame.
 		if CFG.auraKepala or CFG.auraLayar then
 			bunyiAura(d.roll or CFG.auraRoll, d.persen, d.tunda, d.raksasa)
+			reaksiAura(d.persen, d.roll, d.tunda)
 		end
 		if CFG.auraKepala then auraDiKepala(d) end
 		if CFG.auraLayar  then tampilkanAura(d) end

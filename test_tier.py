@@ -382,8 +382,9 @@ for nama in ("tipis", "warna", "penuh"):
 cek("letterbox Rosa bawaan lebih tipis dari nova",
     g.LAYAR.PILIHAN.tipis.letterbox < g.NOVA.CONFIG.letterbox,
     "Rosa dan nova sama tebal -- layar nova tidak lagi istimewa")
-cek("tier lain tidak ikut dapat efek layar Rosa",
-    all(g.kameraTier(t).layar is None for t in (1, 2, 4, 5)))
+cek("tier 1, 2, dan awal nova tidak ikut dapat efek layar Rosa",
+    all(g.kameraTier(t).layar is None for t in (1, 2, 4)),
+    "layar Rosa di awal adegan nova menumpuk dengan layar nova sendiri")
 
 # --- JALUR KAMERA ROSA ---
 #
@@ -402,13 +403,15 @@ cek(f"jalur Rosa putarannya bulat ({J.putaran})",
     abs(J.putaran - round(J.putaran)) < 1e-9 and J.putaran >= 1,
     "putaran tidak bulat berakhir menyerong, dan bidikan potret berangkat "
     "dengan loncatan")
-_k3 = g.kameraTier(3)
-_mendarat3 = _k3.tunda + _k3.roll
-_awal_potret = J.naik + J.orbit
-cek(f"angka Rosa mendarat di bidikan POTRET "
-    f"({_awal_potret:.1f} <= {_mendarat3:.1f} <= {_awal_potret + J.potret:.1f})",
-    _awal_potret <= _mendarat3 <= _awal_potret + J.potret,
-    "papan auranya keluar frame waktu angkanya berhenti")
+# Angka aura mulai berputar SAAT AVATARNYA MUNCUL (tunda 0), atas
+# permintaan -- bukan lagi ditahan sampai bidikan potret. Untuk nova,
+# "muncul" = sesudah dia mendarat (auraMulai), karena selama adegannya
+# avatar aslinya disembunyikan.
+for _t in (1, 2, 3, 4, 5):
+    cek(f"tier {_t}: angka aura mulai berputar saat avatarnya muncul "
+        f"(tunda {g.kameraTier(_t).tunda})",
+        (g.kameraTier(_t).tunda or 0) == 0,
+        "angkanya ditahan -- avatarnya sudah berdiri tapi undiannya belum jalan")
 cek(f"kamera keliling tidak terlalu jauh dan tidak di dalam badan "
     f"(radius {J.radius})",
     4 <= J.radius <= 10)
@@ -421,8 +424,37 @@ cek(f"tetangga disembunyikan sampai melewati lintasan kamera "
     "kamera keliling lewat di dalam badan tetangga yang masih terlihat")
 cek(f"ada tema latar Rosa ({len(list(g.ROSA.TEMA.values()))})",
     len(list(g.ROSA.TEMA.values())) >= 1)
-cek("cuma Rosa yang punya jalur kamera sendiri",
-    all(g.kameraTier(t).jalur is None for t in (1, 2, 4, 5)))
+cek("tier 1, 2, dan awal nova tidak punya jalur kamera sendiri",
+    all(g.kameraTier(t).jalur is None for t in (1, 2, 4)),
+    "jalur di pesan pertama nova merebut kamera dari adegan TierNova")
+
+# --- JALUR ROSA DIPAKAI ULANG: nova sesudah mendarat, dan raksasa ---
+#
+# Nova: pesan "fokus" kedua di auraMulai membawa jalurSesudah. Seluruh
+# jalurnya harus muat di sisa sorotan, dan angkanya (dikirim bersamaan)
+# harus mendarat di bidikan potret -- sama dengan syarat Rosa di atas.
+_k4 = g.kameraTier(4)
+cek("nova punya jalur Rosa sesudah mendarat", _k4.jalurSesudah is not None)
+if _k4.jalurSesudah is not None:
+    _J4 = _k4.jalurSesudah
+    _akhir4 = _k4.auraMulai + _J4.naik + _J4.orbit + _J4.potret + _J4.lepas
+    cek(f"jalur Rosa nova muat di sorotannya "
+        f"({_akhir4:.1f} <= {SOROTAN_MS[4] / 1000:.1f}s)",
+        _akhir4 <= SOROTAN_MS[4] / 1000 + 1e-9,
+        "kamera biasa merebut kembali di tengah potret")
+
+# Raksasa: jalurnya ikut ukuran badan (ikutBadan), kalau tidak kamera
+# kelilingnya berputar di dalam kakinya.
+_k5j = g.kameraTier(5)
+cek("raksasa punya jalur Rosa", _k5j.jalur is not None)
+if _k5j.jalur is not None:
+    _J5 = _k5j.jalur
+    cek("jalur raksasa ikut ukuran badannya", _J5.ikutBadan is True,
+        "radius 7 stud di badan 4x = kamera di dalam kakinya")
+    _tot5 = _J5.naik + _J5.orbit + _J5.potret + _J5.lepas
+    cek(f"jalur raksasa muat di sorotannya "
+        f"({_tot5:.1f} <= {SOROTAN_MS[5] / 1000:.1f}s)",
+        _tot5 <= SOROTAN_MS[5] / 1000 + 1e-9)
 
 # --- DENYUT ZOOM ---
 #
@@ -468,14 +500,6 @@ for t in (1, 2, 3, 4, 5):
         f"naikPutar {n} -- adegannya berakhir di tinggi yang bukan "
         f"tinggi biasa")
 
-# Raksasa DULU tidak menunda apa-apa: papannya cuma nama, tidak ada
-# angka yang berputar. Sekarang papannya berisi 10.000% dan putarannya
-# harus menunggu kamera cukup mundur, sama seperti tier lain -- papan
-# yang berputar selagi masih di luar frame atas sama saja dengan tidak
-# pernah berputar.
-cek("raksasa menunda putaran angkanya seperti tier berbayar lain",
-    g.kameraTier(int(angka("GIANT_MIN_TIER"))).tunda > 0,
-    "tunda 0 -- angkanya habis berputar sebelum papannya masuk frame")
 
 # --- Busur harus tetap di kerucut DEPAN ---
 #
@@ -594,10 +618,9 @@ cek("tier di atas 5 tetap raksasa", g.adalahRaksasa(6) is True,
     "tier baru di atasnya harus ikut raksasa, bukan diam-diam kembali "
     "jadi badan normal")
 
-# Aura VFX tidak boleh menyentuh raksasa -- dia harus polos.
-# Raksasa TIDAK dapat aura VFX (sempat dicoba, lalu dicopot): yang
-# membuat dia terbaca ukuran badannya.
-cek("aura VFX bukan milik tier raksasa",
+# Tiga aura ACAK bukan milik raksasa -- dia punya satu aura tetap
+# sendiri (AURA_VFX_RAKSASA), ditipiskan supaya badannya tetap terbaca.
+cek("aura VFX acak bukan milik tier raksasa",
     int(angka("AURA_VFX_TIER_MAKS")) < int(angka("GIANT_MIN_TIER")),
     "raksasa harus polos: aura di badan sebesar itu menyaingi ukurannya")
 # Kalau suatu saat dinyalakan lagi, partikelnya harus ikut diperbesar --
@@ -606,6 +629,10 @@ cek("pasangAuraVfx tetap memperbesar partikel sebanding skala badan",
     "pasangAuraVfx(model, tier, skala)" in "\n".join(src)
     and "k.Size = skalaSeq(k.Size, f)" in "\n".join(src),
     "aura seukuran orang biasa di badan 4x")
+cek("raksasa punya aura tetap sendiri yang ditipiskan",
+    any(l.startswith("local AURA_VFX_RAKSASA = {") for l in src)
+    and "tier >= GIANT_MIN_TIER then" in "\n".join(src),
+    "raksasa polos, atau ikut undian tiga aura")
 
 # Papan raksasa dirapikan jadi nama saja SESUDAH angkanya mendarat dan
 # sempat dibaca -- dan semua itu harus selesai di dalam sorotannya,
@@ -766,6 +793,10 @@ UP_JAUH        = angka("CAMERA_UP_JAUH")
 UP_JAUH_GIANT  = angka("CAMERA_UP_JAUH_GIANT")
 FOKUS_Y        = angka("CAMERA_FOKUS_Y")
 BACK           = abs(angka("CAMERA_BACK"))
+# Client menggeser SEMUA kamera lurus ke atas sebanyak ini SESUDAH arah
+# pandangnya dihitung -- tunduknya tetap, tapi posisinya lebih tinggi,
+# jadi kepala raksasa turun di frame.
+NAIK_SEMUA     = angka("CAMERA_NAIK_SEMUA")
 
 
 def sudut_kepala_raksasa(tinggi_kamera):
@@ -776,7 +807,8 @@ def sudut_kepala_raksasa(tinggi_kamera):
     # paling sempit, dan itu yang dihitung di sini.
     jarak = BACK + angka("GIANT_Z")
     tunduk = _m.degrees(_m.atan2(tinggi_kamera - FOKUS_Y, BACK))
-    return _m.degrees(_m.atan2(kepala_raksasa - tinggi_kamera, jarak)) + tunduk
+    return _m.degrees(_m.atan2(kepala_raksasa - (tinggi_kamera + NAIK_SEMUA),
+                               jarak)) + tunduk
 
 
 lama = sudut_kepala_raksasa(UP_JAUH)
@@ -1032,6 +1064,34 @@ srv.push(srv.PushRequest(username="sama", tier=2, koin=1, tiktokUser="x"))
 cek("Doughnut lalu Rose untuk nama yang sama = DUA entri, berurutan",
     [(e["username"], e["tier"]) for e in srv.KANAL_UTAMA.queue] == [("sama", 5), ("sama", 2)],
     f"isi antrian: {[(e['username'], e['tier']) for e in srv.KANAL_UTAMA.queue]}")
+
+srv.KANAL_UTAMA.queue.clear()
+srv.KANAL_UTAMA.last_spotlight_at = None
+srv.KANAL_UTAMA.last_spotlight_lama_s = 0.0
+srv.KANAL_UTAMA.last_spotlight_tier = None
+
+# --- komentar gratis yang basi dibuang, gift tidak pernah ---
+#
+# QUEUE_BASI_S: panggung bergiliran, jadi komentar bisa menunggu lama. Yang
+# gratis dan sudah lewat batas dibuang saat giliran diambil; yang bayar
+# tetap tampil berapa pun lamanya dia menunggu.
+_basi_asli = srv.QUEUE_BASI_S
+srv.QUEUE_BASI_S = 30.0
+srv.push(srv.PushRequest(username="lama", tier=1))
+srv.push(srv.PushRequest(username="giftlama", tier=2, koin=1))
+srv.push(srv.PushRequest(username="baru", tier=1))
+for _e in srv.KANAL_UTAMA.queue:
+    if _e["username"] in ("lama", "giftlama"):
+        _e["ts"] -= 31
+_urut = [(srv._ambil_entri() or {}).get("username") for _ in range(3)]
+cek("komentar gratis basi dibuang, gift basi tetap tampil",
+    _urut == ["giftlama", "baru", None], f"urutan keluar: {_urut}")
+srv.QUEUE_BASI_S = 0.0
+srv.push(srv.PushRequest(username="lama", tier=1))
+srv.KANAL_UTAMA.queue[0]["ts"] -= 999
+cek("QUEUE_BASI_S=0 mematikan pembuangan",
+    (srv._ambil_entri() or {}).get("username") == "lama")
+srv.QUEUE_BASI_S = _basi_asli
 
 srv.KANAL_UTAMA.queue.clear()
 srv.KANAL_UTAMA.last_spotlight_at = None

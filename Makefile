@@ -67,7 +67,7 @@ VM_SSH ?= $(TUNNEL_SSH)
 VM_DIR ?= /root/$(CONTAINER)
 # Kunci .env yang dibaca main.py. Cuma ini yang dikirim ke VM -- kunci
 # EulerStream, login VM, dan setelan listener tetap di laptop.
-VM_ENV_KEYS := ^(TIER[0-9]_(SCALE|KOIN)|SPOTLIGHT_[A-Z0-9_]+|QUEUE_MAX|API_TOKEN)=
+VM_ENV_KEYS := ^(TIER[0-9]_(SCALE|KOIN)|SPOTLIGHT_[A-Z0-9_]+|QUEUE_(MAX|BASI_S)|API_TOKEN)=
 
 # Rojo dipasang lewat Aftman (aftman.toml). Pakai shim-nya langsung supaya
 # jalan juga di shell yang belum memuat ~/.aftman/env.
