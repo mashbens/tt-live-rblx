@@ -14,7 +14,10 @@
 set -euo pipefail
 
 NAMA="$1"
-CONF=/root/nignx/config/conf.d
+# Folder conf.d dibaca dari mount container nginx, bukan ditulis mati: VM
+# lama /root/nignx/config/conf.d, VM baru /root/nginx/config/conf.d.
+CONF="$(docker inspect nginx --format '{{range .Mounts}}{{if eq .Destination "/etc/nginx/conf.d"}}{{.Source}}{{end}}{{end}}')"
+[ -n "$CONF" ] || { echo "container nginx / mount conf.d tidak ketemu"; exit 1; }
 D="$CONF/rblx.d"
 FILE="$D/$NAMA.conf"
 INCLUDE="include /etc/nginx/conf.d/rblx.d/*.conf;"
@@ -23,8 +26,28 @@ INCLUDE="include /etc/nginx/conf.d/rblx.d/*.conf;"
 mkdir -p "$D"
 
 cadangan=""
-if ! grep -qF "$INCLUDE" "$CONF/rblx.conf"; then
-    cadangan="/root/nignx/rblx.conf.sebelum-rblx.d.bak"
+if [ ! -f "$CONF/rblx.conf" ]; then
+    # VM baru: HTTPS dipegang Cloudflare Tunnel (cloudflared -> nginx:80),
+    # jadi cukup blok port 80. Dihapus lagi kalau nginx -t gagal.
+    cadangan="/dev/null"
+    cat > "$CONF/rblx.conf" <<KONF
+# rblx.buanaglobalcipta.com -- dibuat deploy/nginx_route.sh.
+# HTTPS di Cloudflare (cloudflared -> nginx:80).
+server {
+    listen 80;
+    server_name rblx.buanaglobalcipta.com;
+
+    # Satu file per pembeli, ditulis deploy/nginx_route.sh.
+    $INCLUDE
+
+    location / {
+        return 404;
+    }
+}
+KONF
+    echo "rblx.conf dibuat"
+elif ! grep -qF "$INCLUDE" "$CONF/rblx.conf"; then
+    cadangan="$(dirname "$(dirname "$CONF")")/rblx.conf.sebelum-rblx.d.bak"
     cp "$CONF/rblx.conf" "$cadangan"
     # Disisipkan di blok 443, tepat sesudah ssl_certificate_key -- blok 80
     # cuma redirect ke https.
@@ -74,7 +97,8 @@ printf '%s\n' "$BARU" > "$FILE"
 if ! docker exec nginx nginx -t >/dev/null 2>&1; then
     docker exec nginx nginx -t || true
     if [ -n "$lama" ]; then printf '%s\n' "$lama" > "$FILE"; else rm -f "$FILE"; fi
-    [ -n "$cadangan" ] && cp "$cadangan" "$CONF/rblx.conf"
+    if [ "$cadangan" = /dev/null ]; then rm -f "$CONF/rblx.conf"
+    elif [ -n "$cadangan" ]; then cp "$cadangan" "$CONF/rblx.conf"; fi
     echo "nginx -t GAGAL -- dikembalikan, nginx tidak di-reload."
     exit 1
 fi
