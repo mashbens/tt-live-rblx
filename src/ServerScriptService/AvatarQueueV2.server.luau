@@ -474,8 +474,9 @@ local SFX_TIER = {
 	--
 	-- Nada dinaikkan (1,4): angin jatuh aslinya panjang dan rendah;
 	-- dipercepat dia jadi desis pendek yang terdengar membelah udara.
+	-- Volume 0,9 -> 2,0 atas permintaan (suara nova dibesarkan).
 	[4] = {
-		vol = 0.9, nada = 1.4,
+		vol = 2.0, nada = 1.4,
 		kandidat = {
 			"rbxasset://sounds/action_falling.mp3",
 			"rbxasset://sounds/action_jump.mp3",
@@ -1116,6 +1117,7 @@ NOVA.PALET = {
 --          dihentikan sendiri waktu fase berikutnya mulai
 --   nada, nadaAkhir  kalau keduanya ada, nadanya MELUNCUR dari yang
 --          pertama ke yang kedua sepanjang fase itu
+-- Volume semua bunyi nova dinaikkan kira-kira 2x atas permintaan.
 NOVA.SFX = {
 	-- CHARGE: dengungan yang naik pelan. Ini satu-satunya yang looped --
 	-- bass.wav jauh lebih pendek dari empat detik, dan hening di tengah
@@ -1126,27 +1128,27 @@ NOVA.SFX = {
 	-- pekerjaannya: dengungan yang naik terus-menerus itu satu-satunya
 	-- cara memberi tahu telinga bahwa sesuatu sedang dikumpulkan.
 	{ fase = "charge", id = "rbxasset://sounds/bass.wav",
-	  vol = 0.35, nada = 0.50, nadaAkhir = 1.15, ulang = true },
+	  vol = 0.8, nada = 0.50, nadaAkhir = 1.15, ulang = true },
 
 	-- ASCEND: whoosh naik. Nada di bawah 1 memanjangkannya, jadi dia
 	-- menutupi satu setengah detik penuh alih-alih berhenti di tengah.
 	{ fase = "ascend", id = "rbxasset://sounds/action_jump.mp3",
-	  vol = 0.55, nada = 0.65 },
+	  vol = 1.2, nada = 0.65 },
 
 	-- FREEZE: satu denting rendah. Ping bawaan pada 0,35 tidak lagi
 	-- terdengar seperti notifikasi -- dia jadi denting panjang yang
 	-- menggantung, dan menggantung itu persis yang sedang terjadi.
 	{ fase = "freeze", id = "rbxasset://sounds/electronicpingshort.wav",
-	  vol = 0.6, nada = 0.35 },
+	  vol = 1.3, nada = 0.35 },
 
 	-- IMPACT, lapis 1: dentuman berat. bass.wav pada 0,30 turun hampir
 	-- dua oktaf dari nada aslinya.
 	{ fase = "impact", id = "rbxasset://sounds/bass.wav",
-	  vol = 1.0, nada = 0.30 },
+	  vol = 2.0, nada = 0.30 },
 	-- IMPACT, lapis 2: pecahnya, di frame yang sama. Yang berat saja
 	-- terdengar seperti pintu ditutup; yang pecah saja terdengar ringan.
 	{ fase = "impact", id = "rbxasset://sounds/impact_water.mp3",
-	  vol = 0.9, nada = 0.45 },
+	  vol = 1.8, nada = 0.45 },
 
 	-- GEMPA: gemuruh barisan yang tersapu, menyusul 0,3 detik sesudah
 	-- dentumannya.
@@ -1161,13 +1163,13 @@ NOVA.SFX = {
 	-- yang benar-benar mulai terlempar.
 	{ fase = "impact", tunda = 0.3,
 	  id = "rbxasset://sounds/action_jump_land.mp3",
-	  vol = 0.85, nada = 0.45 },
+	  vol = 1.8, nada = 0.45 },
 
 	-- AFTERSHOCK: gemuruh kedua, sejalan dengan cincin dan petir kedua
 	-- di dalam modulnya (task.delay 1,4).
 	{ fase = "impact", tunda = 1.4,
 	  id = "rbxasset://sounds/impact_water.mp3",
-	  vol = 0.55, nada = 0.65 },
+	  vol = 1.2, nada = 0.65 },
 }
 
 -- Lama menari sesudah adegannya selesai, detik. Tidak dikirim ke mana pun
@@ -1724,7 +1726,12 @@ local CAMERA_BACK      = -9    -- jarak mundur (negatif = di belakang)
 -- badan avatar jadi miring di frame, kepalanya di tengah, telapaknya
 -- keluar lewat tepi bawah. Dari 2,5 sumbu pandangnya nyaris mendatar --
 -- avatarnya berdiri tegak di layar, utuh dari kepala sampai kaki.
-local CAMERA_UP        = 2.5
+--
+-- Diturunkan lagi 2.5 -> 1.5 -> 1.0 atas permintaan: kamera sesudah
+-- spawn terasa terlalu tinggi. Ditambah CAMERA_NAIK_SEMUA (1,5) kamera
+-- merapatnya sekarang duduk di 2,5 stud, kira-kira setinggi dada.
+-- Jangan di bawah ~0.5: dari situ kamera mulai mendongak ke avatarnya.
+local CAMERA_UP        = 1.0
 
 -- Semua kamera dinaikkan sekian stud, di ujung paling akhir client --
 -- kamera spawn, sorotan tiap tier, jalur Rosa, nova, raksasa, semuanya.
@@ -2293,6 +2300,7 @@ local MUSIC_GAP     = 1.5
 local DANCE = {
 	FALLBACK = "rbxassetid://106865236633450",  -- Jamal
 	FUNK     = "rbxassetid://140219184038687",  -- Funkot (Brazilian Funk Footwork)
+	TIKTOK   = "rbxassetid://73870700369021",   -- TikTok Dance (dari paket EmoteDanceGui)
 	-- BLACKPINK diisi di bawah.
 }
 
@@ -2329,6 +2337,10 @@ local PLAYLIST = {
 	{ nama = "Taka La Dentro", musik = "", dance = DANCE.FALLBACK },
 	-- asset/lagu5-Helikopter-turun-padang.mp3
 	{ nama = "Helikopter Turun Padang", musik = "", dance = DANCE.FUNK },
+	-- asset/lagu6-DJ-ASTAGA-BERCANDA-BRAZIL-DANCE .mp3
+	{ nama = "DJ Astaga Bercanda Brazil Dance", musik = "", dance = DANCE.TIKTOK },
+	-- asset/lagu7-Bulan-Triana-Anak-Kampung.mp3
+	{ nama = "Bulan Triana - Anak Kampung", musik = "", dance = DANCE.FUNK },
 }
 
 -- Kalau satu lagu gagal dimuat, TimeLength-nya 0 dan Ended tidak pernah
@@ -2364,7 +2376,7 @@ local POLL_MUSIK = 0.5
 -- HUD diagnosa kecil di pojok kiri atas layar penonton: jumlah frame,
 -- CameraType, berapa studs kamera bergeser, dan titik fokusnya. Matikan
 -- kalau sudah beres -- ini alat servis, bukan bagian dari tampilan.
-local DEBUG_HUD = true
+local DEBUG_HUD = false
 
 -- Sinkronisasi tarian (dikerjakan client, angkanya disetel di sini).
 --
@@ -2422,6 +2434,84 @@ local SYNC_SNAP       = 0.35
 --
 -- Satu tabel = satu variabel lokal, isinya sebanyak yang kamu mau. Cara
 -- memakainya tidak berubah, cuma titiknya menggantikan garis bawah.
+-- ================================================================
+-- LIGHT STICK
+-- ================================================================
+-- Tiap avatar yang spawn memegang light stick menyala, gaya penonton
+-- konser. Batangnya dua lapis: inti putih-kuning pekat di dalam, kulit
+-- oranye tembus pandang di luar -- Neon + Bloom (VISUAL.BLOOM) yang
+-- membuatnya berpendar, tanpa tekstur atau aset apa pun.
+--
+-- Satu tabel, bukan konstanta lepas: chunk ini dekat batas 200 local.
+local LIGHTSTICK = {
+	ENABLED      = true,
+	DUA_TANGAN   = true,    -- false = tangan kanan saja
+	WARNA        = Color3.fromRGB(255, 120, 20),   -- kulit luar
+	WARNA_INTI   = Color3.fromRGB(255, 235, 170),  -- inti yang "panas"
+	PANJANG      = 1.8,     -- studs, sebelum dikali skala avatar
+	TEBAL        = 0.28,
+	MIRING       = 25,      -- derajat, ujungnya mendongak ke atas
+	-- PointLight di ujung tiap batang. 0 = mati. Dipasang di tangan
+	-- kanan saja: dua lampu per avatar x satu panggung penuh mulai
+	-- terasa di HP.
+	LAMPU        = 8,
+	LAMPU_TERANG = 1.5,
+	-- Jejak cahaya waktu batangnya diayun (Trail sepanjang batang):
+	-- yang membuat gerakannya terbaca sebagai sapuan pendar, bukan
+	-- cuma tongkat yang berpindah. Detik umur jejaknya; 0 = mati.
+	-- Di atas ~0.3 jejaknya jadi pita panjang yang menutupi badan.
+	JEJAK        = 0.25,
+	JEJAK_ALPHA  = 0.3,     -- transparansi pangkal jejak (0 = pekat)
+	-- Tarian yang TIDAK pakai light stick. Waktu lagu ganti ke lagu
+	-- dengan tarian ini, semua batang disembunyikan (bukan dihapus), dan
+	-- muncul lagi waktu lagunya ganti ke tarian lain. Funkot kebanyakan
+	-- gerak kaki -- tangan yang memegang tongkat cuma mengganggu.
+	TANPA        = { [DANCE.FUNK] = true },
+}
+
+-- ================================================================
+-- SAMBUTAN RAKSASA (tier 5)
+-- ================================================================
+-- Raksasa itu gift paling mahal, dan dulu yang dia dapat cuma "badan
+-- besar + sorotan". Dua tambahan supaya pengirimnya terasa diistimewakan:
+--
+--   A. LAYAR    tulisan emas di bawah-tengah layar penonton, beberapa
+--               detik saat dia mendarat. Dibuat client (KameraClientV2,
+--               pesan "raksasa") -- tempelnya di layar, jadi pasti
+--               terbaca dari sudut kamera mana pun.
+--   B. PANGGUNG spanduk menyala di belakang-atas kepalanya, selama dia
+--               berdiri. Ikut hilang waktu raksasanya dibuang.
+--
+-- Teksnya bahasa Inggris atas permintaan. %s = username.
+--
+-- `uji` = antrian kecil KHUSUS STUDIO (lihat fetchNext): isi lewat
+-- ServerScriptService.AvatarQueueV2.UjiSpawn:Fire({...}) untuk menguji
+-- raksasa tanpa mengirim apa pun ke antrian sungguhan, yang mungkin
+-- sedang dipakai live.
+local SAMBUT = {
+	LAYAR        = true,
+	LAYAR_S      = 4,          -- lama tulisan layar, detik
+	LAYAR_JUDUL  = "👑 %s 👑",
+	LAYAR_SUB    = "THANK YOU FOR THE GIFT!",
+
+	PANGGUNG     = true,
+	PANGGUNG_TEKS = "👑 %s 👑",
+	PANGGUNG_SUB  = "TOP SUPPORTER",
+	WARNA        = Color3.fromRGB(255, 196, 60),
+	-- Ukuran per 1x skala raksasa (dikali skalanya). Pada skala 4:
+	-- 30 x 7 stud, 10 stud di belakangnya, 1 stud di atas ubun-ubunnya.
+	LEBAR        = 7.5,
+	TINGGI       = 1.75,
+	MUNDUR       = 2.5,
+	DI_ATAS      = 0.25,
+	-- Spanduknya baru menyala sesudah papan aura di kepala raksasa
+	-- hilang. Dua-duanya duduk di atas kepalanya, dan selama AURA_TIME
+	-- yang terlihat cuma dua nama bertumpuk.
+	PANGGUNG_TUNDA = AURA_TIME + 0.5,
+
+	uji = {},
+}
+
 local VISUAL = {}
 
 VISUAL.ENABLED = true
@@ -2780,7 +2870,11 @@ local function createNameplate(model, username)
 	local gui = Instance.new("BillboardGui")
 	gui.Name        = "Nameplate"
 	gui.Size        = UDim2.new(0, PLATE.WIDTH, 0, PLATE.HEIGHT)
-	gui.StudsOffset = Vector3.new(0, PLATE.OFFSET, 0)
+	-- Diukur dari UBUN-UBUN, bukan dari tengah kepala. Kepala biasa
+	-- tingginya ~1.2 stud, jadi hasilnya tetap 2.2 seperti dulu; kepala
+	-- raksasa (14x) tingginya ~17 stud, dan 2.2 dari tengahnya jatuh
+	-- tepat di matanya.
+	gui.StudsOffset = Vector3.new(0, head.Size.Y / 2 + PLATE.OFFSET - 0.6, 0)
 	gui.AlwaysOnTop = true
 	gui.MaxDistance = PLATE.DIST
 	gui.Parent      = head
@@ -2899,6 +2993,10 @@ local function gantiTarianSemua(fade)
 			local lama = tracks[slot]
 			if lama then pcall(function() lama:Stop(fade or 0.15) end) end
 			tracks[slot] = playDance(model, id, fade)
+		end
+		-- Light stick ikut tariannya, lihat LIGHTSTICK.TANPA.
+		if model.Parent then
+			LIGHTSTICK.tampak(model, LIGHTSTICK.nyalaUntuk(id))
 		end
 	end
 end
@@ -3990,6 +4088,233 @@ local function cariUserId(username, dariServer)
 	end
 end
 
+-- Ditulis sebagai isi tabel, bukan `local function`: satu nama lokal
+-- tingkat atas lebih sedikit (lihat catatan di tabel LIGHTSTICK).
+-- Dipanggil SESUDAH ScaleTo, jadi posisi attachment tangan sudah
+-- ikut membesar; ukuran batangnya dikali `skala` di sini.
+-- Sembunyikan / tampilkan semua batang di satu avatar tanpa membuangnya,
+-- supaya lagu yang bolak-balik antara Funkot dan tarian lain tidak
+-- membangun ulang part tiap pergantian. Transparansi aslinya disimpan
+-- di atribut waktu dipasang.
+function LIGHTSTICK.tampak(model, nyala)
+	for _, b in ipairs(model:GetChildren()) do
+		local asli = b:IsA("BasePart") and b:GetAttribute("AlphaLightStick")
+		if asli then
+			b.Transparency = nyala and asli or 1
+			for _, e in ipairs(b:GetChildren()) do
+				if e:IsA("Trail") or e:IsA("Light") then e.Enabled = nyala end
+			end
+		end
+	end
+end
+
+function LIGHTSTICK.nyalaUntuk(danceId)
+	return not LIGHTSTICK.TANPA[danceId]
+end
+
+function LIGHTSTICK.pasang(model, skala)
+	if not LIGHTSTICK.ENABLED then return end
+	skala = skala or 1
+
+	local tangan = { "RightHand" }
+	if LIGHTSTICK.DUA_TANGAN then table.insert(tangan, "LeftHand") end
+
+	for i, namaTangan in ipairs(tangan) do
+		local hand = model:FindFirstChild(namaTangan)
+		if hand then
+			local grip = hand:FindFirstChild(
+				namaTangan == "RightHand" and "RightGripAttachment"
+					or "LeftGripAttachment")
+			local dasar = grip and grip.CFrame or CFrame.new()
+
+			local p = LIGHTSTICK.PANJANG * skala
+			local t = LIGHTSTICK.TEBAL * skala
+			-- Di GripAttachment R15, sumbu +Y = depan kepalan dan +Z =
+			-- atas (-Z justru menunjuk ke ujung jari, ke bawah -- versi
+			-- pertama yang memakai -Z membuat batangnya menjuntai).
+			-- Silinder Roblox memanjang di sumbu X, jadi diputar ke +Y,
+			-- dimiringkan ke atas, lalu digeser maju supaya kepalan
+			-- memegang sepertiga bagian belakangnya, bukan tengahnya.
+			local posisi = dasar
+				* CFrame.Angles(math.rad(LIGHTSTICK.MIRING), 0, 0)
+				* CFrame.new(0, p * 0.3, 0)
+				* CFrame.Angles(0, 0, math.rad(90))
+
+			local function batang(nama, ukuran, warna, tembus)
+				local b = Instance.new("Part")
+				b.Name         = nama
+				b.Shape        = Enum.PartType.Cylinder
+				b.Size         = ukuran
+				b.Material     = Enum.Material.Neon
+				b.Color        = warna
+				b.Transparency = tembus
+				b.CanCollide   = false
+				b.CanQuery     = false
+				b.CanTouch     = false
+				b.Massless     = true
+				b.CastShadow   = false
+				b.CFrame       = hand.CFrame * posisi
+				b:SetAttribute("AlphaLightStick", tembus)
+
+				local w = Instance.new("Weld")
+				w.Part0  = hand
+				w.Part1  = b
+				w.C0     = posisi
+				w.Parent = b
+				b.Parent = model
+				return b
+			end
+
+			batang("LightStickInti", Vector3.new(p * 0.96, t * 0.55, t * 0.55),
+				LIGHTSTICK.WARNA_INTI, 0)
+			local kulit = batang("LightStick", Vector3.new(p, t, t),
+				LIGHTSTICK.WARNA, 0.35)
+
+			if i == 1 and LIGHTSTICK.LAMPU > 0 then
+				local l = Instance.new("PointLight")
+				l.Color      = LIGHTSTICK.WARNA
+				l.Range      = LIGHTSTICK.LAMPU * math.min(skala, 4)
+				l.Brightness = LIGHTSTICK.LAMPU_TERANG
+				l.Shadows    = false
+				l.Parent     = kulit
+			end
+
+			if LIGHTSTICK.JEJAK > 0 then
+				-- Dua titik di ujung-ujung batang (sumbu X silinder):
+				-- Trail menggambar pita di antara keduanya di tiap
+				-- frame, jadi lebarnya otomatis = panjang batang dan
+				-- ikut skala avatar.
+				local a0 = Instance.new("Attachment")
+				a0.Position = Vector3.new(-p * 0.5, 0, 0)
+				a0.Parent   = kulit
+				local a1 = Instance.new("Attachment")
+				a1.Position = Vector3.new(p * 0.5, 0, 0)
+				a1.Parent   = kulit
+
+				local jejak = Instance.new("Trail")
+				jejak.Attachment0   = a0
+				jejak.Attachment1   = a1
+				jejak.Lifetime      = LIGHTSTICK.JEJAK
+				jejak.LightEmission = 1
+				jejak.Color = ColorSequence.new(
+					LIGHTSTICK.WARNA_INTI, LIGHTSTICK.WARNA)
+				jejak.Transparency = NumberSequence.new(
+					LIGHTSTICK.JEJAK_ALPHA, 1)
+				jejak.MinLength  = 0.05
+				jejak.FaceCamera = false
+				jejak.Parent     = kulit
+			end
+		end
+	end
+
+	-- Yang datang di tengah lagu Funkot langsung ikut tanpa batang.
+	LIGHTSTICK.tampak(model, LIGHTSTICK.nyalaUntuk(danceSekarang()))
+end
+
+-- Spanduk B (lihat SAMBUT). Dipanggil sesudah raksasanya berdiri di
+-- tempat akhirnya; ukurannya dari kotak pembungkus badannya, jadi topi
+-- tinggi ikut dihitung dan spanduknya tidak menimpa kepala.
+--
+-- Diparent ke workspace, BUKAN ke model raksasa: kamera membidik
+-- raksasa dari tinggi badannya, dan spanduk di dalam model ikut
+-- membesarkan kotak pembungkus itu.
+function SAMBUT.pasangSpanduk(model, username, skala)
+	if not SAMBUT.PANGGUNG then return end
+	local okB, cf, ukuran = pcall(function() return model:GetBoundingBox() end)
+	if not okB then return end
+
+	local lebar  = SAMBUT.LEBAR  * skala
+	local tinggi = SAMBUT.TINGGI * skala
+	local atas   = cf.Position.Y + ukuran.Y / 2
+
+	local papan = Instance.new("Part")
+	papan.Name         = "SpandukRaksasa"
+	papan.Anchored     = true
+	papan.CanCollide   = false
+	papan.CanQuery     = false
+	papan.CanTouch     = false
+	papan.CastShadow   = false
+	papan.Material     = Enum.Material.SmoothPlastic
+	papan.Color        = Color3.fromRGB(18, 12, 28)
+	papan.Transparency = 0.15
+	papan.Size         = Vector3.new(lebar, tinggi, 0.3)
+	-- Kamera panggung di -Z memandang ke +Z, jadi muka depan (Front =
+	-- -Z) yang menghadap penonton.
+	papan.CFrame = CFrame.new(GIANT_X,
+		atas + SAMBUT.DI_ATAS * skala + tinggi / 2,
+		GIANT_Z + SAMBUT.MUNDUR * skala)
+
+	local sg = Instance.new("SurfaceGui")
+	sg.Face           = Enum.NormalId.Front
+	sg.SizingMode     = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	sg.PixelsPerStud  = 25
+	sg.LightInfluence = 0
+	sg.Brightness     = 2
+	sg.Parent         = papan
+
+	local bingkai = Instance.new("UIStroke")
+	bingkai.Color     = SAMBUT.WARNA
+	bingkai.Thickness = 10
+	bingkai.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	local isi = Instance.new("Frame")
+	isi.Size = UDim2.fromScale(1, 1)
+	isi.BackgroundTransparency = 1
+	isi.Parent = sg
+	bingkai.Parent = isi
+
+	local function baris(teks, y, h, font, warna)
+		local l = Instance.new("TextLabel")
+		l.BackgroundTransparency = 1
+		l.Position   = UDim2.fromScale(0.05, y)
+		l.Size       = UDim2.fromScale(0.9, h)
+		l.FontFace   = font
+		l.Text       = teks
+		l.TextScaled = true
+		l.TextColor3 = warna
+		local s = Instance.new("UIStroke")
+		s.Color     = Color3.fromRGB(60, 30, 0)
+		s.Thickness = 3
+		s.Parent    = l
+		l.Parent    = isi
+		return l
+	end
+	baris(SAMBUT.PANGGUNG_TEKS:format(username), 0.08, 0.6,
+		Font.new("rbxasset://fonts/families/GothamSSm.json",
+			Enum.FontWeight.Heavy), SAMBUT.WARNA)
+	baris(SAMBUT.PANGGUNG_SUB, 0.68, 0.24,
+		Font.new("rbxasset://fonts/families/GothamSSm.json",
+			Enum.FontWeight.Bold), Color3.fromRGB(255, 240, 210))
+
+	-- Lampu emas kecil di depannya: ikut menerangi punggung raksasa,
+	-- jadi spanduknya terbaca sebagai bagian panggung, bukan stiker.
+	local l = Instance.new("PointLight")
+	l.Color      = SAMBUT.WARNA
+	l.Range      = math.min(lebar * 0.6, 60)
+	l.Brightness = 1.2
+	l.Shadows    = false
+	l.Parent     = papan
+
+	-- Disembunyikan dulu, lihat PANGGUNG_TUNDA.
+	papan.Transparency = 1
+	sg.Enabled         = false
+	l.Enabled          = false
+	papan.Parent = workspace
+
+	task.delay(SAMBUT.PANGGUNG_TUNDA, function()
+		if not papan.Parent then return end
+		sg.Enabled = true
+		l.Enabled  = true
+		TweenService:Create(papan, TweenInfo.new(0.8),
+			{ Transparency = 0.15 }):Play()
+	end)
+
+	-- Ikut hilang bersama raksasanya (buangRaksasa, resetStage, apa
+	-- pun yang menghapus modelnya).
+	model.AncestryChanged:Connect(function(_, induk)
+		if not induk and papan.Parent then papan:Destroy() end
+	end)
+end
+
 local function spawnAvatar(entry, slot)
 	local username = entry.username
 
@@ -4093,6 +4418,12 @@ local function spawnAvatar(entry, slot)
 	-- avatarnya pakai topi tinggi.
 	local hrp = model:FindFirstChild("HumanoidRootPart")
 	if hrp then model.PrimaryPart = hrp end
+
+	-- Raksasa tidak dapat: batangnya ikut diperbesar 4x dan jadi tongkat
+	-- menyala sebesar badan orang biasa yang menutupi barisan di depannya.
+	if not raksasa then
+		LIGHTSTICK.pasang(model, skala)
+	end
 
 	-- Tabrakan dimatikan: mereka cuma pajangan, posisinya dipegang
 	-- BodyPosition. Anggota badan yang menyerempet tetangga waktu menari
@@ -4239,6 +4570,18 @@ local function spawnAvatar(entry, slot)
 		tracks[kunci] = emote
 	else
 		tracks[kunci] = playDance(model, danceSekarang())
+	end
+
+	-- Sambutan raksasa, lihat SAMBUT.
+	if raksasa then
+		SAMBUT.pasangSpanduk(model, username, skala)
+		if SAMBUT.LAYAR then
+			V2Event:FireAllClients("raksasa", {
+				judul = SAMBUT.LAYAR_JUDUL:format(username),
+				sub   = SAMBUT.LAYAR_SUB,
+				lama  = SAMBUT.LAYAR_S,
+			})
+		end
 	end
 
 	-- Raksasa TIDAK dapat border maupun cakram lantai.
@@ -4572,7 +4915,21 @@ local function ambilJson(path)
 	return data
 end
 
+-- Kait uji khusus Studio, lihat SAMBUT.uji. Di server sungguhan
+-- BindableEvent-nya tidak pernah dibuat, jadi antrian ini selalu kosong.
+if RunService:IsStudio() then
+	local uji = Instance.new("BindableEvent")
+	uji.Name   = "UjiSpawn"
+	uji.Event:Connect(function(entry)
+		if type(entry) == "table" and entry.username then
+			table.insert(SAMBUT.uji, entry)
+		end
+	end)
+	uji.Parent = script
+end
+
 local function fetchNext()
+	if #SAMBUT.uji > 0 then return table.remove(SAMBUT.uji, 1) end
 	local data = ambilJson("/api/next")
 	if data and data.username then return data end
 	return nil

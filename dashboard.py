@@ -367,7 +367,7 @@ HALAMAN = r"""<!doctype html>
     style="width:70px"> ms</label>
   <div class="ket">Positif = lagu dibunyikan lebih lambat. Naikkan kalau
   tarian terlihat telat dari lagunya, turunkan kalau tarian mendahului.</div>
-  <label>Sambung <input id="sambung" type="number" min="0" max="10" step="0.5"
+  <label>Sambung <input id="sambung" type="number" min="0" max="15" step="0.5"
     value="3" style="width:60px"> detik</label>
   <div class="ket">Lagu berikutnya masuk sekian detik sebelum yang sekarang
   habis, keduanya disilang-pudarkan. 0 = tanpa tumpang tindih, tapi tetap
@@ -504,7 +504,10 @@ el("geser").onchange = () => {
 el("sambung").onchange = () => {
   try { localStorage.setItem("sambung", el("sambung").value); } catch (e) {}
 };
-const detikSambung = () => Math.max(0, Number(el("sambung").value) || 0);
+// Dikunci 0-15: VM kadang lambat membalas laporan lagu, dan sambungan yang
+// lebih panjang memberi ruang untuk itu. Lewat dari 15 lagunya keburu
+// tumpang tindih terlalu lama.
+const detikSambung = () => Math.min(15, Math.max(0, Number(el("sambung").value) || 0));
 const msGeser = () => Number(el("geser").value || 0);
 
 function tulis(pesan, salah) {

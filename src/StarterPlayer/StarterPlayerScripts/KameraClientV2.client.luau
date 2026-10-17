@@ -1033,7 +1033,9 @@ end)
 --   frame = 0             -> gelungnya tidak jalan sama sekali
 --   CameraType ~= Script  -> ada yang merebut kamera (KameraClient lama?)
 --   posisi tidak berubah  -> gelungnya jalan tapi angkanya nol
+-- Ikut DEBUG_HUD di server: alat servis, bukan untuk log harian.
 task.delay(2, function()
+	if not CFG.debug then return end
 	local p1 = camera and camera.CFrame.Position
 	task.wait(1)
 	local p2 = camera and camera.CFrame.Position
@@ -1707,6 +1709,103 @@ local function tampilkanLagu(d)
 			{ TextTransparency = 1 }):Play()
 		TweenService:Create(strokeLagu, TweenInfo.new(0.5),
 			{ Transparency = 1 }):Play()
+	end)
+end
+
+-- ============ SAMBUTAN RAKSASA ============
+--
+-- Tulisan emas di bawah-tengah layar saat raksasa mendarat (pesan
+-- "raksasa", lihat SAMBUT di AvatarQueueV2). Bawah, bukan atas: bagian
+-- atas dipakai angka aura raksasanya di detik yang sama. Dibuat sekali
+-- lalu dipakai ulang; satu tabel supaya tidak menambah nama lokal.
+local SAMBUT = { gen = 0 }
+
+function SAMBUT.buat()
+	local f = Instance.new("Frame")
+	f.AnchorPoint            = Vector2.new(0.5, 0.5)
+	f.Position               = UDim2.fromScale(0.5, 0.74)
+	f.Size                   = UDim2.fromScale(0.86, 0.17)
+	f.BackgroundTransparency = 1
+	f.Visible                = false
+	f.Parent                 = gui
+
+	local skala = Instance.new("UIScale")
+	skala.Parent = f
+
+	local judul = Instance.new("TextLabel")
+	judul.BackgroundTransparency = 1
+	judul.Size       = UDim2.fromScale(1, 0.64)
+	judul.FontFace   = FONT_ANGKA
+	judul.TextScaled = true
+	judul.TextColor3 = Color3.new(1, 1, 1)
+	judul.Parent     = f
+	local gJ = Instance.new("UIGradient")
+	gJ.Color    = grad(Color3.fromRGB(255, 245, 190),
+	                   Color3.fromRGB(255, 196, 60),
+	                   Color3.fromRGB(230, 130, 20))
+	gJ.Rotation = 90
+	gJ.Parent   = judul
+	local sJ = Instance.new("UIStroke")
+	sJ.Color     = Color3.fromRGB(60, 25, 0)
+	sJ.Thickness = 2.5
+	sJ.Parent    = judul
+	local bJ = Instance.new("UITextSizeConstraint")
+	bJ.MaxTextSize = 72
+	bJ.Parent      = judul
+
+	local sub = Instance.new("TextLabel")
+	sub.BackgroundTransparency = 1
+	sub.Position   = UDim2.fromScale(0, 0.66)
+	sub.Size       = UDim2.fromScale(1, 0.34)
+	sub.FontFace   = FONT_NAMA
+	sub.TextScaled = true
+	sub.TextColor3 = Color3.fromRGB(255, 244, 220)
+	sub.Parent     = f
+	local sS = Instance.new("UIStroke")
+	sS.Color     = Color3.fromRGB(20, 10, 0)
+	sS.Thickness = 2
+	sS.Parent    = sub
+	local bS = Instance.new("UITextSizeConstraint")
+	bS.MaxTextSize = 36
+	bS.Parent      = sub
+
+	SAMBUT.f, SAMBUT.skala = f, skala
+	SAMBUT.teks  = { judul, sub }
+	SAMBUT.garis = { sJ, sS }
+end
+
+function SAMBUT.tampil(d)
+	if not SAMBUT.f then SAMBUT.buat() end
+	SAMBUT.gen += 1
+	local gen = SAMBUT.gen
+
+	SAMBUT.teks[1].Text = d.judul or ""
+	SAMBUT.teks[2].Text = d.sub or ""
+
+	local function set(alpha, detik)
+		local info = TweenInfo.new(detik)
+		for _, t in ipairs(SAMBUT.teks) do
+			TweenService:Create(t, info, { TextTransparency = alpha }):Play()
+		end
+		for _, s in ipairs(SAMBUT.garis) do
+			TweenService:Create(s, info, { Transparency = alpha }):Play()
+		end
+	end
+
+	-- Masuk: membesar dari 0,6 dengan sedikit pantulan.
+	set(1, 0)
+	SAMBUT.skala.Scale = 0.6
+	SAMBUT.f.Visible   = true
+	set(0, 0.25)
+	TweenService:Create(SAMBUT.skala,
+		TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+		{ Scale = 1 }):Play()
+
+	task.delay(math.max(tonumber(d.lama) or 4, 1), function()
+		if gen ~= SAMBUT.gen then return end
+		set(1, 0.6)
+		task.wait(0.6)
+		if gen == SAMBUT.gen then SAMBUT.f.Visible = false end
 	end)
 end
 
@@ -3738,6 +3837,8 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 		task.spawn(jalankanNova, d)
 	elseif jenis == "musik" then
 		tampilkanLagu(d)
+	elseif jenis == "raksasa" then
+		SAMBUT.tampil(d)
 	end
 end)
 

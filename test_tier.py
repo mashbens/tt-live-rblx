@@ -1447,8 +1447,10 @@ for c in isyarat:
         c.fase in FASE_SAH,
         f"fase {c.fase!r} tidak pernah dipanggil mainkanFase -- "
         f"isyaratnya tidak akan pernah dibunyikan")
+    # Batas 2,0 = sama dengan bunyi raksasa (SFX_TIER[5], "FULL");
+    # suara nova dibesarkan sampai ke situ atas permintaan.
     cek(f"isyarat '{c.fase}' punya id dan volume",
-        bool(c.id) and c.id != "" and 0 < c.vol <= 1.5,
+        bool(c.id) and c.id != "" and 0 < c.vol <= 2.0,
         f"id={c.id!r} vol={c.vol}")
     # Nada di luar rentang ini bukan lagi berkas yang sama yang digeser
     # -- dia jadi derau (terlalu rendah) atau cicitan (terlalu tinggi).
