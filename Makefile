@@ -73,7 +73,7 @@ VM_ENV_KEYS := ^(TIER[0-9]_(SCALE|KOIN)|SPOTLIGHT_[A-Z0-9_]+|QUEUE_(MAX|BASI_S)|
 # jalan juga di shell yang belum memuat ~/.aftman/env.
 ROJO      ?= $(HOME)/.aftman/bin/rojo
 
-.PHONY: help install server dev tunnel listener player dashboard listener-tf watch watch-tf up pembeli pembeli-baru pembeli-hapus pembeli-daftar kirim-pembeli exe mock mock-tier3 mock-tier4 mock-tier5 selftest test test-tier test-sync lint rojo rojo-build peek clear status clean deploy vm-logs
+.PHONY: help install server dev tunnel listener player dashboard listener-tf watch watch-tf up pembeli pembeli-baru pembeli-hapus pembeli-daftar kirim-pembeli exe mock mock-tier3 mock-tier4 mock-tier5 mock-daftar mock-komen selftest test test-tier test-sync lint rojo rojo-build peek clear status clean deploy vm-logs
 
 help:
 	@echo ""
@@ -101,6 +101,8 @@ help:
 	@echo "    make mock-tier3  banjir Rose, menguji adegan sinematik tier 3"
 	@echo "    make mock-tier4  banjir Rosa, menguji nova tier 4"
 	@echo "    make mock-tier5  banjir Doughnut, menguji raksasa tier 5"
+	@echo "    make mock-daftar raksasa Darling4300, lalu komentar tiap 5 dtk + Rose tiap 20 dtk"
+	@echo "    make mock-komen  komentar username biasa saja (tier 1) dari daftar yang sama"
 	@echo "    make selftest    uji saringan dengan beberapa komentar contoh"
 	@echo "    make test-tier   uji lantai aura + jatah border di AvatarQueueV2"
 	@echo "    make test-sync   uji penyamaan tarian di KameraClientV2"
@@ -218,6 +220,16 @@ mock-tier4:
 # Doughnut saja (tier 5: raksasa).
 mock-tier5:
 	$(PY) mock_comments.py --tier5 $(ARGS)
+
+# Raksasa Darling4300 di awal, lalu komentar tiap 5 detik dan Rose tiap 20
+# detik (5 Rose), sisanya komentar biasa -- dari daftar username sungguhan.
+# Ubah jumlahnya: `make mock-daftar ARGS="--nama-raksasa X --komen 50 --jeda 3"`.
+mock-daftar:
+	$(PY) mock_daftar.py $(ARGS)
+
+# Komentar username biasa saja (tier 1), tanpa gift.
+mock-komen:
+	$(PY) mock_daftar.py --raksasa 0 --rose 0 $(ARGS)
 
 selftest:
 	$(PY) tiktok_listener.py --self-test "builderman" "halo bang mantap" "@Roblox" "ngasal_bukan_akun"

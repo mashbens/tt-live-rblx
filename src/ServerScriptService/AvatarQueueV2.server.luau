@@ -2333,14 +2333,12 @@ local PLAYLIST = {
 	{ nama = "DJ Beretta Thailand", musik = "", dance = DANCE.FUNK },
 	-- asset/lagu3-TAKA-LA-DENTRO.mp3
 	{ nama = "Taka La Dentro", musik = "", dance = DANCE.FALLBACK },
-	-- asset/lagu4-TAKA-LA-DENTRO.mp3
-	{ nama = "Taka La Dentro", musik = "", dance = DANCE.FALLBACK },
-	-- asset/lagu5-Helikopter-turun-padang.mp3
-	{ nama = "Helikopter Turun Padang", musik = "", dance = DANCE.FUNK },
-	-- asset/lagu6-DJ-ASTAGA-BERCANDA-BRAZIL-DANCE .mp3
+	-- asset/lagu4-DJ-ASTAGA-BERCANDA-BRAZIL-DANCE .mp3
 	{ nama = "DJ Astaga Bercanda Brazil Dance", musik = "", dance = DANCE.TIKTOK },
-	-- asset/lagu7-Bulan-Triana-Anak-Kampung.mp3
-	{ nama = "Bulan Triana - Anak Kampung", musik = "", dance = DANCE.FUNK },
+	-- asset/lagu5-Ternyata Abu Abu (Thailand Edit.mp3
+	{ nama = "Ternyata Abu Abu (Thailand Edit)", musik = "", dance = DANCE.FUNK },
+	-- asset/lagu6-DJ Pa Ko Di (Thailand Edit.mp3
+	{ nama = "DJ Pa Ko Di (Thailand Edit)", musik = "", dance = DANCE.TIKTOK },
 }
 
 -- Kalau satu lagu gagal dimuat, TimeLength-nya 0 dan Ended tidak pernah
