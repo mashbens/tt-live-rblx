@@ -161,7 +161,7 @@ local InsertService     = game:GetService("InsertService")
 
 -- ============ PENGATURAN ============
 
-local URL           = "https://rblx.buanaglobalcipta.com"
+local URL           = "https://rblx.buanaglobalcipta.com/kyra"
 local POLL_INTERVAL = 1
 
 -- Susunan barisan
