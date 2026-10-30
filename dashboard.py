@@ -658,6 +658,50 @@ def perintah_antrian(nama: str) -> int:
     return 0 if code == 200 else 1
 
 
+def _dashboard_di(port: int) -> bool:
+    """Apakah yang memegang port ini dashboard ini juga (.exe yang sudah jalan)?"""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=1.5) as r:
+            return b"<title>tt-rblx</title>" in r.read(4096)
+    except (OSError, ValueError):
+        return False
+
+
+def buka_server() -> ThreadingHTTPServer:
+    """Bind ke PORT; kalau terpakai, ke port sesudahnya.
+
+    Port yang terpakai di Windows sering muncul sebagai WinError 10013, bukan
+    "address in use": wslrelay (port dashboard WSL yang di-forward) dan
+    soket SO_EXCLUSIVEADDRUSE memberi error itu, dan .exe-nya dulu langsung
+    mati dengan traceback.
+
+    Yang memegangnya dashboard ini sendiri (.exe diklik dua kali) = TIDAK
+    pindah port: browser dibuka ke yang sudah jalan, lalu keluar. Dashboard
+    kedua di port lain bisa menyalakan listener kedua, dan tiap komentar
+    terkirim dua kali ke antrian.
+    """
+    for port in range(PORT, PORT + 10):
+        try:
+            return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        except OSError as e:
+            if _dashboard_di(port):
+                print(f"Dashboard sudah jalan di http://127.0.0.1:{port} -- "
+                      "membuka yang itu, bukan menyalakan yang kedua.")
+                if BEKU:
+                    import webbrowser
+                    webbrowser.open(f"http://127.0.0.1:{port}")
+                    time.sleep(3)
+                sys.exit(0)
+            print(f"Port {port} dipakai program lain ({e.strerror or e}), coba {port + 1}...")
+    print(f"Port {PORT}-{PORT + 9} semuanya terpakai. Tutup program lain yang "
+          "memakainya (atau dashboard WSL `make player`), lalu jalankan lagi.")
+    if BEKU:
+        # Jendela konsol .exe langsung hilang kalau prosesnya selesai --
+        # pesan di atas tidak sempat terbaca.
+        input("Tekan Enter untuk menutup...")
+    sys.exit(1)
+
+
 def main() -> None:
     # SIGTERM juga, bukan cuma Ctrl+C: atexit tidak jalan kalau proses
     # dibunuh sinyal, dan listener yang yatim terus mengirim ke antrian.
@@ -669,13 +713,14 @@ def main() -> None:
         print(f"  {i}. {nama}  -> baris {i} PLAYLIST")
     print(f"Server antrian: {BASE_URL}"
           + ("" if API_TOKEN else "  (API_TOKEN kosong!)"))
-    print(f"Buka http://127.0.0.1:{PORT}   Ctrl+C mematikan dashboard "
+    server = buka_server()
+    port = server.server_address[1]
+    print(f"Buka http://127.0.0.1:{port}   Ctrl+C mematikan dashboard "
           "dan semua proses yang dinyalakan dari sana.")
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     if BEKU:
         # Pembeli mengklik .exe-nya dua kali, tidak mengetik alamat.
         import webbrowser
-        webbrowser.open(f"http://127.0.0.1:{PORT}")
+        webbrowser.open(f"http://127.0.0.1:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

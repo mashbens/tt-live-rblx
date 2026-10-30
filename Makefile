@@ -67,13 +67,13 @@ VM_SSH ?= $(TUNNEL_SSH)
 VM_DIR ?= /root/$(CONTAINER)
 # Kunci .env yang dibaca main.py. Cuma ini yang dikirim ke VM -- kunci
 # EulerStream, login VM, dan setelan listener tetap di laptop.
-VM_ENV_KEYS := ^(TIER[0-9]_(SCALE|KOIN)|SPOTLIGHT_[A-Z0-9_]+|QUEUE_MAX|API_TOKEN)=
+VM_ENV_KEYS := ^(TIER[0-9]_(SCALE|KOIN)|SPOTLIGHT_[A-Z0-9_]+|QUEUE_MAX|API_TOKEN|KANAL_PUBLIK)=
 
 # Rojo dipasang lewat Aftman (aftman.toml). Pakai shim-nya langsung supaya
 # jalan juga di shell yang belum memuat ~/.aftman/env.
 ROJO      ?= $(HOME)/.aftman/bin/rojo
 
-.PHONY: help install server dev tunnel listener player dashboard listener-tf watch watch-tf up pembeli pembeli-baru pembeli-hapus pembeli-daftar kirim-pembeli exe mock mock-tier3 mock-tier4 mock-tier5 selftest test test-tier test-sync lint rojo rojo-build peek clear status clean deploy vm-logs
+.PHONY: help install server dev tunnel listener player dashboard listener-tf watch watch-tf up pembeli pembeli-baru pembeli-hapus pembeli-daftar kirim-pembeli exe mock mock-tier3 mock-tier4 mock-tier5 mock-log selftest test test-tier test-sync lint rojo rojo-build peek clear status clean deploy vm-logs
 
 help:
 	@echo ""
@@ -101,6 +101,7 @@ help:
 	@echo "    make mock-tier3  banjir Rose, menguji adegan sinematik tier 3"
 	@echo "    make mock-tier4  banjir Rosa, menguji nova tier 4"
 	@echo "    make mock-tier5  banjir Doughnut, menguji raksasa tier 5"
+	@echo "    make mock-log    putar ulang log listener live (LOG=file, default example_comment.txt)"
 	@echo "    make selftest    uji saringan dengan beberapa komentar contoh"
 	@echo "    make test-tier   uji lantai aura + jatah border di AvatarQueueV2"
 	@echo "    make test-sync   uji penyamaan tarian di KameraClientV2"
@@ -219,6 +220,9 @@ mock-tier4:
 mock-tier5:
 	$(PY) mock_comments.py --tier5 $(ARGS)
 
+mock-log:
+	$(PY) mock_comments.py --dari-log $(or $(LOG),example_comment.txt) $(ARGS)
+
 selftest:
 	$(PY) tiktok_listener.py --self-test "builderman" "halo bang mantap" "@Roblox" "ngasal_bukan_akun"
 
@@ -306,7 +310,7 @@ deploy:
 	@$(MAKE) --no-print-directory kirim-pembeli
 	grep -E '$(VM_ENV_KEYS)' .env | ssh $(VM_SSH) 'umask 077; cat > $(VM_DIR)/.env'
 	tar czf - Dockerfile .dockerignore main.py roblox_ssl.py deploy/docker-compose.yml \
-		| ssh $(VM_SSH) 'tar xzf - -C $(VM_DIR) && cd $(VM_DIR) && CONTAINER=$(CONTAINER) docker compose -p $(COMPOSE_PROJ) -f deploy/docker-compose.yml up -d --build --remove-orphans'
+		| ssh $(VM_SSH) 'tar xzf - -C $(VM_DIR) && cd $(VM_DIR) && NGINX_NET=$$(docker inspect -f "{{range \$$k, \$$v := .NetworkSettings.Networks}}{{\$$k}} {{end}}" nginx | cut -d" " -f1) && CONTAINER=$(CONTAINER) NGINX_NET=$$NGINX_NET docker compose -p $(COMPOSE_PROJ) -f deploy/docker-compose.yml up -d --build --remove-orphans'
 	$(if $(INSTANCE),ssh $(VM_SSH) 'bash -s' -- $(INSTANCE) < deploy/nginx_route.sh)
 	@echo ""
 	@# Container baru butuh beberapa detik, dan nginx menyimpan IP container

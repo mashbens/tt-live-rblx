@@ -176,8 +176,51 @@ local FLOOR_Y       = 0
 local DELETE_AFTER  = 80
 local RESET_DELAY   = 2
 
+-- ============ PANGGUNG SOLO ============
+--
+-- Satu avatar sendirian di SATU titik, bergantian: yang baru datang
+-- menggantikan yang sebelumnya. Kamera diam (dipegang KameraClientV2)
+-- setinggi pinggang, di depan latar LatarSolo (ModuleScript, client).
+-- Efeknya ikut tier -- tidak ada lagi barisan, ayunan, atau kamera yang
+-- pindah ke tiap orang.
+--
+-- AKTIF = false mengembalikan panggung barisan yang lama, utuh.
+--
+-- Satu tabel, bukan konstanta lepas: chunk utama script ini menempel di
+-- batas 200 local milik Luau (lihat catatan di tungguPramuat).
+local SOLO = {}
+SOLO.AKTIF   = true
+-- Titik berdiri, X dan Z. Tingginya tetap dari BASE_Y/FLOOR_Y.
+SOLO.X       = 0
+SOLO.Z       = 0
+-- Lama tampil komentar gratisan, detik sejak avatarnya muncul. Yang
+-- berbayar tampil selama sorotannya (SPOTLIGHT_MS_TIER* di .env).
+SOLO.TAHAN_S = 4
+-- Kamera tetap, diukur dari titik kaki: JARAK stud di depan avatarnya,
+-- setinggi TINGGI (pinggang), membidik titik setinggi BIDIK. BIDIK di
+-- atas TINGGI = kamera sedikit mendongak, jadi avatarnya duduk di
+-- bagian bawah layar dan kartu profil di atas tidak menutupi kepalanya.
+SOLO.KAMERA_JARAK  = 9
+SOLO.KAMERA_TINGGI = 2.6
+SOLO.KAMERA_BIDIK  = 4.4
+SOLO.KAMERA_FOV    = 70
+-- os.clock() saat avatar terakhir masuk workspace. Diisi spawnAvatar,
+-- dibaca gelung utama untuk menghitung lama tampilnya.
+SOLO.tampil  = 0
+-- Kartu profil yang menunggu adegannya selesai tetap tampil paling
+-- tidak selama ini, detik, sebelum avatarnya diganti.
+SOLO.KARTU_S = 4
+-- Detik sejak avatar muncul sampai kartu profilnya dikirim (0 =
+-- langsung). Diisi spawnAvatar.
+SOLO.kartuMulai = 0
+
 -- Sembunyikan avatar PENONTON supaya tidak ikut berdiri di tengah frame.
-local HIDE_PLAYER_AVATAR = false
+-- true = karakternya tidak di-spawn sama sekali (CharacterAutoLoads
+-- mati). SEMBUNYI_PENONTON di client saja tidak cukup untuk panggung
+-- solo: dia baru terpasang setelah V2Config dan LatarSolo dimuat, dan
+-- selama jeda itu avatarmu sempat berdiri tepat di titik SOLO -- di
+-- tengah frame. Kameranya Scriptable, jadi tidak ada yang butuh karakter.
+local HIDE_PLAYER_AVATAR = true
 
 -- Papan nama kecil di atas kepala.
 --
@@ -389,7 +432,32 @@ SFX_AURA.ROLL_RAKSASA_NADA = 0.8
 -- kalau ternyata ketiganya jatuh ke berkas cadangan yang sama, ketiga
 -- tier masih terdengar berbeda -- yang mahal terdengar lebih berat dan
 -- lebih rendah, yang murah lebih tinggi dan lebih ringan.
+--
+-- SFX KATALOG + LAPIS. Kandidat boleh berupa tabel { id, vol, nada }:
+-- bunyi katalog dimainkan di nada ASLINYA, sedangkan vol/nada di tingkat
+-- tier tetap milik berkas bawaan cadangan (yang memang digeser nadanya).
+-- Yang dipakai dari katalog cuma pustaka berlisensi Roblox
+-- (ProSoundEffects, APMOfficial): boleh dipakai di game mana pun dan
+-- tidak ditarik pengunggahnya.
+--
+-- lapis = bunyi TAMBAHAN yang ditumpuk di atas bunyi utamanya, masing-
+-- masing { id, vol, nada, tunda } (tunda = detik sesudah bunyi utama).
+-- Satu berkas tidak pernah terdengar sinematik; whoosh + bisikan +
+-- hantaman yang menyusul baru terdengar seperti adegan. Lapis yang gagal
+-- dimuat dilewati dengan peringatan, bunyi utamanya tetap jalan.
 local SFX_TIER = {
+	-- Tier 1 (komentar gratisan): kilau sihir yang PELAN. Di panggung
+	-- solo tiap kedatangan tampil beberapa detik, jadi bunyi kecil per
+	-- kedatangan tidak jadi derau -- dan dimainkan client cuma saat
+	-- kameranya benar-benar pindah ke orang itu, bukan tiap komentar.
+	[1] = {
+		vol = 0.25, nada = 1.6,
+		kandidat = {
+			-- Magical Exit, Sparkling Pass By, Clinking Chimes (3,5 dtk)
+			{ id = "rbxassetid://9125635430", vol = 0.3, nada = 1.15 },
+			"rbxasset://sounds/electronicpingshort.wav",
+		},
+	},
 	-- Tier 2 (Rose): yang PALING sering datang di antara yang berbayar,
 	-- jadi bunyinya yang paling ringan -- satu denting pendek bernada
 	-- tinggi. Rose datang tiap beberapa detik saat live ramai, dan bunyi
@@ -397,18 +465,39 @@ local SFX_TIER = {
 	[2] = {
 		vol = 0.5, nada = 1.3,
 		kandidat = {
+			-- Varian kilau sihir yang lebih panjang (3,8 dtk).
+			{ id = "rbxassetid://9125635650", vol = 0.5, nada = 1 },
 			"rbxasset://sounds/electronicpingshort.wav",
 			"rbxasset://sounds/bass.wav",
+		},
+		lapis = {
+			-- Denting lama tetap ada di atasnya: penanda "berbayar"
+			-- yang sudah dikenal penonton.
+			{ id = "rbxasset://sounds/electronicpingshort.wav", vol = 0.35, nada = 1.3 },
 		},
 	},
 	-- Tier 3 (Rosa, aura): bunyinya berisi tapi tidak berat -- bunyi
 	-- berat tiap beberapa detik melelahkan telinga dalam sepuluh menit.
+	--
+	-- SINEMATIK: ayunan orkestra yang tersedot (3 dtk) membuka adegan,
+	-- bisikan seram tipis di bawahnya (tema Halloween), lalu hantaman
+	-- berat tepat saat kameranya selesai mundur (tahan 1 + mundur 2,5 di
+	-- KAMERA_TIER[3] -- hantaman di 2,8 jatuh di ujung gerakan itu).
 	[3] = {
 		vol = 0.7, nada = 1.0,
 		kandidat = {
+			-- APM "Tutti Suck": orchestral swell to suckout, 3 dtk.
+			{ id = "rbxassetid://9039693523", vol = 0.75, nada = 1 },
 			"rbxasset://sounds/bass.wav",
 			"rbxasset://sounds/impact_water.mp3",
 			"rbxasset://sounds/electronicpingshort.wav",
+		},
+		lapis = {
+			-- Eerie Whispering, reverberant (2,3 dtk).
+			{ id = "rbxassetid://9114228524", vol = 0.3, nada = 1 },
+			-- APM "Angry Heavy Hitter Hit".
+			{ id = "rbxassetid://1835333323", vol = 0.8, nada = 1, tunda = 2.8 },
+			{ id = "rbxasset://sounds/bass.wav", vol = 0.6, nada = 0.45, tunda = 2.8 },
 		},
 	},
 	-- Tier 4 (Bouquet, nova): desis angin jatuh. Dibunyikan client tepat saat dia
@@ -432,6 +521,11 @@ local SFX_TIER = {
 			"rbxasset://sounds/action_jump.mp3",
 			"rbxasset://sounds/electronicpingshort.wav",
 		},
+		lapis = {
+			-- APM "Clobber Fest Hit" di frame yang sama dengan desisnya:
+			-- bantingannya sekarang terdengar mendarat, bukan cuma jatuh.
+			{ id = "rbxassetid://1835331298", vol = 0.85, nada = 1 },
+		},
 	},
 	-- Tier 5 (Doughnut, raksasa): paling berat dan paling rendah. Nada
 	-- 0,6 menurunkan berkas yang sama hampir satu oktaf -- itu yang membuat
@@ -443,6 +537,13 @@ local SFX_TIER = {
 			"rbxasset://sounds/action_jump_land.mp3",
 			"rbxasset://sounds/bass.wav",
 			"rbxasset://sounds/impact_water.mp3",
+		},
+		lapis = {
+			-- APM "Wild Rumble": gemuruh panjang sesudah dia mendarat.
+			{ id = "rbxassetid://1842481856", vol = 0.8, nada = 1 },
+			-- APM "Help 6": orkestra swell to hit, 6 dtk -- cuma untuk
+			-- tier paling mahal, yang adegannya memang paling panjang.
+			{ id = "rbxassetid://1846887210", vol = 0.55, nada = 1, tunda = 0.3 },
 		},
 	},
 }
@@ -472,7 +573,9 @@ local AURA_TINGGI_MIN = 900
 --
 -- Boleh dua-duanya true. Boleh dua-duanya false (aura mati, tinggal
 -- panggung menari).
-local AURA_DI_KEPALA = true
+-- Sementara DIMATIKAN dua-duanya (permintaan): panggung solo dicoba
+-- tanpa aura dulu. Kembalikan AURA_DI_KEPALA = true untuk menyalakannya.
+local AURA_DI_KEPALA = false
 local AURA_DI_LAYAR  = false
 
 -- --- Papan aura di atas kepala ---
@@ -609,7 +712,9 @@ local BORDER_MAKS_GARIS = 24
 -- menutupi, dan yang ketiga sudah keluar frame. Yang membuat raksasa
 -- terasa besar itu SENDIRIAN-nya -- begitu ada dua, keduanya cuma jadi
 -- latar belakang.
-local GIANT_ENABLED = true
+-- Mati: Doughnut (tier 5) sekarang efek megah di panggung solo, bukan
+-- raksasa. Kamera solo diam, dan badan 4x cuma kelihatan kakinya.
+local GIANT_ENABLED = false
 
 -- Skalanya dibaca dari field `scale` milik /api/next (TIER4_SCALE di
 -- .env). Angka di bawah cuma batas atas kalau server mengirim sesuatu
@@ -873,8 +978,11 @@ NOVA.CONFIG = {
 	--
 	-- naikCharge dinaikkan sebanding (7 -> 14): dia separuh jalan,
 	-- dan separuh jalan dari 45 bukan 7.
-	naikCharge = 14,
-	naikAscend = 45,
+	-- Panggung solo: kamera diam setinggi pinggang cuma melihat sampai
+	-- ~12 stud di atas lantai. Dengan 14/45 avatarnya terbang keluar
+	-- frame dan freeze di puncaknya terjadi di luar layar.
+	naikCharge = SOLO.AKTIF and 2 or 14,
+	naikAscend = SOLO.AKTIF and 3.5 or 45,
 
 	orbCount   = 6,
 	runeCount  = 32,
@@ -1265,11 +1373,14 @@ local AURA_RAKSASA_NAMA_S = 2.5
 -- Kalau mau dicoba lagi, cukup naikkan AURA_VFX_TIER_MAKS ke 5 --
 -- pasangAuraVfx sudah memperbesar partikelnya sebanding skala badan, jadi
 -- auranya tidak akan jadi titik kecil di dada raksasa 4x.
-local AURA_VFX_ENABLED   = true
+-- Sementara DIMATIKAN bersama papan aura (AURA_DI_KEPALA); true lagi
+-- untuk menyalakannya.
+local AURA_VFX_ENABLED   = false
 -- Rosa (3) dan Bouquet/nova (4). Rose (2) sengaja TIDAK: dia cuma skip
 -- lane dan cakram biru.
 local AURA_VFX_TIER      = 3
-local AURA_VFX_TIER_MAKS = 4
+-- 5: Doughnut ikut dapat aura sejak tidak jadi raksasa lagi.
+local AURA_VFX_TIER_MAKS = 5
 
 -- Diacak satu dari tiga tiap kedatangan.
 --
@@ -2040,7 +2151,10 @@ local KAMERA_TIER = {
 	[5] = { masuk = 0.95, tahan = 0.8, keluar = ZOOM_KELUAR_GIANT, maks = 1.00,
 		arcDeg = 20, arcPutar = 1.0, naikAmp = 5.0, naikPutar = 1,
 		tunda = 0.8, roll = AURA_ROLL,
-		denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1 },
+		denyutDalam = 0, denyutMulai = 0.5, denyutUlang = 1,
+		-- Efek layar paling tebal untuk yang paling mahal (panggung solo:
+		-- Doughnut bukan raksasa lagi, jadi megahnya dari sini).
+		layar = SOLO.AKTIF and LAYAR.PILIHAN.penuh or nil },
 }
 
 -- KENAPA putaran angka aura DITUNDA.
@@ -2356,6 +2470,11 @@ local V2Config = ReplicatedStorage:FindFirstChild("V2Config")
 V2Config.Name   = "V2Config"
 V2Config.Parent = ReplicatedStorage
 
+-- Foto profil TikTok untuk kartu profil (ModuleScript FotoTiktok di
+-- sebelah script ini). Modul hilang = kartu memakai foto Roblox.
+local FotoTiktok = script.Parent:FindFirstChild("FotoTiktok")
+FotoTiktok = FotoTiktok and require(FotoTiktok)
+
 -- Pra-muat: memarkir avatar di ReplicatedStorage.AvatarPramuat sampai
 -- SEMUA pemain melapor asetnya siap, atau sampai SPAWN_PRAMUAT_S habis.
 -- Semua pemain, bukan pemain pertama: yang merekam siaran belum tentu
@@ -2479,6 +2598,9 @@ local SLOT_NOVA = 9998
 local SLOT_NOVA_MENDARAT = 1
 
 local function getPosition(slot)
+	if SOLO.AKTIF then
+		return Vector3.new(SOLO.X, BASE_Y, SOLO.Z)
+	end
 	if slot == SLOT_RAKSASA then
 		return Vector3.new(GIANT_X, BASE_Y, GIANT_Z)
 	end
@@ -3732,7 +3854,10 @@ local function resetStage()
 	slotCount = 0
 	barisanGen += 1
 	resetting = false
-	print(("Panggung dikosongkan (%d avatar)."):format(dihapus))
+	-- Panggung solo mengosongkan diri tiap kedatangan; tidak perlu dicatat.
+	if not SOLO.AKTIF then
+		print(("Panggung dikosongkan (%d avatar)."):format(dihapus))
+	end
 end
 
 -- username (huruf kecil) -> userId. Sebuah userId tidak pernah berubah,
@@ -3950,6 +4075,7 @@ local function spawnAvatar(entry, slot)
 	end
 
 	model.Parent = workspace
+	SOLO.tampil = os.clock()
 
 	createNameplate(model, username)
 
@@ -4016,6 +4142,17 @@ local function spawnAvatar(entry, slot)
 	-- selama sepuluh detik adegannya, barisan yang kebetulan penuh
 	-- memanggil resetStage, dan reset itu dulu menghapus avatarnya di
 	-- tengah adegan.
+	-- Panggung solo: yang sebelumnya pergi TEPAT saat yang baru siap,
+	-- bukan sebelum dia mulai dimuat -- memuat avatar bisa makan sedetik
+	-- lebih, dan selama itu panggungnya kosong.
+	if SOLO.AKTIF then
+		resetStage()
+		buangNova()
+		buangRaksasa()
+		slotCount = 1
+		slot = 1
+	end
+
 	local kunci = nova and SLOT_NOVA or slot
 	if nova then buangNova() end
 	avatars[kunci] = model
@@ -4240,6 +4377,46 @@ local function spawnAvatar(entry, slot)
 			slotPapan, tier)
 	end
 
+	-- Kartu profil (ModuleScript KartuProfil, digambar client): TikTok di
+	-- kiri, Roblox di kanan. Adegan berbayar jalan DULU, kartunya
+	-- sesudahnya: nova sesudah adegannya (auraMulai), Rosa sesudah jalur
+	-- sinematiknya habis. Yang lain langsung, bersamaan dengan avatarnya.
+	--
+	-- Pergi bersama avatarnya: begitu modelnya dihancurkan (dibuang
+	-- kedatangan berikutnya, reset panggung), client dikirimi
+	-- "profilTutup" dengan id yang sama.
+	--
+	-- Tanpa local baru: fungsi ini sudah dekat batas register Luau.
+	-- Angkanya disimpan di SOLO.kartuMulai, yang juga dibaca gelung solo
+	-- untuk menahan avatarnya sampai kartunya sempat terbaca.
+	SOLO.kartuMulai = kam.jalur and (kam.jalur.masuk + kam.jalur.naik
+		+ kam.jalur.orbit + kam.jalur.potret + kam.jalur.lepas) or auraMulai
+	task.delay(SOLO.kartuMulai, function(mulai)
+		if not model.Parent then return end
+		local id = HttpService:GenerateGUID(false)
+		-- Destroying, BUKAN AncestryChanged: event Roblox sekarang deferred,
+		-- dan Destroy() memutus semua koneksi sebelum handler
+		-- AncestryChanged sempat jalan -- kartunya tidak pernah ditutup.
+		model.Destroying:Connect(function()
+			V2Event:FireAllClients("profilTutup", id)
+		end)
+		V2Event:FireAllClients("profil", {
+			id          = id,
+			-- Piksel foto TikTok, { w, h, piksel = buffer } atau nil.
+			-- Sudah mulai diunduh sejak entrinya diambil (giliran).
+			fotoTiktok  = FotoTiktok and type(entry.tiktok) == "table"
+				and FotoTiktok.ambil(entry.tiktok.foto, 1.5) or nil,
+			tier        = tier,
+			userId      = userId,
+			username    = username,
+			displayName = entry.displayName or username,
+			koin        = tonumber(entry.koin) or 0,
+			gift        = entry.gift,
+			tiktok      = entry.tiktok,
+			roblox      = entry.roblox,
+		})
+	end, SOLO.kartuMulai)
+
 	local dari = entry.tiktokUser and (" <- " .. entry.tiktokUser) or ""
 	local cap  = ""
 	if tier >= 2 then
@@ -4342,6 +4519,16 @@ V2Config.OnServerInvoke = function(pemain)
 		sweepS   = CAMERA_SWEEP_S,
 		moveS    = CAMERA_MOVE_S,
 		fokus    = titikPanggung(),
+		-- Panggung solo: kamera diam di sini. nil = panggung barisan.
+		solo     = SOLO.AKTIF and {
+			kamera = CFrame.lookAt(
+				Vector3.new(SOLO.X, FLOOR_Y + SOLO.KAMERA_TINGGI,
+					SOLO.Z - SOLO.KAMERA_JARAK),
+				Vector3.new(SOLO.X, FLOOR_Y + SOLO.KAMERA_BIDIK, SOLO.Z)),
+			fov    = SOLO.KAMERA_FOV,
+			kaki   = Vector3.new(SOLO.X, FLOOR_Y, SOLO.Z),
+			tahan  = SOLO.TAHAN_S,
+		} or nil,
 
 		auraTime = AURA_TIME,
 		auraRoll = AURA_ROLL,
@@ -4863,14 +5050,28 @@ if MUSIC_ENABLED and MUSIC_API then
 	end)
 end
 
-while true do
+-- Satu putaran gelung utama: ambil satu entri, tampilkan. Fungsi
+-- sendiri, bukan isi gelung langsung: local di dalam gelung chunk utama
+-- ikut dihitung ke batas 200 local chunk itu, dan batas itu sudah dekat.
+local function giliran()
 	local entry = fetchNext()
 
 	if entry then
+		-- Foto TikTok untuk kartu profilnya mulai diunduh SEKARANG, selagi
+		-- avatarnya masih dimuat -- bukan saat kartunya mau tampil.
+		if FotoTiktok and type(entry.tiktok) == "table" then
+			FotoTiktok.siapkan(URL, entry.tiktok.foto)
+		end
 		local tierMasuk = TIER_ENABLED and (tonumber(entry.tier) or 1) or 1
 		local slot
 
-		if adalahRaksasa(tierMasuk) then
+		if SOLO.AKTIF then
+			-- Satu panggung, satu orang, selalu slot 1. Yang sebelumnya
+			-- baru dibuang spawnAvatar saat yang baru sudah siap.
+			slotCount = 1
+			slot = 1
+
+		elseif adalahRaksasa(tierMasuk) then
 			-- Raksasa memakai nomornya sendiri dan MENGGANTIKAN yang
 			-- sedang berdiri. Barisan tidak disentuh sama sekali:
 			-- slotCount tidak naik, jadi orang berikutnya tetap
@@ -4910,7 +5111,29 @@ while true do
 			end
 		end
 
-		if beku then
+		if SOLO.AKTIF then
+			-- Selalu ditunggu, lalu DITAHAN: avatarnya tampil sendirian
+			-- selama tier-nya, baru antrian diambil lagi. Lama tampil
+			-- dihitung dari dia muncul (SOLO.tampil, diisi spawnAvatar),
+			-- bukan dari mulai memuat -- memuat avatar bisa makan sedetik
+			-- lebih, dan itu tidak boleh memotong jatah tampilnya.
+			SOLO.tampil = 0
+			SOLO.kartuMulai = 0
+			jalankan()
+			if SOLO.tampil > 0 then
+				local lama = (entry.spotlight == true
+					and tonumber(entry.spotlightMs) or 0) / 1000
+				if lama <= 0 then lama = SOLO.TAHAN_S end
+				-- Kartu profil yang ditahan sampai adegannya selesai
+				-- (Rosa, nova) tetap dapat SOLO.KARTU_S detik di layar:
+				-- tanpa ini sorotan Rosa (8 detik) habis tepat saat
+				-- kartunya baru muncul.
+				if SOLO.kartuMulai > 0 then
+					lama = math.max(lama, SOLO.kartuMulai + SOLO.KARTU_S)
+				end
+				task.wait(math.max(0, SOLO.tampil + lama - os.clock()))
+			end
+		elseif beku then
 			jalankan()
 			task.wait(BEKU_EKOR)
 		else
@@ -4918,5 +5141,9 @@ while true do
 		end
 	end
 
+end
+
+while true do
+	giliran()
 	task.wait(POLL_INTERVAL)
 end

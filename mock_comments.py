@@ -16,6 +16,7 @@ Jalankan:
     .venv/bin/python mock_comments.py --tier3          # banjir Rose, menguji adegan sinematik
     .venv/bin/python mock_comments.py --tier4          # banjir Rosa, menguji nova
     .venv/bin/python mock_comments.py --tier5          # banjir Doughnut, menguji raksasa
+    .venv/bin/python mock_comments.py --dari-log log.txt   # putar ulang log listener live
 
 Pipeline-nya diimpor dari tiktok_listener, BUKAN disalin — jadi apa pun yang
 lolos di sini persis sama dengan yang bakal lolos pas live.
@@ -24,6 +25,7 @@ lolos di sini persis sama dengan yang bakal lolos pas live.
 import argparse
 import asyncio
 import random
+import re
 
 import httpx
 
@@ -234,8 +236,8 @@ async def jalankan_pembuka(pipeline: Pipeline, jeda: float) -> list[str]:
     urutan: list[int] = []
     push_asli = pipeline.push
 
-    async def push_dicatat(username, nickname, tier=1, koin=0, podium=False):
-        ok = await push_asli(username, nickname, tier, koin, podium=podium)
+    async def push_dicatat(username, nickname, tier=1, koin=0, podium=False, **kw):
+        ok = await push_asli(username, nickname, tier, koin, podium=podium, **kw)
         if ok:
             urutan.append(tier)
         return ok
@@ -289,6 +291,26 @@ async def jalankan_pembuka(pipeline: Pipeline, jeda: float) -> list[str]:
     return gagal
 
 
+BIO_PALSU = ["Creator | Gaming | Roblox", "jangan lupa follow ya 🙏", "",
+             "pemain obby garis keras", "live tiap malam jam 8", ""]
+
+
+def profil_palsu(tiktok_user: str, nickname: str) -> dict:
+    """Profil TikTok karangan untuk kartu profil. Tetap per penonton
+    (diacak dari namanya), jadi orang yang sama selalu kelihatan sama."""
+    r = random.Random(tiktok_user)
+    return {
+        "handle": tiktok_user,
+        "nickname": nickname,
+        "bio": r.choice(BIO_PALSU),
+        # Kadang kosong: TikTok juga begitu, dan kartunya harus tahan.
+        "followers": None if r.random() < 0.15 else int(10 ** r.uniform(1, 6)),
+        "following": None if r.random() < 0.15 else r.randint(3, 2000),
+        "verified": r.random() < 0.1,
+        "fan": r.random() < 0.5,
+    }
+
+
 def buat_komentar(rng: random.Random) -> str:
     """Satu komentar acak, dengan komposisi yang mirip live beneran.
 
@@ -339,6 +361,7 @@ async def main(count: int | None, min_delay: float | None, max_delay: float | No
                tap_rate: float = 0.0, combo: bool = True) -> None:
     rng = random.Random(seed)
     pipeline = Pipeline(dry_run=dry_run)
+    pipeline.profil = profil_palsu
     await pipeline.open()
 
     log.info("Mock komentar -> %s%s", PUSH_URL, "  (DRY RUN)" if dry_run else "")
@@ -474,6 +497,94 @@ async def main(count: int | None, min_delay: float | None, max_delay: float | No
             await lihat_antrian()
 
 
+# --------------------------------------------------------- PUTAR ULANG LOG --
+
+# Baris log listener yang menandai KOMENTAR/GIFT yang masuk. Log tidak
+# menyimpan teks komentarnya, jadi yang diputar ulang adalah kejadian yang
+# paling mungkin memicu baris itu.
+_JAM     = re.compile(r"^(\d{1,2}):(\d{2}):(\d{2})\s+(.*)$")
+_PUSH    = re.compile(r"^\[push\] (?:TIER \d+ \(\d+ koin\) )?'([^']+)' \(dari (.+)\) masuk antrian")
+_ULANG   = re.compile(r"^\[(?:penuh|tolak)\] (?:antrian sudah \d+, )?'([^']+)' (?:dilewati|baru saja)")
+_COOL    = re.compile(r"^\[tolak\] (.+) masih cooldown")
+_GIFT    = re.compile(r"^\[gift\] (.+?) kirim (.+?) x(\d+)")
+
+
+def baca_log(path: str) -> list[tuple[float, str, tuple]]:
+    """Log listener -> [(detik dari baris pertama, jenis, isi)].
+
+    jenis "komen" isi (nick, username); "gift" isi (nick, nama gift, jumlah).
+    Pengirim baris [penuh]/[tolak] yang cuma menyebut username dicari dari
+    baris [push] mana pun di file itu; baris "masih cooldown" yang cuma
+    menyebut nama memakai username yang pernah dia kirim. Yang tidak bisa
+    dipasangkan dilewati -- mengarang teksnya lebih buruk daripada tidak
+    memutarnya.
+    """
+    baris = []
+    for teks in open(path, encoding="utf-8", errors="replace").read().splitlines():
+        m = _JAM.match(teks.strip())
+        if m:
+            h, mn, dt, isi = m.groups()
+            baris.append((int(h) * 3600 + int(mn) * 60 + int(dt), isi))
+    nick_dari, nama_dari = {}, {}
+    for _, isi in baris:
+        m = _PUSH.match(isi)
+        if m:
+            nick_dari.setdefault(m[1].lower(), m[2])
+            nama_dari.setdefault(m[2], m[1])
+
+    awal, hasil, lewat = (baris[0][0] if baris else 0), [], 0
+    for t, isi in baris:
+        t = (t - awal) % 86400        # log yang melewati tengah malam
+        if m := _PUSH.match(isi):
+            hasil.append((t, "komen", (m[2], m[1])))
+        elif m := _ULANG.match(isi):
+            hasil.append((t, "komen", (nick_dari.get(m[1].lower(), m[1]), m[1])))
+        elif m := _COOL.match(isi):
+            if m[1] in nama_dari:
+                hasil.append((t, "komen", (m[1], nama_dari[m[1]])))
+            else:
+                lewat += 1
+        elif m := _GIFT.match(isi):
+            hasil.append((t, "gift", (m[1], m[2], int(m[3]))))
+    if lewat:
+        log.info("[log] %d baris cooldown dilewati: username pengirimnya tidak "
+                 "pernah muncul di log", lewat)
+    return hasil
+
+
+async def putar_log(path: str, dry_run: bool, laju: float) -> None:
+    kejadian = baca_log(path)
+    if not kejadian:
+        log.error("[log] tidak ada baris komentar/gift yang dikenali di %s", path)
+        return
+    pipeline = Pipeline(dry_run=dry_run)
+    pipeline.profil = profil_palsu
+    await pipeline.open()
+    log.info("Putar ulang %s: %d kejadian, %.0f detik (laju x%g) -> %s%s",
+             path, len(kejadian), kejadian[-1][0] / laju, laju, PUSH_URL,
+             "  (DRY RUN)" if dry_run else "")
+    mulai = asyncio.get_running_loop().time()
+    try:
+        for t, jenis, isi in kejadian:
+            tunggu = mulai + t / laju - asyncio.get_running_loop().time()
+            if tunggu > 0:
+                await asyncio.sleep(tunggu)
+            if jenis == "gift":
+                nick, gift, jumlah = isi
+                await pipeline.handle_gift(nick, nick, gift, jumlah, koin_gift(gift))
+            else:
+                nick, nama = isi
+                log.info("💬 %s: %s", nick, nama)
+                # spawn, bukan await: verifikasi Roblox makan waktu, dan
+                # menunggunya menggeser semua kejadian sesudahnya dari jam
+                # aslinya. Listener live juga memakai spawn.
+                asyncio.create_task(pipeline.handle(nick, nick, nama))
+        await asyncio.sleep(3)        # biar push terakhir sempat selesai
+    finally:
+        await pipeline.aclose()
+    await lihat_antrian()
+
+
 def cli(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Simulasi komentar TikTok Live")
     parser.add_argument("--count", type=int, default=None,
@@ -499,7 +610,18 @@ def cli(argv: list[str] | None = None) -> None:
                         help="Peluang satu kejadian berupa gift (0..1, default 0.125)")
     parser.add_argument("--gift", action="append", metavar="NAMA",
                         help="Batasi ke gift tertentu, boleh diulang (mis. --gift Rosa)")
+    parser.add_argument("--dari-log", metavar="FILE",
+                        help="Putar ulang log listener live (baris [push]/[tolak]/[penuh]/[gift])")
+    parser.add_argument("--laju", type=float, default=1.0,
+                        help="Kecepatan putar ulang --dari-log (2 = dua kali lebih cepat)")
     args = parser.parse_args(argv)
+
+    if args.dari_log:
+        try:
+            asyncio.run(putar_log(args.dari_log, args.dry_run, max(args.laju, 0.01)))
+        except KeyboardInterrupt:
+            log.info("Berhenti.")
+        return
 
     min_delay, max_delay = (0.0, 0.0) if args.fast else (args.min_delay, args.max_delay)
 

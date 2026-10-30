@@ -451,6 +451,56 @@ def extract_username(user) -> str:
     return getattr(user, "nickname", None) or "unknown"
 
 
+def _angka(nilai) -> int | None:
+    """Angka follower dari TikTok. None kalau tidak ada / tidak masuk akal.
+
+    None, bukan 0: TikTok kadang mengirim user tanpa follow_info sama
+    sekali, dan kartu di Roblox harus bisa membedakan "tidak tahu" (baris
+    disembunyikan) dari "memang nol" -- "0 Pengikut" untuk orang yang
+    pengikutnya ribuan itu lebih buruk daripada tidak menulis apa-apa.
+    """
+    try:
+        n = int(nilai)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def profil_tiktok(user) -> dict:
+    """Profil penonton dari objek user TikTokLive, untuk kartu profil Roblox.
+
+    Semua field sudah ada di setiap event (komentar, gift, tap) -- tidak
+    ada panggilan API tambahan ke TikTok.
+    """
+    follow = getattr(user, "follow_info", None)
+    return {
+        "handle": extract_username(user),
+        "nickname": getattr(user, "nickname", None) or "",
+        "bio": getattr(user, "bio_description", None) or "",
+        "followers": _angka(getattr(follow, "follower_count", None)),
+        "following": _angka(getattr(follow, "following_count", None)),
+        "verified": bool(getattr(user, "verified", False)),
+        # follow_status: 1 = dia follow host, 2 = saling follow.
+        "fan": (getattr(follow, "follow_status", 0) or 0) >= 1,
+        "foto": _foto_tiktok(user),
+    }
+
+
+def _foto_tiktok(user) -> str:
+    """URL foto profil TikTok terkecil yang ada, "" kalau tidak ada.
+
+    Proto v3 menamai daftarnya url_list, v1 m_urls -- event yang berbeda
+    di TikTokLive memakai versi yang berbeda. HEIC dilewati: Pillow di VM
+    tidak bisa membacanya, dan daftarnya hampir selalu punya webp/jpeg."""
+    for nama in ("avatar_thumb", "avatar_medium", "avatar_jpg"):
+        gbr = getattr(user, nama, None)
+        urls = getattr(gbr, "url_list", None) or getattr(gbr, "m_urls", None) or []
+        for u in urls:
+            if isinstance(u, str) and u.startswith("https://") and ".heic" not in u:
+                return u
+    return ""
+
+
 # ------------------------------------------------------------------ PIPELINE --
 
 class Pipeline:
@@ -513,6 +563,11 @@ class Pipeline:
         self.boost_hangus = 0  # gift yang tidak pernah disusul komentar
         self.likes = 0         # tap yang tercatat sepanjang siaran
         self.podium_like = 0   # berapa kali ambang tap tercapai
+        # Profil TikTok terakhir per penonton (profil_tiktok / _tf_profil),
+        # untuk kartu profil di Roblox. Dicatat dari event apa pun, karena
+        # spawn-nya bisa dipicu event yang berbeda dari yang membawa profil
+        # paling lengkap.
+        self._profil: dict[str, dict] = {}
 
     async def open(self) -> None:
         self._client = httpx.AsyncClient(
@@ -528,6 +583,19 @@ class Pipeline:
             await asyncio.gather(*self._tasks, return_exceptions=True)
         if self._client is not None:
             await self._client.aclose()
+
+    def catat_profil(self, tiktok_user: str, profil: dict) -> None:
+        # Dibatasi supaya live berjam-jam tidak menumpuk ribuan profil.
+        # dict menyimpan urutan masuk, jadi yang dibuang yang paling lama.
+        self._profil.pop(tiktok_user, None)
+        self._profil[tiktok_user] = profil
+        if len(self._profil) > 5000:
+            self._profil.pop(next(iter(self._profil)))
+
+    def profil(self, tiktok_user: str, nickname: str) -> dict:
+        """Profil untuk dikirim bersama push. Ditimpa mock_comments."""
+        return self._profil.get(tiktok_user) or {
+            "handle": tiktok_user, "nickname": nickname}
 
     def spawn(self, tiktok_user: str, nickname: str, text: str) -> None:
         """Proses komentar di background.
@@ -593,7 +661,8 @@ class Pipeline:
             # ada yang hilang.
             terkirim = 0
             for t, k in spawn:
-                if not await self.push(nama, nickname, t, k):
+                if not await self.push(nama, nickname, t, k,
+                                       dari=tiktok_user, gift=gift_name):
                     break
                 terkirim += 1
             if terkirim:
@@ -656,7 +725,8 @@ class Pipeline:
             nama = terakhir[0]
             log.info("[like] %s tembus %s tap -> '%s' spawn tier %s (tanpa koin)",
                      nickname, LIKE_PODIUM, nama, LIKE_TIER)
-            if await self.push(nama, nickname, LIKE_TIER, 0, podium=True):
+            if await self.push(nama, nickname, LIKE_TIER, 0, podium=True,
+                               dari=tiktok_user):
                 self._nama_terakhir[tiktok_user] = (nama, now + GIFT_BOOST_TTL_S)
                 return
             # Push gagal (server antrian mati?) -- haknya disimpan di bawah
@@ -844,18 +914,19 @@ class Pipeline:
         # Komentar tanpa apa pun yang menunggu tetap satu spawn tier 1.
         # Komentar yang membawa gift TIDAK ikut menambah spawn tier 1 di
         # depannya: namanya dipakai untuk gift-nya, bukan dua kali.
-        kiriman = [(tier, koin, False) for tier, koin, _, _ in gifts]
+        kiriman = [(tier, koin, False, gift) for tier, koin, gift, _ in gifts]
         if podium:
-            kiriman.append((LIKE_TIER, 0, True))
+            kiriman.append((LIKE_TIER, 0, True, None))
         if not kiriman:
-            kiriman = [(1, 0, False)]
+            kiriman = [(1, 0, False, None)]
 
         # Di-await satu per satu, bukan dikirim bersamaan: main.py
         # menyisipkan tiap kiriman berbayar SESUDAH yang sudah menunggu,
         # jadi urutan await ini yang menjadi urutan tampilnya.
         terkirim = 0
-        for tier, koin, dari_tap in kiriman:
-            if not await self.push(name, nickname, tier, koin, podium=dari_tap):
+        for tier, koin, dari_tap, gift in kiriman:
+            if not await self.push(name, nickname, tier, koin, podium=dari_tap,
+                                   dari=tiktok_user, gift=gift):
                 break
             terkirim += 1
 
@@ -900,7 +971,8 @@ class Pipeline:
         return found
 
     async def push(self, username: str, nickname: str, tier: int = 1,
-                   koin: int = 0, podium: bool = False) -> bool:
+                   koin: int = 0, podium: bool = False, dari: str = "",
+                   gift: str | None = None) -> bool:
         """Kirim SATU spawn ke antrian. False kalau gagal — pemanggilnya yang
         menentukan apakah kegagalan itu perlu dicatat sebagai 'sudah pernah
         masuk'.
@@ -910,6 +982,9 @@ class Pipeline:
         digabung dengan kiriman lain.
 
         `podium` cuma label: kiriman ini hadiah tap, bukan gift.
+
+        `dari` = username TikTok pengirimnya, untuk mengambil profilnya ke
+        kartu profil. `gift` = nama gift yang membeli spawn ini.
         """
         koin = max(0, int(koin or 0))
         tier = max(1, int(tier or 1))
@@ -931,6 +1006,9 @@ class Pipeline:
                 # Dipotong: nickname TikTok bisa panjang sekali dan berisi emoji;
                 # ini cuma buat ditampilkan "dipanggil oleh ..." di Roblox.
                 "tiktokUser": nickname[:40],
+                # Kartu profil di Roblox: @handle, follower, bio, dst.
+                "tiktok": self.profil(dari or nickname, nickname),
+                "gift": f"{LIKE_PODIUM} tap" if podium else gift,
             }, headers={"X-Token": API_TOKEN} if API_TOKEN else None)
             r.raise_for_status()
             data = r.json()
@@ -980,6 +1058,7 @@ def build_client(username: str, pipeline: Pipeline) -> TikTokLiveClient:
             return
         tiktok_user = extract_username(event.user)
         nickname = getattr(event.user, "nickname", None) or tiktok_user
+        pipeline.catat_profil(tiktok_user, profil_tiktok(event.user))
         pipeline.spawn(tiktok_user, nickname, event.comment or "")
 
     @client.on(GiftEvent)
@@ -997,6 +1076,7 @@ def build_client(username: str, pipeline: Pipeline) -> TikTokLiveClient:
         # Harga gift dalam koin, dikirim TikTok sendiri. Inilah yang
         # menggantikan tabel nama gift: tidak ada lagi gift "tak dikenal".
         koin = getattr(event.gift, "diamond_count", 0) or 0
+        pipeline.catat_profil(tiktok_user, profil_tiktok(event.user))
         await pipeline.handle_gift(tiktok_user, nickname, event.gift.name,
                                    getattr(event, "repeat_count", 1), koin)
 
@@ -1011,6 +1091,7 @@ def build_client(username: str, pipeline: Pipeline) -> TikTokLiveClient:
 
         tiktok_user = extract_username(event.user)
         nickname = getattr(event.user, "nickname", None) or tiktok_user
+        pipeline.catat_profil(tiktok_user, profil_tiktok(event.user))
         await pipeline.handle_like(tiktok_user, nickname,
                                    getattr(event, "count", 1) or 1)
 
@@ -1139,6 +1220,26 @@ def _tf_user(data: dict) -> tuple[str, str]:
     return user, data.get("nickname") or user
 
 
+def _tf_profil(data: dict) -> dict:
+    """Profil penonton dari payload TikFinity, bentuknya sama dengan
+    profil_tiktok. Field-nya mengikuti format TikTok-Live-Connector;
+    yang tidak dikirim TikFinity tinggal kosong dan barisnya tidak tampil
+    di kartu."""
+    user, nickname = _tf_user(data)
+    follow = data.get("followInfo") or {}
+    detail = data.get("userDetails") or {}
+    return {
+        "handle": user,
+        "nickname": nickname,
+        "bio": detail.get("bioDescription") or data.get("bioDescription") or "",
+        "followers": _angka(follow.get("followerCount")),
+        "following": _angka(follow.get("followingCount")),
+        "verified": bool(data.get("isVerified") or data.get("verified")),
+        "fan": (follow.get("followStatus") or 0) >= 1,
+        "foto": data.get("profilePictureUrl") or "",
+    }
+
+
 async def _tf_dispatch(pipeline: Pipeline, raw: str | bytes) -> None:
     """Petakan satu pesan TikFinity ke Pipeline."""
     try:
@@ -1150,6 +1251,8 @@ async def _tf_dispatch(pipeline: Pipeline, raw: str | bytes) -> None:
 
     event = msg.get("event")
     data = msg.get("data") or {}
+    if event in ("chat", "gift", "like"):
+        pipeline.catat_profil(_tf_user(data)[0], _tf_profil(data))
 
     if event == "chat":
         user, nickname = _tf_user(data)

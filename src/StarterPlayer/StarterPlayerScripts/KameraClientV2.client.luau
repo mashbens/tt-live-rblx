@@ -101,6 +101,21 @@ end
 local pemain = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
+-- Panggung solo (SOLO di AvatarQueueV2): latar + efek tier di belakang
+-- avatar, dari ModuleScript LatarSolo. nil = panggung barisan, atau
+-- modulnya gagal dimuat (kamera solo tetap jalan, cuma tanpa latar).
+local latarSolo = nil
+if CFG.solo then
+	local skrip = ReplicatedStorage:WaitForChild("LatarSolo", 10)
+	local okLatar, modul = pcall(require, skrip)
+	if okLatar and type(modul) == "table" then
+		latarSolo = modul
+		latarSolo.pasang(CFG.solo)
+	else
+		warn("[solo] ModuleScript LatarSolo tidak bisa dimuat:", modul)
+	end
+end
+
 -- Penanda "aku hidup".
 --
 -- Kamera yang diam punya dua sebab yang kelihatan sama persis di layar:
@@ -1006,6 +1021,16 @@ RunService.RenderStepped:Connect(function(dt)
 	if novaFovNilai and novaFovDasar then
 		camera.FieldOfView = math.clamp(novaFovDasar + novaFovNilai.Value,
 			1, 120)
+	end
+
+	-- Panggung solo: kamera DIAM di satu titik. Semua di atas tetap
+	-- dihitung -- keadaan sorotan dan nova tetap berjalan seperti biasa --
+	-- tapi hasilnya dibuang. Yang ikut cuma guncangan, sebagai efek.
+	if CFG.solo then
+		local guncang = novaGetarOffset
+		if latarSolo then guncang += latarSolo.getar() end
+		cf = CFG.solo.kamera * CFrame.new(guncang)
+		camera.FieldOfView = CFG.solo.fov or 70
 	end
 
 	camera.CFrame = cf
@@ -1964,6 +1989,24 @@ end
 -- Output. Satu-satunya cara tahu dia benar-benar ada memuatnya lalu
 -- memeriksa IsLoaded.
 local sfxTier = {}
+-- tier -> daftar { s = Sound, tunda = detik } yang ditumpuk di atas
+-- bunyi utamanya (SFX_TIER[t].lapis di server).
+local sfxLapis = {}
+
+-- Satu Sound di SoundService, dimuat lalu diperiksa IsLoaded. nil kalau
+-- gagal (Sound kosong tidak melempar error, cuma hening -- lihat atas).
+local function muatSatuSfx(nama, id, vol, nada)
+	local s = Instance.new("Sound")
+	s.Name          = nama
+	s.SoundId       = id
+	s.Volume        = vol
+	s.PlaybackSpeed = math.max(nada, 0.1)
+	s.Parent        = SoundService
+	local ok = pcall(function() ContentProvider:PreloadAsync({ s }) end)
+	if ok and s.IsLoaded then return s end
+	s:Destroy()
+	return nil
+end
 
 local function muatSfxTier()
 	local daftar = CFG.sfxTier
@@ -1974,26 +2017,25 @@ local function muatSfxTier()
 		if type(kandidat) == "table" then
 			local dipakai = nil
 
-			for _, id in ipairs(kandidat) do
-				local s = Instance.new("Sound")
-				s.Name          = ("SfxTier%s"):format(tostring(tier))
-				s.SoundId       = id
-				s.Volume        = tonumber(setelan.vol) or 0.6
-				s.PlaybackSpeed = math.max(tonumber(setelan.nada) or 1, 0.1)
+			for _, k in ipairs(kandidat) do
+				-- Teks = berkas bawaan dengan vol/nada milik tiernya.
+				-- Tabel = bunyi katalog dengan vol/nada SENDIRI (dia
+				-- dimainkan di nada aslinya, lihat SFX_TIER di server).
+				local tabel = type(k) == "table"
+				local id = tabel and k.id or k
 				-- SoundService, jadi dia tidak punya posisi di dunia:
 				-- sama kerasnya di mana pun kamera berada. Alasan
 				-- lengkapnya sama dengan bunyi aura di atas.
-				s.Parent        = SoundService
-
-				local ok = pcall(function()
-					ContentProvider:PreloadAsync({ s })
-				end)
-
-				-- IsLoaded, bukan cuma "PreloadAsync tidak error":
-				-- preload yang selesai tanpa error masih bisa
-				-- meninggalkan Sound kosong kalau asetnya memang tidak
-				-- ada.
-				if ok and s.IsLoaded then
+				--
+				-- muatSatuSfx memeriksa IsLoaded, bukan cuma "PreloadAsync
+				-- tidak error": preload yang selesai tanpa error masih
+				-- bisa meninggalkan Sound kosong kalau asetnya memang
+				-- tidak ada.
+				local s = type(id) == "string" and muatSatuSfx(
+					("SfxTier%s"):format(tostring(tier)), id,
+					tonumber(tabel and k.vol or setelan.vol) or 0.6,
+					tonumber(tabel and k.nada or setelan.nada) or 1)
+				if s then
 					dipakai = id
 					-- Dinormalkan ke ANGKA. Tabel yang lewat
 					-- RemoteFunction tidak dijamin mempertahankan
@@ -2004,15 +2046,25 @@ local function muatSfxTier()
 					sfxTier[tonumber(tier) or tier] = s
 					break
 				end
-
-				s:Destroy()
 			end
 
+			local lapis = {}
+			for i, l in ipairs(type(setelan.lapis) == "table" and setelan.lapis or {}) do
+				local s = type(l) == "table" and type(l.id) == "string" and muatSatuSfx(
+					("SfxTier%sLapis%d"):format(tostring(tier), i), l.id,
+					tonumber(l.vol) or 0.6, tonumber(l.nada) or 1)
+				if s then
+					table.insert(lapis, { s = s, tunda = tonumber(l.tunda) or 0 })
+				else
+					warn(("[sfx] tier %s lapis %d (%s) tidak bisa dimuat, dilewati")
+						:format(tostring(tier), i, tostring(type(l) == "table" and l.id)))
+				end
+			end
+			sfxLapis[tonumber(tier) or tier] = lapis
+
 			if dipakai then
-				print(("[sfx] tier %s -- %s (volume %.2f, nada %.2f)")
-					:format(tostring(tier), dipakai,
-						tonumber(setelan.vol) or 0.6,
-						tonumber(setelan.nada) or 1))
+				print(("[sfx] tier %s -- %s + %d lapis")
+					:format(tostring(tier), dipakai, #lapis))
 			else
 				warn(("[sfx] tier %s TIDAK dapat bunyi -- %d kandidat " ..
 					"dicoba, tidak satu pun berhasil dimuat.")
@@ -2034,6 +2086,13 @@ local function bunyiTier(tier)
 	-- bukan sebagai satu bunyi yang pecah.
 	s.TimePosition = 0
 	s:Play()
+	for _, l in ipairs(sfxLapis[tier] or sfxLapis[tostring(tier)] or {}) do
+		local function main()
+			l.s.TimePosition = 0
+			l.s:Play()
+		end
+		if l.tunda > 0 then task.delay(l.tunda, main) else main() end
+	end
 end
 
 -- Nomor bunyi yang sedang jalan, sejajar dengan auraGen di atas: yang
@@ -3502,8 +3561,15 @@ end)
 
 -- ============ SAMBUNGAN ============
 
+-- ModuleScript KartuProfil, dimuat saat kartu pertama. nil = belum
+-- dicoba, false = gagal dimuat.
+local kartuProfil = nil
+
 V2Event.OnClientEvent:Connect(function(jenis, d)
 	if jenis == "fokus" then
+		-- Tiap kedatangan, apa pun tier-nya: warna dan efek latar solo.
+		if latarSolo then task.spawn(latarSolo.datang, d) end
+
 		-- Tinggi mundur penuh ikut tiap pesan, bukan cuma pesan
 		-- berbayar: yang mengubahnya bukan tier yang datang, tapi ada
 		-- atau tidaknya raksasa di panggung -- dan raksasa berdiri
@@ -3557,13 +3623,9 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 			denyutMulai  = math.clamp(tonumber(d.denyutMulai) or 0.5, 0, 0.95)
 			denyutUlang  = math.max(tonumber(d.denyutUlang) or 1, 1)
 
-			-- Dibunyikan di sini, di cabang BERBAYAR saja.
-			--
-			-- Cabang gratisan di bawah tidak memanggilnya, dan itu
-			-- disengaja: tier 1 datang tiap detik saat live ramai, dan
-			-- bunyi kedatangan untuk tiap satu dari mereka akan jadi
-			-- derau yang terus-menerus -- lalu yang berbayar kehilangan
-			-- satu-satunya penanda telinganya.
+			-- Bunyi kedatangan. Cabang gratisan di bawah juga punya
+			-- (SFX_TIER[1], sengaja pelan), tapi cuma saat kameranya
+			-- benar-benar pindah ke dia -- bukan tiap komentar.
 			--
 			-- bunyiNanti: nova membunyikannya sendiri saat dia membanting
 			-- diri ke tanah (jalankanNova). Di detik ini dia baru mulai
@@ -3618,6 +3680,7 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 			denyutMulai = math.clamp(tonumber(d.denyutMulai) or 0.5, 0, 0.95)
 			denyutUlang = math.max(tonumber(d.denyutUlang) or 1, 1)
 			pandangLurus()
+			bunyiTier(tonumber(d.tier) or 1)
 
 		-- else: kedatangan biasa DI TENGAH adegan berbayar -- diabaikan.
 		--
@@ -3657,6 +3720,22 @@ V2Event.OnClientEvent:Connect(function(jenis, d)
 		task.spawn(jalankanNova, d)
 	elseif jenis == "musik" then
 		tampilkanLagu(d)
+	elseif jenis == "profil" then
+		-- Kartu profil TikTok + Roblox. Semua tampilannya di ModuleScript
+		-- KartuProfil; di sini cuma sambungannya. Modul hilang / error =
+		-- tidak ada kartu, panggung tetap jalan.
+		if kartuProfil == nil then
+			local skrip = ReplicatedStorage:FindFirstChild("KartuProfil")
+			local ok, modul = pcall(require, skrip)
+			kartuProfil = (skrip and ok and modul) or false
+			if not kartuProfil then
+				warn("[profil] ModuleScript KartuProfil tidak bisa dimuat:", modul)
+			end
+		end
+		if kartuProfil then task.spawn(kartuProfil.tampil, pemain, d) end
+	elseif jenis == "profilTutup" then
+		-- Avatarnya pergi dari panggung: kartunya ikut pergi.
+		if kartuProfil then kartuProfil.tutup(d) end
 	end
 end)
 

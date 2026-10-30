@@ -14,11 +14,16 @@ Perubahan dari versi sebelumnya:
   tidak bisa diambil dari dalam Studio. Python yang mengambilkannya.
 """
 
+import base64
+import hashlib
+import io
 import json
 import os
 import secrets
+import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
@@ -396,6 +401,30 @@ def _jeda_sorotan(tier: int) -> float:
 # panggilan itu jauh lebih ketat daripada polling antrian ini.
 display_cache: dict[str, tuple[str, int | None]] = {}
 
+# Statistik profil Roblox untuk kartu profil: userId -> (kapan, isi).
+# Berbeda dari display_cache, ini kedaluwarsa: angka follower berubah,
+# nama hampir tidak pernah.
+roblox_cache: dict[int, tuple[float, dict]] = {}
+ROBLOX_CACHE_S = 600
+
+# Foto profil TikTok untuk kartu profil, sudah jadi piksel mentah.
+#
+# Roblox tidak bisa memuat gambar dari URL luar (ImageLabel cuma menerima
+# aset Roblox), jadi fotonya diunduh DI SINI, dikecilkan ke FOTO_SISI x
+# FOTO_SISI, dan diserahkan sebagai RGBA mentah (base64) lewat /api/foto.
+# Studio menggambarnya sendiri dengan EditableImage.
+#
+# Kuncinya hash URL, bukan URL-nya: URL CDN TikTok panjang dan bertanda
+# tangan, dan tidak perlu ikut ke tiap layar penonton.
+FOTO_SISI = 80
+FOTO_MAKS = 300
+foto_url: dict[str, str] = {}               # kunci -> URL asli
+foto_cache: "OrderedDict[str, str]" = OrderedDict()  # kunci -> base64 RGBA
+# Cuma CDN gambar TikTok. /api/push memang dikunci token, tapi server yang
+# mau mengunduh URL apa saja dari luar tetap pintu yang tidak perlu dibuka.
+FOTO_DOMAIN = ("tiktokcdn.com", "tiktokcdn-us.com", "tiktokcdn-eu.com",
+               "ibyteimg.com", "byteimg.com", "muscdn.com")
+
 
 _cek_sorotan_vs_jeda()
 _cek_kunci_lama()
@@ -454,6 +483,13 @@ def ambil_kanal(nama: str) -> Kanal:
 BUYERS_PATH = Path(os.environ.get("BUYERS_PATH",
                                   Path(__file__).with_name("buyers.json")))
 _pembeli: dict = {"mtime": None, "token": {}, "roblox": {}}
+
+# Nama pembeli (kunci di buyers.json) yang kanalnya juga dipakai server
+# PUBLIK (owner=0). Untuk instance yang khusus satu pembeli: dia cukup
+# menekan Play, tidak perlu membuat Private Server dulu. Akibatnya siapa pun
+# yang masuk game publik itu ikut mengambil antrian yang sama. Kosong =
+# server publik tidak dapat apa-apa, seperti di instance bersama.
+KANAL_PUBLIK = os.environ.get("KANAL_PUBLIK", "").strip()
 
 
 def _muat_pembeli() -> None:
@@ -515,6 +551,8 @@ def kanal_dari_owner(owner: int | None = None) -> Kanal | None:
         return KANAL_UTAMA
     _muat_pembeli()
     nama = _pembeli["roblox"].get(owner)
+    if owner == 0 and KANAL_PUBLIK:
+        nama = KANAL_PUBLIK
     if nama:
         return ambil_kanal(nama)
     if owner and owner not in _owner_asing:
@@ -529,6 +567,95 @@ class PushRequest(BaseModel):
     tiktokUser: str | None = None
     # Total koin yang dikeluarkan untuk nama ini. 0 = komentar biasa.
     koin: int = 0
+    # Profil TikTok pengirimnya (lihat profil_tiktok di listener) dan nama
+    # gift yang membeli spawn ini. Dua-duanya cuma untuk kartu profil.
+    tiktok: dict | None = None
+    gift: str | None = None
+
+
+def _bersihkan_tiktok(d: dict | None) -> dict | None:
+    """Saring profil TikTok dari listener sebelum diteruskan ke Roblox.
+
+    /api/push dikunci token, tapi yang di sini tetap dibatasi: teks liar
+    sepanjang ribuan karakter akan ikut ke tiap layar penonton.
+    """
+    if not isinstance(d, dict):
+        return None
+
+    def teks(k: str, n: int) -> str:
+        v = d.get(k)
+        return v.strip()[:n] if isinstance(v, str) else ""
+
+    def angka(k: str) -> int | None:
+        v = d.get(k)
+        return v if isinstance(v, int) and 0 < v < 10**10 else None
+
+    return {
+        "handle": teks("handle", 40),
+        "nickname": teks("nickname", 40),
+        # Satu baris saja di kartu.
+        "bio": " ".join(teks("bio", 200).split())[:80],
+        "followers": angka("followers"),
+        "following": angka("following"),
+        "verified": d.get("verified") is True,
+        "fan": d.get("fan") is True,
+        # Kunci /api/foto, bukan URL-nya. None = tidak ada foto yang sah.
+        "foto": _daftar_foto(d.get("foto")),
+    }
+
+
+def _daftar_foto(url) -> str | None:
+    """Catat URL foto TikTok yang sah, kembalikan kuncinya untuk /api/foto."""
+    if not isinstance(url, str) or len(url) > 1000:
+        return None
+    try:
+        u = httpx.URL(url)
+    except Exception:
+        return None
+    host = u.host or ""
+    if u.scheme != "https" or not any(
+            host == d or host.endswith("." + d) for d in FOTO_DOMAIN):
+        return None
+    kunci = hashlib.sha1(url.encode()).hexdigest()[:16]
+    foto_url[kunci] = url
+    if len(foto_url) > FOTO_MAKS * 2:
+        # Yang tertua dibuang; dict menjaga urutan masuk.
+        for lama in list(foto_url)[:FOTO_MAKS]:
+            foto_url.pop(lama, None)
+    return kunci
+
+
+def ambil_foto(kunci: str) -> str | None:
+    """Unduh + kecilkan foto TikTok jadi base64 RGBA FOTO_SISI^2. Di-cache.
+
+    Gagal (URL kedaluwarsa, format aneh, CDN lambat) = None, dan Roblox
+    memakai foto avatar Roblox seperti sebelumnya."""
+    if kunci in foto_cache:
+        foto_cache.move_to_end(kunci)
+        return foto_cache[kunci]
+    url = foto_url.get(kunci)
+    if not url:
+        return None
+    try:
+        # Bukan roblox_ssl: CDN TikTok tidak bermasalah dengan ALPN.
+        r = httpx.get(url, timeout=5.0, follow_redirects=True,
+                      headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        if len(r.content) > 2_000_000:
+            raise ValueError("gambar terlalu besar")
+        # Diimpor di sini: server tetap jalan walau Pillow belum terpasang,
+        # cuma tanpa foto TikTok.
+        from PIL import Image, ImageOps
+        gbr = Image.open(io.BytesIO(r.content)).convert("RGBA")
+        gbr = ImageOps.fit(gbr, (FOTO_SISI, FOTO_SISI), Image.LANCZOS)
+        isi = base64.b64encode(gbr.tobytes()).decode()
+    except Exception as e:
+        print(f"[foto] gagal {kunci}: {_alasan(e)}")
+        return None
+    foto_cache[kunci] = isi
+    while len(foto_cache) > FOTO_MAKS:
+        foto_cache.popitem(last=False)
+    return isi
 
 
 def lookup_user(username: str) -> tuple[str, int | None]:
@@ -574,6 +701,94 @@ def lookup_user(username: str) -> tuple[str, int | None]:
     return result
 
 
+def _hitung_roblox(url: str) -> int | None:
+    try:
+        r = httpx.get(url, headers=ROBLOX_HEADERS, timeout=4.0,
+                      verify=_SSL_CONTEXT)
+        r.raise_for_status()
+        n = r.json().get("count")
+        return n if isinstance(n, int) else None
+    except Exception as e:
+        print(f"[roblox] gagal {url}: {_alasan(e)}")
+        return None
+
+
+def _alasan(e: Exception) -> str:
+    if isinstance(e, httpx.HTTPStatusError):
+        return f"HTTP {e.response.status_code}"
+    return e.__class__.__name__
+
+
+_pekerja = ThreadPoolExecutor(max_workers=8)
+
+
+def _centang_roblox(user_id: int) -> bool | None:
+    try:
+        r = httpx.get(f"https://users.roblox.com/v1/users/{user_id}",
+                      headers=ROBLOX_HEADERS, timeout=4.0, verify=_SSL_CONTEXT)
+        r.raise_for_status()
+        return r.json().get("hasVerifiedBadge") is True
+    except Exception as e:
+        print(f"[roblox] gagal profil {user_id}: {_alasan(e)}")
+        return None
+
+
+def lookup_roblox_profil(user_id: int | None) -> dict | None:
+    """Pengikut, mengikuti, teman, dan centang Roblox untuk kartu profil.
+
+    Lambat (empat panggilan), jadi dipanggil di belakang layar saat nama
+    masuk antrian (_siapkan), bukan saat Roblox mengambilnya. Yang gagal
+    jadi None dan barisnya tidak tampil -- kartu tidak menunggu.
+    """
+    if not user_id:
+        return None
+    ada = roblox_cache.get(user_id)
+    if ada and time.monotonic() - ada[0] < ROBLOX_CACHE_S:
+        return ada[1]
+
+    # Bersamaan, bukan berurutan: entri berbayar sering diambil Studio
+    # sedetik setelah masuk, dan empat panggilan berurutan belum selesai.
+    dasar = f"https://friends.roblox.com/v1/users/{user_id}"
+    hitung = {k: _pekerja.submit(_hitung_roblox, f"{dasar}/{jalur}")
+              for k, jalur in (("followers", "followers/count"),
+                               ("following", "followings/count"),
+                               ("friends", "friends/count"))}
+    centang = _pekerja.submit(_centang_roblox, user_id)
+    isi = {k: f.result() for k, f in hitung.items()}
+    isi["verified"] = centang.result()
+
+    # Yang gagal sebagian (biasanya HTTP 429 saat gift beruntun) dicoba
+    # lagi semenit kemudian, bukan ditahan sepuluh menit tanpa angka.
+    kapan = time.monotonic()
+    if None in isi.values():
+        kapan -= ROBLOX_CACHE_S - 60
+        isi["verified"] = bool(isi["verified"])
+    roblox_cache[user_id] = (kapan, isi)
+    return isi
+
+
+# username -> Event yang menyala saat _siapkan untuk nama itu selesai.
+_sedang_disiapkan: dict[str, threading.Event] = {}
+
+
+def _siapkan(username: str) -> None:
+    """Isi cache nama + profil Roblox selagi entrinya masih menunggu, supaya
+    /api/next tidak menahan Studio beberapa detik untuk panggilan API.
+
+    Combo Rose x10 = sepuluh push untuk nama yang sama dalam sedetik;
+    cukup satu yang benar-benar memanggil Roblox."""
+    if username in _sedang_disiapkan:
+        return
+    selesai = _sedang_disiapkan[username] = threading.Event()
+    try:
+        lookup_roblox_profil(lookup_user(username)[1])
+    except Exception as e:
+        print(f"[siapkan] '{username}': {e}")
+    finally:
+        selesai.set()
+        _sedang_disiapkan.pop(username, None)
+
+
 def lookup_display_name(username: str) -> str:
     """displayName saja, buat pemanggil yang tidak butuh userId."""
     return lookup_user(username)[0]
@@ -607,7 +822,16 @@ def push(req: PushRequest, k: Kanal | None = None):
         "tier": tier,
         "tiktokUser": req.tiktokUser,
         "koin": koin,
+        "tiktok": _bersihkan_tiktok(req.tiktok),
+        "gift": (req.gift or "").strip()[:30] or None,
     }
+    threading.Thread(target=_siapkan, args=(name,), daemon=True).start()
+    # Foto TikTok diunduh SEKARANG, selagi entrinya menunggu: URL CDN-nya
+    # bertanda tangan dan kedaluwarsa, dan Studio tidak boleh menunggu
+    # unduhan saat kartunya mau tampil.
+    kunci_foto = (entry["tiktok"] or {}).get("foto")
+    if kunci_foto:
+        _pekerja.submit(ambil_foto, kunci_foto)
 
     # Yang bayar tidak ikut antre dan tidak kena batas antrian. Dari sisi dia,
     # uangnya sudah keluar -- ditolak karena "antrian penuh" itu tidak bisa
@@ -747,6 +971,12 @@ def next_username(k: Kanal | None = Depends(kanal_dari_owner)):
         return {"username": None, "displayName": None, "size": len(k.queue)}
 
     name = entry["username"]
+    # Masih disiapkan (biasanya entri berbayar yang baru masuk sedetik
+    # lalu): tunggu sebentar supaya kartunya kebagian angka Roblox.
+    # Dibatasi -- antrian lebih penting daripada kartu yang lengkap.
+    sedang = _sedang_disiapkan.get(name)
+    if sedang:
+        sedang.wait(1.5)
     display, user_id = lookup_user(name)
     tier = entry["tier"]
     koin = entry.get("koin", 0)
@@ -769,8 +999,26 @@ def next_username(k: Kanal | None = Depends(kanal_dari_owner)):
         "spotlightMs": durasi_sorotan(tier) if efek["spotlight"] else 0,
         "koin": koin,
         "tiktokUser": entry.get("tiktokUser"),
+        # Kartu profil. `roblox` cuma dibaca dari cache yang diisi _siapkan:
+        # kalau belum siap, kartunya tampil tanpa angka Roblox.
+        "tiktok": entry.get("tiktok"),
+        "gift": entry.get("gift"),
+        "roblox": (roblox_cache.get(user_id) or (0, None))[1] if user_id else None,
         "size": len(k.queue),
     }
+
+
+@app.get("/api/foto/{kunci}")
+def foto(kunci: str):
+    """Foto profil TikTok untuk kartu profil, RGBA mentah base64.
+
+    Terbuka seperti /api/next: Roblox cuma membaca, dan kuncinya hash yang
+    tidak bisa ditebak. Belum ada di cache = diunduh sekarang (paling lama
+    beberapa detik)."""
+    isi = ambil_foto(kunci) if len(kunci) == 16 else None
+    if isi is None:
+        raise HTTPException(404, "foto tidak ada")
+    return {"w": FOTO_SISI, "h": FOTO_SISI, "rgba": isi}
 
 
 @app.get("/api/settings")
@@ -835,6 +1083,7 @@ def clear_cache():
     """Kosongkan cache displayName. Berguna kalau ada yang ganti nama."""
     n = len(display_cache)
     display_cache.clear()
+    roblox_cache.clear()
     return {"ok": True, "cleared": n}
 
 # ------------------------------------------------------------------ musik

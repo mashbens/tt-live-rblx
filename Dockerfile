@@ -9,7 +9,8 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 
-RUN pip install --no-cache-dir "fastapi>=0.110" "uvicorn>=0.27" "httpx>=0.27" "python-dotenv>=1.0.0"
+# pillow: foto profil TikTok dikecilkan jadi piksel untuk kartu profil.
+RUN pip install --no-cache-dir "fastapi>=0.110" "uvicorn>=0.27" "httpx>=0.27" "python-dotenv>=1.0.0" "pillow>=10"
 
 COPY main.py roblox_ssl.py ./
 

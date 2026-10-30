@@ -13,7 +13,8 @@ koinnya, makin menonjol tempatnya.
 ├── src/               # SKRIP ROBLOX STUDIO -- foldernya meniru Explorer di Studio
 │   ├── ServerScriptService/AvatarQueueV2.server.luau                 # Script
 │   ├── StarterPlayer/StarterPlayerScripts/KameraClientV2.client.luau # LocalScript
-│   └── ReplicatedStorage/TierNova.luau                               # ModuleScript
+│   ├── ReplicatedStorage/TierNova.luau                               # ModuleScript
+│   └── ReplicatedStorage/KartuProfil.luau                            # ModuleScript
 ├── default.project.json # peta Rojo: src/ -> Studio
 ├── aftman.toml        # versi Rojo (dipasang lewat Aftman)
 ├── test_tier.py       # uji fungsi tier di AvatarQueueV2 (`make test-tier`)
@@ -98,8 +99,11 @@ make rojo        # Studio: place kosong baru -> Rojo Connect -> Publish as NEW g
 make exe         # -> C:\tt-rblx-build\TikTokRoblox-arif.zip, kirim ke pembeli
 ```
 
-Setelah publish, di Game Settings nyalakan Security > Allow HTTP Requests
-dan Monetization > Private Servers.
+Setelah publish, di Game Settings nyalakan Security > Allow HTTP Requests,
+Security > Allow Mesh / Image APIs, dan Monetization > Private Servers.
+Tanpa Mesh / Image APIs kartu profil tidak bisa menggambar foto TikTok asli
+(EditableImage) dan diam-diam memakai foto avatar Roblox sebagai gantinya;
+Output Studio menulis "EditableImage is not accessible".
 
 - `make deploy` menambah `rblx.d/<nama>.conf` di nginx VM, lalu reload
   sesudah `nginx -t` lolos. Kalau gagal, perubahannya dikembalikan
@@ -901,6 +905,28 @@ terisi setelah fisika memproses satu langkah sesudah `Anchored` dilepas.
 | `DELETE /api/clear` | kosongkan antrian |
 
 
+
+## Kartu profil
+
+Tiap avatar yang datang memunculkan kartu di atas layar (ModuleScript
+`KartuProfil`, digambar client): profil **TikTok** di kiri, **Roblox** di
+kanan. Tier 2+ dapat dua kartu penuh, permata tier di tengah, dan pita
+gift ("ROSE · SINEMATIK"). Kartu itu pergi bersama sorotannya. Tier 1 cuma
+dapat pil kecil yang saling menggantikan.
+
+- **TikTok**: nickname, @handle, pengikut, mengikuti, bio, centang, dan
+  chip FOLLOWER (dia follow host). Semuanya dibaca listener dari event
+  yang sudah ada (`profil_tiktok` / `_tf_profil`), lalu dikirim di
+  `/api/push` sebagai `tiktok`.
+- **Roblox**: pengikut, mengikuti, teman, dan centang diambil `main.py` dari
+  friends.roblox.com begitu nama masuk antrian (`_siapkan`), lalu di-cache
+  10 menit. Kalau belum siap waktu `/api/next`, kartunya tampil tanpa
+  angka Roblox.
+- Foto di kedua kartu foto Roblox. Foto TikTok tidak bisa tampil:
+  `ImageLabel` cuma menerima aset Roblox.
+- Data yang kosong (TikTok kadang tidak mengirim follower, Roblox kadang
+  429) tidak ditulis sebagai 0. Barisnya disembunyikan.
+- `make mock` mengarang profil TikTok per penonton (`profil_palsu`).
 
 ## Avatarmu sendiri tidak ikut terekam
 

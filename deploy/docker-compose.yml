@@ -1,6 +1,6 @@
 # Dijalankan di VM oleh `make deploy`, dari folder /root/tt-rblx.
 #
-# Ikut network milik nginx (nignx_app_net) supaya nginx memanggilnya
+# Ikut network milik nginx (NGINX_NET) supaya nginx memanggilnya
 # dengan nama container -- tidak ada port yang dibuka ke internet.
 services:
   # BUKAN "tt-rblx": nama service ikut jadi nama DNS di network nginx, dan
@@ -24,8 +24,11 @@ services:
       BUYERS_PATH: /app/data/buyers.json
     volumes:
       - ../data:/app/data:ro
-    networks: [nignx_app_net]
+    networks: [nginx_net]
 
 networks:
-  nignx_app_net:
+  # Network milik container nginx, dideteksi `make deploy`: nignx_app_net
+  # di VM lama, app_net di VM baru.
+  nginx_net:
+    name: ${NGINX_NET:-nignx_app_net}
     external: true

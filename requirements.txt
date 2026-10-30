@@ -1,6 +1,8 @@
 fastapi>=0.110
 uvicorn>=0.27
 httpx>=0.27
+# main.py: foto profil TikTok dikecilkan jadi piksel untuk kartu profil.
+pillow>=10
 # Dipakai tiktok_listener.py buat baca komentar TikTok Live.
 TikTokLive>=6.4.0
 python-dotenv>=1.0.0

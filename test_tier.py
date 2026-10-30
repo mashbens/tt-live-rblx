@@ -305,6 +305,11 @@ SPAWN_SIAP_MAKS   = {angka("SPAWN_SIAP_MAKS")}
 lua.execute("""
 Color3 = { fromRGB = function(r, g, b) return { r, g, b } end }
 """)
+# SOLO juga: NOVA.CONFIG dan KAMERA_TIER[5] membaca SOLO.AKTIF.
+awal_solo = next(i for i, l in enumerate(src) if l.startswith("local SOLO = {}"))
+akhir_solo = next(i for i in range(awal_solo, len(src)) if src[i].startswith("SOLO.tampil"))
+lua.execute("\n".join(src[awal_solo:akhir_solo + 1]).replace("local ", "", 1))
+
 awal_nova = next(i for i, l in enumerate(src) if l.startswith("local NOVA = {}"))
 akhir_nova = next(i for i in range(awal_nova, len(src)) if src[i].startswith("NOVA.TARI"))
 lua.execute("\n".join(src[awal_nova:akhir_nova + 1]).replace("local ", "", 1))
@@ -382,8 +387,15 @@ for nama in ("tipis", "warna", "penuh"):
 cek("letterbox Rosa bawaan lebih tipis dari nova",
     g.LAYAR.PILIHAN.tipis.letterbox < g.NOVA.CONFIG.letterbox,
     "Rosa dan nova sama tebal -- layar nova tidak lagi istimewa")
+# Panggung solo: Doughnut (tier 5) bukan raksasa lagi dan sengaja dapat
+# efek layar sendiri -- megahnya dari situ.
+SOLO_AKTIF = any(l.startswith("SOLO.AKTIF   = true") for l in src)
 cek("tier lain tidak ikut dapat efek layar Rosa",
-    all(g.kameraTier(t).layar is None for t in (1, 2, 4, 5)))
+    all(g.kameraTier(t).layar is None
+        for t in ((1, 2, 4) if SOLO_AKTIF else (1, 2, 4, 5))))
+if SOLO_AKTIF:
+    cek("panggung solo: Doughnut dapat efek layar sendiri",
+        g.kameraTier(5).layar is not None)
 
 # --- JALUR KAMERA ROSA ---
 #
@@ -597,9 +609,13 @@ cek("tier di atas 5 tetap raksasa", g.adalahRaksasa(6) is True,
 # Aura VFX tidak boleh menyentuh raksasa -- dia harus polos.
 # Raksasa TIDAK dapat aura VFX (sempat dicoba, lalu dicopot): yang
 # membuat dia terbaca ukuran badannya.
-cek("aura VFX bukan milik tier raksasa",
-    int(angka("AURA_VFX_TIER_MAKS")) < int(angka("GIANT_MIN_TIER")),
-    "raksasa harus polos: aura di badan sebesar itu menyaingi ukurannya")
+# Berlaku selama raksasa memang hidup. Panggung solo mematikannya
+# (GIANT_ENABLED = false), dan Doughnut sengaja dapat aura.
+GIANT_AKTIF = any(l.startswith("local GIANT_ENABLED = true") for l in src)
+if GIANT_AKTIF:
+    cek("aura VFX bukan milik tier raksasa",
+        int(angka("AURA_VFX_TIER_MAKS")) < int(angka("GIANT_MIN_TIER")),
+        "raksasa harus polos: aura di badan sebesar itu menyaingi ukurannya")
 # Kalau suatu saat dinyalakan lagi, partikelnya harus ikut diperbesar --
 # tanpa itu aura seukuran orang biasa jadi titik kecil di dada raksasa 4x.
 cek("pasangAuraVfx tetap memperbesar partikel sebanding skala badan",
@@ -899,8 +915,12 @@ AURA_VFX_TIER_MAKS = {int(angka("AURA_VFX_TIER_MAKS"))}
 """)
 lua.execute(ambil("layakAuraVfx").replace("local function", "function", 1))
 dapat_aura = [t for t in range(1, 8) if g.layakAuraVfx(t)]
-cek("aura VFX acak milik Rosa dan nova -- bukan Rose, bukan raksasa",
-    dapat_aura == [3, NOVA_TIER], f"yang dapat aura: {dapat_aura}")
+if GIANT_AKTIF:
+    cek("aura VFX acak milik Rosa dan nova -- bukan Rose, bukan raksasa",
+        dapat_aura == [3, NOVA_TIER], f"yang dapat aura: {dapat_aura}")
+else:
+    cek("aura VFX milik Rosa, nova, dan Doughnut (raksasa mati) -- bukan Rose",
+        dapat_aura == [3, NOVA_TIER, 5], f"yang dapat aura: {dapat_aura}")
 
 efek = srv.TIER_EFFECTS
 cek(f"main.py sepakat: tier {NOVA_TIER} = nova",
@@ -1309,13 +1329,18 @@ cek(f"kamera jatuh ada di atas puncaknya "
 # Dan menunduknya masuk akal di kedua ujung: hampir sejajar kepalanya
 # waktu mulai, jelas menunduk waktu dia menghantam tanah. Lurus ke bawah
 # (mendekati 90) tidak punya cakrawala dan terbaca sebagai peta.
-tunduk_awal = _m.degrees(_m.atan2(KAM.atasNaik - NC.naikAscend, KAM.atasRadius))
-tunduk_akhir = _m.degrees(_m.atan2(KAM.atasNaik, KAM.atasRadius))
-cek(f"menunduknya bercerita, bukan lurus ke bawah "
-    f"({tunduk_awal:.0f} -> {tunduk_akhir:.0f} derajat)",
-    0 < tunduk_awal < 45 and 45 < tunduk_akhir < 80,
-    f"awal {tunduk_awal:.0f}, akhir {tunduk_akhir:.0f} -- di atas 80 "
-    "derajat frame-nya kehilangan cakrawala")
+#
+# Cuma untuk panggung barisan: di panggung solo kameranya diam dan jalur
+# ini tidak dipakai, sementara terbangnya sengaja direndahkan supaya
+# tetap di dalam frame -- yang membuat sudut ini tidak berarti apa-apa.
+if not SOLO_AKTIF:
+    tunduk_awal = _m.degrees(_m.atan2(KAM.atasNaik - NC.naikAscend, KAM.atasRadius))
+    tunduk_akhir = _m.degrees(_m.atan2(KAM.atasNaik, KAM.atasRadius))
+    cek(f"menunduknya bercerita, bukan lurus ke bawah "
+        f"({tunduk_awal:.0f} -> {tunduk_akhir:.0f} derajat)",
+        0 < tunduk_awal < 45 and 45 < tunduk_akhir < 80,
+        f"awal {tunduk_awal:.0f}, akhir {tunduk_akhir:.0f} -- di atas 80 "
+        "derajat frame-nya kehilangan cakrawala")
 
 # --- 3. orbit tidak menembus barisan ---
 #
